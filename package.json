@@ -1,0 +1,20 @@
+{
+  "name": "gestion-gimnasio",
+  "version": "0.1.0",
+  "private": true,
+  "engines": { "node": ">=22 <23" },
+  "workspaces": [
+    "services/socios-membresias",
+    "services/clases-reservas",
+    "services/accesos-ocupacion"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "test": "npm run build --workspace=@gimnasio/clases-reservas && node --test services/clases-reservas/test/contract.test.mjs",
+    "iniciar": "node scripts/iniciar.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "typescript": "5.9.3"
+  }
+}

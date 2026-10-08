@@ -1,0 +1,158 @@
+name: gimnasio-e1
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_DB: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?Falta POSTGRES_ADMIN_PASSWORD en .env}
+      SOCIOS_DB_PASSWORD: ${SOCIOS_DB_PASSWORD:?Falta SOCIOS_DB_PASSWORD en .env}
+      CLASES_DB_PASSWORD: ${CLASES_DB_PASSWORD:?Falta CLASES_DB_PASSWORD en .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+      - ./infra/postgres/init.sh:/docker-entrypoint-initdb.d/01-services.sh:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+  mongodb:
+    image: mongo:8.0
+    hostname: mongodb
+    entrypoint: ["bash", "/opt/infra/mongo/start.sh"]
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: root
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?Falta MONGO_ROOT_PASSWORD en .env}
+      MONGO_KEYFILE: ${MONGO_KEYFILE:?Falta MONGO_KEYFILE en .env}
+    volumes:
+      - mongodb-data:/data/db
+      - ./infra/mongo/start.sh:/opt/infra/mongo/start.sh:ro
+    healthcheck:
+      test: ["CMD", "mongosh", "mongodb://mongodb:27017/admin?directConnection=true", "--quiet", "--eval", "quit(db.adminCommand({ping: 1}).ok === 1 ? 0 : 1)"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  mongo-init:
+    image: mongo:8.0
+    entrypoint: ["mongosh", "--nodb", "--quiet", "/opt/infra/mongo/init.js"]
+    environment:
+      MONGO_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?Falta MONGO_ROOT_PASSWORD en .env}
+      ACCESOS_DB_PASSWORD: ${ACCESOS_DB_PASSWORD:?Falta ACCESOS_DB_PASSWORD en .env}
+    volumes:
+      - ./infra/mongo/init.js:/opt/infra/mongo/init.js:ro
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    restart: "no"
+
+  rabbitmq:
+    image: rabbitmq:4.1-alpine
+    hostname: rabbitmq
+    environment:
+      RABBITMQ_DEFAULT_USER: gimnasio
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD:?Falta RABBITMQ_PASSWORD en .env}
+      RABBITMQ_DEFAULT_VHOST: gimnasio
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 10s
+
+  socios-membresias:
+    build:
+      context: .
+      dockerfile: infra/node/Dockerfile
+      args:
+        SERVICE: socios-membresias
+    environment:
+      PORT: "3000"
+      DATABASE_URL: postgres://socios:${SOCIOS_DB_PASSWORD:?Falta SOCIOS_DB_PASSWORD en .env}@postgres:5432/socios
+      RABBITMQ_URL: amqp://gimnasio:${RABBITMQ_PASSWORD:?Falta RABBITMQ_PASSWORD en .env}@rabbitmq:5672/gimnasio
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
+  clases-reservas:
+    build:
+      context: .
+      dockerfile: infra/node/Dockerfile
+      args:
+        SERVICE: clases-reservas
+    environment:
+      PORT: "3000"
+      DATABASE_URL: postgres://clases:${CLASES_DB_PASSWORD:?Falta CLASES_DB_PASSWORD en .env}@postgres:5432/clases
+      RABBITMQ_URL: amqp://gimnasio:${RABBITMQ_PASSWORD:?Falta RABBITMQ_PASSWORD en .env}@rabbitmq:5672/gimnasio
+      SOCIOS_SERVICE_URL: http://socios-membresias:3000
+      ACCESOS_SERVICE_URL: http://accesos-ocupacion:3000
+      CAPACIDAD_API_KEY: ${CAPACIDAD_API_KEY:?Falta CAPACIDAD_API_KEY en .env}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
+  accesos-ocupacion:
+    build:
+      context: .
+      dockerfile: infra/node/Dockerfile
+      args:
+        SERVICE: accesos-ocupacion
+    environment:
+      PORT: "3000"
+      MONGODB_URL: mongodb://accesos:${ACCESOS_DB_PASSWORD:?Falta ACCESOS_DB_PASSWORD en .env}@mongodb:27017/accesos?authSource=accesos&replicaSet=rs0
+      SOCIOS_SERVICE_URL: http://socios-membresias:3000
+    depends_on:
+      mongo-init:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
+  gateway:
+    image: nginx:1.28-alpine
+    ports:
+      - "127.0.0.1:${GATEWAY_PORT:-8080}:80"
+    volumes:
+      - ./infra/gateway/nginx.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      socios-membresias:
+        condition: service_healthy
+      clases-reservas:
+        condition: service_healthy
+      accesos-ocupacion:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+volumes:
+  postgres-data:
+  mongodb-data:
+  rabbitmq-data:
