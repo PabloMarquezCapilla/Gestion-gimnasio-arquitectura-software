@@ -6,6 +6,7 @@ import { spawnSync } from 'node:child_process';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const envPath = resolve(root, '.env');
+const projectName = process.env.COMPOSE_PROJECT_NAME?.trim() || 'gimnasio-e1';
 const keys = [
   'POSTGRES_ADMIN_PASSWORD', 'SOCIOS_DB_PASSWORD', 'CLASES_DB_PASSWORD',
   'MONGO_ROOT_PASSWORD', 'ACCESOS_DB_PASSWORD', 'MONGO_KEYFILE',
@@ -23,18 +24,29 @@ function stop(message) {
   process.exit(1);
 }
 
-if (Number(process.versions.node.split('.')[0]) !== 22) {
-  stop('Usar Node.js 22 LTS para este entorno.');
+const nodeMajor = Number(process.versions.node.split('.')[0]);
+if (nodeMajor !== 22) {
+  stop(`Se necesita Node.js 22 LTS; se detectó ${process.version}. Activar Node.js 22 y volver a ejecutar node scripts/iniciar.mjs.`);
 }
-if (run(['info', '--format', '{{.ServerVersion}}'], true).status !== 0) {
+const dockerInfo = run(['info', '--format', '{{.ServerVersion}}|{{.OSType}}'], true);
+if (dockerInfo.status !== 0) {
   stop('Docker no está disponible. Iniciar Docker Desktop con contenedores Linux y volver a ejecutar este comando.');
 }
-if (run(['compose', 'version'], true).status !== 0) {
+const [, dockerOs] = dockerInfo.stdout.trim().split('|');
+if (dockerOs !== 'linux') {
+  stop('Docker debe estar configurado para utilizar contenedores Linux. Cambiar el modo de Docker Desktop y volver a intentar.');
+}
+const composeVersion = run(['compose', 'version', '--short'], true);
+if (composeVersion.status !== 0) {
   stop('Se necesita Docker Compose v2 o posterior, incluido en Docker Desktop.');
+}
+const composeMajor = Number(composeVersion.stdout.trim().replace(/^v/, '').split('.')[0]);
+if (!Number.isInteger(composeMajor) || composeMajor < 2) {
+  stop(`Se necesita Docker Compose v2 o posterior; se detectó ${composeVersion.stdout.trim() || 'una versión desconocida'}.`);
 }
 
 if (!existsSync(envPath)) {
-  const volumes = run(['volume', 'ls', '--filter', 'label=com.docker.compose.project=gimnasio-e1', '--format', '{{.Name}}'], true);
+  const volumes = run(['volume', 'ls', '--filter', `label=com.docker.compose.project=${projectName}`, '--format', '{{.Name}}'], true);
   if (volumes.status !== 0) stop('No se pudieron consultar los volúmenes del proyecto.');
   if (volumes.stdout.trim()) {
     stop('Existen datos de este proyecto pero falta .env. Recuperar el .env original para conservar sus credenciales; el inicio no reemplaza ni borra datos.');
@@ -63,7 +75,13 @@ if (run(['compose', 'config', '--quiet']).status !== 0) stop('La configuración 
 
 console.log('Construyendo servicios e iniciando sus dependencias...');
 if (run(['compose', 'up', '--build', '--detach', '--wait', '--wait-timeout', '180']).status !== 0) {
-  stop('El inicio no se completó. Revisar docker compose ps y docker compose logs para identificar el servicio que falló.');
+  console.error('\nEstado de los contenedores:');
+  run(['compose', 'ps', '--all']);
+  console.error('\nÚltimos registros de inicialización:');
+  run(['compose', 'logs', '--no-color', '--tail', '80',
+    'postgres', 'postgres-init', 'mongodb', 'mongo-init', 'rabbitmq']);
+  stop('El inicio no se completó. Los datos y volúmenes se conservaron; revisar los mensajes anteriores antes de volver a intentar.');
 }
-console.log(`Entorno listo. Mock: http://localhost:${port}/api/v1/clases`);
+console.log(`Entorno listo. Abrir http://localhost:${port}`);
+console.log(`Mock: http://localhost:${port}/api/v1/clases`);
 console.log('La clave X-API-Key está en CAPACIDAD_API_KEY dentro de .env. Los datos son ficticios.');
