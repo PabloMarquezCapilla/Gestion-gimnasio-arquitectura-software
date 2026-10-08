@@ -1,0 +1,285 @@
+openapi: 3.1.1
+info:
+  title: Consulta de clases y cupos del gimnasio
+  version: 1.0.0
+  description: >-
+    Capacidad de consulta ofrecida por Clases y Reservas. Contrato inicial para
+    la Entrega 1; hay un mock local con datos ficticios. La implementación real
+    y su URL pública están pendientes.
+    Los cupos se calculan con datos del almacenamiento propietario al producir
+    la respuesta. Consultar no retiene un lugar ni valida la membresía de un
+    socio. El orden de la lista de espera puede condicionar la asignación.
+servers:
+  - url: http://localhost:8080
+    description: Mock local con datos ficticios; iniciar según README.md.
+  - url: /
+    description: Base relativa. La URL pública se documentará al desplegar.
+security:
+  - ClaveConsumidor: []
+paths:
+  /api/v1/clases:
+    get:
+      operationId: listarClases
+      summary: Listar clases y sus cupos disponibles
+      description: >-
+        Devuelve clases publicadas que cumplen todos los filtros enviados.
+        Sin filtros temporales incluye también clases iniciadas. Orden fijo
+        por inicio ascendente y, en caso de empate, claseId ascendente.
+        Los filtros se aplican antes de paginar. Una página fuera del conjunto
+        de resultados, o una sede sin clases coincidentes, devuelve items vacío.
+        No se garantiza una misma instantánea entre solicitudes de páginas distintas.
+      parameters:
+        - name: sedeId
+          in: query
+          description: Identificador de la sede. Si se omite, incluye todas las sedes.
+          schema:
+            type: string
+            minLength: 1
+          example: sede-demo-01
+        - name: desde
+          in: query
+          description: >-
+            Límite inferior inclusivo para el inicio de la clase. RFC 3339 con
+            zona horaria. Se compara como instante, no como texto.
+          schema:
+            type: string
+            format: date-time
+          example: '2026-11-12T00:00:00-03:00'
+        - name: hasta
+          in: query
+          description: >-
+            Límite superior exclusivo para el inicio de la clase. RFC 3339 con
+            zona horaria. Si se envían ambos límites, desde debe ser menor que hasta.
+          schema:
+            type: string
+            format: date-time
+          example: '2026-11-13T00:00:00-03:00'
+        - name: pagina
+          in: query
+          description: Número de página, comenzando en 1.
+          schema:
+            type: integer
+            minimum: 1
+            default: 1
+        - name: tamanio
+          in: query
+          description: Cantidad máxima de clases por página.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        '200':
+          description: Consulta exitosa; puede no haber clases coincidentes.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/SinCache'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ListadoClases'
+              examples:
+                conClases:
+                  summary: Datos ficticios para implementar y probar la integración
+                  value:
+                    items:
+                      - claseId: clase-demo-001
+                        nombre: Yoga
+                        sedeId: sede-demo-01
+                        inicio: '2026-11-12T18:00:00-03:00'
+                        capacidad: 20
+                        cuposDisponibles: 3
+                        consultadoEn: '2026-11-12T17:30:00-03:00'
+                    pagina: 1
+                    tamanio: 20
+                    total: 1
+                sinResultados:
+                  value: {items: [], pagina: 1, tamanio: 20, total: 0}
+        '400':
+          $ref: '#/components/responses/ParametrosInvalidos'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '503':
+          $ref: '#/components/responses/ServicioNoDisponible'
+  /api/v1/clases/{claseId}:
+    get:
+      operationId: consultarClase
+      summary: Consultar una clase y sus cupos disponibles
+      description: >-
+        Una clase llena devuelve 200 con cuposDisponibles igual a 0.
+        Una clase iniciada sigue siendo consultable y devuelve 200 si existe,
+        aunque las reglas del gimnasio impidan realizar nuevas reservas desde
+        su inicio. El resultado no confirma que un socio pueda reservar.
+      parameters:
+        - name: claseId
+          in: path
+          required: true
+          description: Identificador de la clase, tratado como un valor opaco.
+          schema:
+            type: string
+            minLength: 1
+          example: clase-demo-001
+      responses:
+        '200':
+          description: Clase encontrada y disponibilidad consultada.
+          headers:
+            Cache-Control:
+              $ref: '#/components/headers/SinCache'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Clase'
+              examples:
+                conCupos:
+                  value:
+                    claseId: clase-demo-001
+                    nombre: Yoga
+                    sedeId: sede-demo-01
+                    inicio: '2026-11-12T18:00:00-03:00'
+                    capacidad: 20
+                    cuposDisponibles: 3
+                    consultadoEn: '2026-11-12T17:30:00-03:00'
+                sinCupos:
+                  value:
+                    claseId: clase-demo-002
+                    nombre: Pilates
+                    sedeId: sede-demo-01
+                    inicio: '2026-11-12T19:00:00-03:00'
+                    capacidad: 10
+                    cuposDisponibles: 0
+                    consultadoEn: '2026-11-12T17:30:00-03:00'
+        '401':
+          $ref: '#/components/responses/NoAutenticado'
+        '404':
+          $ref: '#/components/responses/ClaseNoEncontrada'
+        '500':
+          $ref: '#/components/responses/ErrorInterno'
+        '503':
+          $ref: '#/components/responses/ServicioNoDisponible'
+components:
+  headers:
+    SinCache:
+      description: Se envía no-store para evitar reutilizar respuestas con cupos anteriores.
+      required: true
+      schema:
+        type: string
+        const: no-store
+  securitySchemes:
+    ClaveConsumidor:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: >-
+        Clave entregada al grupo consumidor para consultar esta capacidad.
+        En el entorno operativo se transmite mediante HTTPS. No se publica
+        ninguna clave real en el repositorio. Su ausencia o invalidez devuelve 401.
+  schemas:
+    Clase:
+      type: object
+      required: [claseId, nombre, sedeId, inicio, capacidad, cuposDisponibles, consultadoEn]
+      properties:
+        claseId:
+          type: string
+          minLength: 1
+        nombre:
+          type: string
+        sedeId:
+          type: string
+          minLength: 1
+        inicio:
+          type: string
+          format: date-time
+          description: Inicio programado, en RFC 3339 con zona horaria.
+        capacidad:
+          type: integer
+          minimum: 0
+          description: Capacidad máxima registrada para la clase.
+        cuposDisponibles:
+          type: integer
+          minimum: 0
+          description: >-
+            Capacidad menos reservas confirmadas en la consulta; nunca supera
+            capacidad. Es informativo: no implica asignación a un nuevo solicitante,
+            que debe cumplir las reglas de membresía, inicio y prioridad de espera.
+        consultadoEn:
+          type: string
+          format: date-time
+          description: >-
+            Instante de consulta de los datos utilizados para esta disponibilidad,
+            expresado en RFC 3339 con zona horaria. Puede cambiar en un nuevo GET.
+    ListadoClases:
+      type: object
+      required: [items, pagina, tamanio, total]
+      properties:
+        items:
+          type: array
+          maxItems: 100
+          items:
+            $ref: '#/components/schemas/Clase'
+        pagina:
+          type: integer
+          minimum: 1
+        tamanio:
+          type: integer
+          minimum: 1
+          maximum: 100
+        total:
+          type: integer
+          minimum: 0
+          description: Cantidad total de clases coincidentes antes de paginar.
+    Error:
+      type: object
+      required: [codigo, mensaje]
+      properties:
+        codigo:
+          type: string
+          description: Código estable para interpretar el error.
+        mensaje:
+          type: string
+          description: Explicación legible. El consumidor debe interpretar el código.
+  responses:
+    ParametrosInvalidos:
+      description: Filtros, intervalo temporal o paginación inválidos. Corregir la solicitud.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example: {codigo: PARAMETROS_INVALIDOS, mensaje: 'desde debe ser menor que hasta.'}
+    NoAutenticado:
+      description: Clave de consumidor ausente o inválida. Revisar la credencial.
+      headers:
+        WWW-Authenticate:
+          description: Desafío de autenticación de la capacidad mediante la clave indicada en X-API-Key.
+          required: true
+          schema:
+            type: string
+            const: 'ApiKey realm="clases"'
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example: {codigo: NO_AUTENTICADO, mensaje: 'Clave de consumidor ausente o inválida.'}
+    ClaseNoEncontrada:
+      description: No existe una clase publicada con el identificador solicitado.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example: {codigo: CLASE_NO_ENCONTRADA, mensaje: 'No se encontró la clase solicitada.'}
+    ErrorInterno:
+      description: Error inesperado al procesar la consulta. La disponibilidad es desconocida.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example: {codigo: ERROR_INTERNO, mensaje: 'No se pudo completar la consulta.'}
+    ServicioNoDisponible:
+      description: Indisponibilidad temporal del servicio o su almacenamiento. La disponibilidad es desconocida.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Error'
+          example: {codigo: SERVICIO_NO_DISPONIBLE, mensaje: 'La consulta no está disponible temporalmente.'}
