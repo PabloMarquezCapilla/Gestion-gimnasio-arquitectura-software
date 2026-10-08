@@ -5,7 +5,7 @@ Trabajo Práctico Integrador — Arquitectura de Software 2026
 ## Integrantes
 
 - Lorenzo Rossi
-- Javier Baudino
+- Jose Baudino
 - Pablo Marquez
 
 ## Dominio
