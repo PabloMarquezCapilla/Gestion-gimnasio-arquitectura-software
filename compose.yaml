@@ -7,17 +7,32 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_DB: postgres
       POSTGRES_PASSWORD: ${POSTGRES_ADMIN_PASSWORD:?Falta POSTGRES_ADMIN_PASSWORD en .env}
-      SOCIOS_DB_PASSWORD: ${SOCIOS_DB_PASSWORD:?Falta SOCIOS_DB_PASSWORD en .env}
-      CLASES_DB_PASSWORD: ${CLASES_DB_PASSWORD:?Falta CLASES_DB_PASSWORD en .env}
     volumes:
       - postgres-data:/var/lib/postgresql/data
-      - ./infra/postgres/init.sh:/docker-entrypoint-initdb.d/01-services.sh:ro
     healthcheck:
       test: ["CMD", "pg_isready", "-h", "127.0.0.1", "-U", "postgres", "-d", "postgres"]
       interval: 5s
       timeout: 3s
       retries: 20
       start_period: 10s
+
+  postgres-init:
+    image: postgres:17-alpine
+    entrypoint: ["bash", "/opt/infra/postgres/init.sh"]
+    environment:
+      PGHOST: postgres
+      PGPORT: "5432"
+      PGUSER: postgres
+      PGDATABASE: postgres
+      PGPASSWORD: ${POSTGRES_ADMIN_PASSWORD:?Falta POSTGRES_ADMIN_PASSWORD en .env}
+      SOCIOS_DB_PASSWORD: ${SOCIOS_DB_PASSWORD:?Falta SOCIOS_DB_PASSWORD en .env}
+      CLASES_DB_PASSWORD: ${CLASES_DB_PASSWORD:?Falta CLASES_DB_PASSWORD en .env}
+    volumes:
+      - ./infra/postgres/init.sh:/opt/infra/postgres/init.sh:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: "no"
 
   mongodb:
     image: mongo:8.0
@@ -27,6 +42,9 @@ services:
       MONGO_INITDB_ROOT_USERNAME: root
       MONGO_INITDB_ROOT_PASSWORD: ${MONGO_ROOT_PASSWORD:?Falta MONGO_ROOT_PASSWORD en .env}
       MONGO_KEYFILE: ${MONGO_KEYFILE:?Falta MONGO_KEYFILE en .env}
+      # MongoDB 8 requiere rseq habilitado con kernels 6.19 a 7.0.13,
+      # incluidos en versiones actuales de Docker Desktop.
+      GLIBC_TUNABLES: glibc.pthread.rseq=1
     volumes:
       - mongodb-data:/data/db
       - ./infra/mongo/start.sh:/opt/infra/mongo/start.sh:ro
@@ -77,8 +95,8 @@ services:
       DATABASE_URL: postgres://socios:${SOCIOS_DB_PASSWORD:?Falta SOCIOS_DB_PASSWORD en .env}@postgres:5432/socios
       RABBITMQ_URL: amqp://gimnasio:${RABBITMQ_PASSWORD:?Falta RABBITMQ_PASSWORD en .env}@rabbitmq:5672/gimnasio
     depends_on:
-      postgres:
-        condition: service_healthy
+      postgres-init:
+        condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
     healthcheck:
@@ -102,8 +120,8 @@ services:
       ACCESOS_SERVICE_URL: http://accesos-ocupacion:3000
       CAPACIDAD_API_KEY: ${CAPACIDAD_API_KEY:?Falta CAPACIDAD_API_KEY en .env}
     depends_on:
-      postgres:
-        condition: service_healthy
+      postgres-init:
+        condition: service_completed_successfully
       rabbitmq:
         condition: service_healthy
     healthcheck:
@@ -139,6 +157,7 @@ services:
       - "127.0.0.1:${GATEWAY_PORT:-8080}:80"
     volumes:
       - ./infra/gateway/nginx.conf:/etc/nginx/nginx.conf:ro
+      - ./infra/gateway/index.html:/usr/share/nginx/html/index.html:ro
     depends_on:
       socios-membresias:
         condition: service_healthy

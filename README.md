@@ -96,13 +96,38 @@ scripts/iniciar.mjs      # Inicio automatizado
 
 ## Ejecutar localmente
 
-Requisitos: **Node.js 22 LTS** y **Docker Desktop iniciado con contenedores Linux y Docker Compose**. Desde la raíz del repositorio:
+### Requisitos
+
+- **Node.js 22 LTS**. Verificar que `node --version` comience con `v22`. El proyecto rechaza otras versiones para que el entorno local y las imágenes utilicen la misma familia.
+- **Docker Desktop actualizado**, iniciado y configurado para utilizar contenedores Linux.
+- **Docker Compose v2 o posterior**, disponible como `docker compose` dentro de Docker Desktop.
+
+En macOS, Node.js 22 puede instalarse con `brew install node@22`. Si existe otra versión vinculada, se puede seleccionar para la terminal actual sin reemplazarla globalmente:
+
+```sh
+export PATH="$(brew --prefix node@22)/bin:$PATH"
+node --version
+```
+
+En Windows se puede utilizar el instalador oficial de Node.js 22 LTS o un administrador de versiones. Docker Desktop debe estar en modo de contenedores Linux. En PowerShell, comprobar:
+
+```powershell
+node --version
+docker info
+docker compose version
+```
+
+### Inicio
+
+Desde la raíz del repositorio, tanto en macOS como en Windows:
 
 ```sh
 node scripts/iniciar.mjs
 ```
 
-El comando genera `.env` con claves aleatorias solamente si no existe, construye los tres servicios e inicia PostgreSQL 17, MongoDB 8.0, RabbitMQ 4.1 y NGINX 1.28. La primera ejecución necesita Internet para descargar imágenes y paquetes. Los parches de las imágenes siguen las etiquetas de esas familias; las dependencias npm se fijan en `package-lock.json`.
+El comando comprueba Node.js, Docker Engine, contenedores Linux, Docker Compose y la configuración de Compose. Después construye los tres servicios e inicia PostgreSQL 17, MongoDB 8.0, RabbitMQ 4.1 y NGINX 1.28 respetando sus dependencias. La primera ejecución necesita Internet para descargar imágenes y paquetes. Los parches de las imágenes siguen las etiquetas de esas familias; las dependencias npm se fijan en `package-lock.json`.
+
+La preparación de PostgreSQL se ejecuta como un paso idempotente después de que el motor está saludable. Esto permite crear las bases y usuarios en un volumen nuevo y completar una inicialización anterior interrumpida sin eliminar datos. MongoDB incluye la configuración de compatibilidad requerida por los kernels Linux recientes de Docker Desktop. No se necesita cambiar permisos de archivos ni utilizar un Compose alternativo.
 
 El script conserva el `.env` existente. **Guardar ese archivo mientras se usen los mismos volúmenes**: las credenciales de las bases y del broker se establecen al inicializarlos. Si hay volúmenes previos y falta `.env`, el script pide recuperar el original y no reemplaza los datos. No subir `.env` al repositorio; `.env.example` contiene solo los nombres de las variables. Las claves generadas son hexadecimales, compatibles con las URLs de conexión.
 
@@ -110,6 +135,7 @@ El único puerto publicado es `localhost:8080`. Puede cambiarse con `GATEWAY_POR
 
 | URL local | Resultado |
 |---|---|
+| `http://localhost:8080` | Página de estado local de los tres microservicios y acceso a sus comprobaciones. |
 | `http://localhost:8080/api/v1/clases` | Listado del mock; exige `X-API-Key`. |
 | `http://localhost:8080/api/v1/clases/clase-demo-001` | Detalle ficticio; exige `X-API-Key`. |
 | `http://localhost:8080/health/socios` | Proceso de Socios y Membresías iniciado. |
@@ -147,9 +173,24 @@ docker compose down
 
 Volver a ejecutar `node scripts/iniciar.mjs` reinicia el entorno con la misma configuración y los mismos volúmenes.
 
+### Resolución de problemas
+
+- **“Se necesita Node.js 22 LTS”**: la terminal está utilizando otra versión. Activar Node.js 22, comprobar `node --version` y repetir el comando.
+- **“Docker no está disponible”**: iniciar Docker Desktop y esperar a que `docker info` responda. En Windows, confirmar que se estén utilizando contenedores Linux.
+- **Credenciales administradoras de PostgreSQL rechazadas o clave de MongoDB distinta**: el `.env` no corresponde a los volúmenes existentes. Recuperar el `.env` original; no regenerar claves ni borrar volúmenes.
+- **Puerto ocupado**: cambiar `GATEWAY_PORT` en `.env` por un puerto local libre y volver a iniciar.
+- **Inicialización incompleta**: el comando muestra automáticamente el estado y los últimos registros de PostgreSQL, MongoDB y RabbitMQ. También pueden consultarse sin exponer el contenido de `.env`:
+
+```sh
+docker compose ps --all
+docker compose logs --no-color postgres-init mongo-init mongodb rabbitmq
+```
+
+Los scripts del repositorio se almacenan con saltos de línea LF mediante `.gitattributes`, incluidos los clones realizados desde Windows.
+
 ## Estado
 
-Dominio aprobado; alcance, D1, D8 y versiones iniciales de D3 y D5 documentados. Estructura de los tres servicios y mock local preparados — 07/10/2026. Entrega 1 pendiente de revisión y publicación de los cambios en el repositorio del grupo.
+Dominio aprobado; alcance, D1, D8 y versiones iniciales de D3 y D5 documentados. Estructura de los tres servicios y mock local preparados — 07/10/2026. Entrega 1 pendiente de revisión final del grupo.
 
 Verificación local de esta estructura: compilación de los tres servicios, nueve pruebas del contrato, diez comprobaciones HTTP a través del gateway, autenticación y permisos de las dependencias, y arranque/reinicio conservando `.env` y volúmenes. Estas comprobaciones verifican la estructura y el mock, no los flujos de negocio pendientes.
 
