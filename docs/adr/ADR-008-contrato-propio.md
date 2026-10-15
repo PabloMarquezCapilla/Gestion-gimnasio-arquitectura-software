@@ -1,40 +1,40 @@
 # D8 - Contrato de la capacidad propia
 
-**Estado:** capacidad confirmada por el grupo; diseño inicial para la Entrega 1.  
-**Fecha:** 07/10/2026.
+**Estado:** capacidad implementada operativamente sobre almacenamiento real en la Entrega 2; contrato OpenAPI v1.0.0 sin cambios incompatibles.  
+**Fecha:** 07/10/2026 (diseño inicial y mock) | 12/10/2026 (actualización e implementación operativa sobre PostgreSQL).
 
 ## Contexto
 
-El enunciado exige publicar una capacidad utilizable por otro grupo, con un contrato formal, estándar y versionado en `docs/contracts/`. La Entrega 1 solicita seleccionar y documentar esa capacidad y registrar D8. El consumidor todavía no fue asignado por la cátedra.
+El enunciado exige publicar una capacidad utilizable por otro grupo, con un contrato formal, estándar y versionado en `docs/contracts/`. En la Entrega 1 se definió la capacidad de **consulta de clases y cupos disponibles** y se proveyó un mock local.
 
-## Decisión
+Para la Entrega 2, el enunciado solicita presentar *la funcionalidad a compartir funcionando* y actualizar D8 si el contrato hubiera cambiado.
 
-Ofrecer **consulta de clases y cupos disponibles**, propiedad de Clases y Reservas. Esta elección fue confirmada durante la definición del contrato. Se reutilizan los datos y las reglas del [alcance](../ALCANCE_PRELIMINAR.md).
+## Decisión y Estado en la Entrega 2
 
-La interfaz inicial será HTTP con respuestas JSON, descrita en [OpenAPI 3.1.1](../contracts/openapi-v1.yaml), versión de API `1.0.0`:
+### 1. Estado del contrato: sin cambios incompatibles (v1.0.0 conservada)
+El contrato publicado en [docs/contracts/openapi-v1.yaml](../contracts/openapi-v1.yaml) se mantiene en la versión **`1.0.0`** bajo la especificación OpenAPI 3.1.1. No se requirieron modificaciones breaking changes de rutas, parámetros ni esquemas, lo que preserva la estabilidad para el grupo consumidor que sea asignado:
+- `GET /api/v1/clases`: listado con filtros opcionales (`sedeId`, `desde`, `hasta`), paginación (`pagina`, `tamanio`) y orden determinista por inicio ascendente y claseId ascendente.
+- `GET /api/v1/clases/{claseId}`: detalle y disponibilidad de una clase concreta.
 
-- `GET /api/v1/clases`: listado con filtro por sede e intervalo de inicio, paginación y orden determinista.
-- `GET /api/v1/clases/{claseId}`: detalle y disponibilidad de una clase publicada.
+### 2. Transición de Mock a Implementación Operativa Real
+En la Entrega 2, la capacidad dejó de responder desde un conjunto de datos estáticos en memoria con cabecera `X-Mock: true` y pasó a ejecutarse contra el almacenamiento transaccional en **PostgreSQL 17**:
+- **Cálculo dinámico de cupos:** el campo `cuposDisponibles` ahora se calcula directamente en la consulta SQL a partir del aforo de la clase menos la cantidad de reservas confirmadas activas (`c.capacidad - count(r.reserva_id)`).
+- **Consistencia temporal:** cada consulta devuelve el instante de evaluación en `consultadoEn` (formato RFC 3339 con zona horaria).
+- **Control de caché:** se mantiene la emisión de la cabecera estándar `Cache-Control: no-store` para impedir que intermediarios HTTP almacenen respuestas obsoletas que induzcan a error a los socios o consumidores.
+- **Seguridad:** se mantiene la autenticación mediante la cabecera `X-API-Key` validada contra `CAPACIDAD_API_KEY` en el entorno.
 
-Los cupos se calculan en el almacenamiento propietario al producir la respuesta. Se enviará `Cache-Control: no-store` para evitar reutilizar respuestas anteriores. Su consulta no retiene cupos ni valida socios; una reserva sigue sujeta a las reglas del gimnasio. Las operaciones son idempotentes y no requieren una clave de idempotencia.
+### 3. Verificación de cumplimiento del contrato
+La suite de pruebas automatizadas (`services/clases-reservas/test/contract.test.mjs` y `test/flujo-principal.test.mjs`):
+- Comprueba exhaustivamente que todas las respuestas de la capacidad real cumplan los esquemas JSON Schema de OpenAPI compilados con AJV 2020.
+- Valida que una reserva confirmada decremente de forma inmediata y observable los `cuposDisponibles` en la siguiente consulta al endpoint `/api/v1/clases/{claseId}`.
+- Valida que la cancelación de una reserva restituya el cupo o promueva a la lista de espera, reflejándose fielmente en el contrato compartido.
 
-Para la integración se propone una clave de consumidor mediante `X-API-Key`, transmitida por HTTPS en el entorno operativo y configurada fuera del repositorio. Nuestro API Gateway dirigirá las solicitudes al servicio propietario.
+## Compatibilidad y versionado futuro
 
-## Alternativas y motivos
-
-- Se consideraron también la consulta de ocupación por sede y la validación de membresías. Se eligió clases y cupos porque aprovecha el flujo principal y permite consultar actividades sin requerir datos personales del socio.
-- Se utiliza una API de consulta para obtener una respuesta al solicitarla. Los eventos internos de membresías seguirán la decisión de comunicación D5.
-- OpenAPI permite describir operaciones, parámetros, datos, errores y autenticación en un formato procesable, y usar el mismo contrato al preparar el mock.
-
-## Compatibilidad y publicación
-
-La versión mayor se identificará en la ruta. Los cambios incompatibles requieren una nueva versión mayor, conservar el contrato anterior y coordinar la migración; las ampliaciones compatibles incrementan la versión menor y las correcciones documentales, el parche.
-
-El contrato y los ejemplos se publicarán en el repositorio. La estructura inicial incluye un mock local en `http://localhost:8080`, con las rutas del contrato, clave configurada en `.env` y datos ficticios en memoria. Sus instrucciones están en [docs/contracts/README.md](../contracts/README.md). La implementación real y su URL pública están pendientes; el entorno operativo deberá ser accesible al consumidor y mantenerse durante la evaluación.
+- **Compatibilidad hacia atrás:** Cualquier agregado futuro (ej. nuevos campos opcionales en el detalle) incrementará la versión menor (`1.1.0`) sin alterar los clientes existentes.
+- **Cambios incompatibles:** En caso de alterar tipos de datos, rutas o eliminar campos requeridos, se publicará una nueva versión mayor (`/api/v2/...`), manteniendo la versión `v1` activa durante un período de deprecación acordado.
 
 ## Consecuencias
 
-- Se exponen dos operaciones de lectura con datos de clases y disponibilidad; el contrato no ofrece operaciones de reserva al otro grupo.
-- La disponibilidad puede cambiar después de consultarla. Un fallo de consulta representa información desconocida, no una clase llena.
-- Cuando se asigne el consumidor, habrá que acordar y verificar la incorporación de la capacidad a un flujo importante de su negocio.
-- Los parámetros, esquemas, errores y ejemplos quedan definidos en [docs/contracts/README.md](../contracts/README.md) y en el contrato. El mock y la implementación deberán respetarlos.
+- La capacidad compartida está 100% operativa y lista para ser consumida por otro grupo tanto en local a través del API Gateway como en el entorno operativo.
+- No se trasladó deuda técnica ni cambios de interfaz al consumidor asignado.

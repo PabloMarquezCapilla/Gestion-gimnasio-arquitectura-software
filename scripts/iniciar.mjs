@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const envPath = resolve(root, '.env');
-const projectName = process.env.COMPOSE_PROJECT_NAME?.trim() || 'gimnasio-e1';
+const projectName = process.env.COMPOSE_PROJECT_NAME?.trim() || 'gimnasio-e2';
 const keys = [
   'POSTGRES_ADMIN_PASSWORD', 'SOCIOS_DB_PASSWORD', 'CLASES_DB_PASSWORD',
   'MONGO_ROOT_PASSWORD', 'ACCESOS_DB_PASSWORD', 'MONGO_KEYFILE',

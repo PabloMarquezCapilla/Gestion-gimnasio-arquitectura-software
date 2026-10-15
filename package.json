@@ -10,7 +10,7 @@
   ],
   "scripts": {
     "build": "npm run build --workspaces",
-    "test": "npm run build --workspace=@gimnasio/clases-reservas && node --test services/clases-reservas/test/contract.test.mjs",
+    "test": "npm run build && node --test services/clases-reservas/test/contract.test.mjs test/flujo-principal.test.mjs test/concurrencia.test.mjs",
     "iniciar": "node scripts/iniciar.mjs"
   },
   "devDependencies": {

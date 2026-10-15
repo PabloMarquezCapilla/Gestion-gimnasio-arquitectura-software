@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>Gestión de Gimnasio</title>
+    <title>Gestión de Gimnasio — Entrega 2</title>
     <style>
       :root {
         color-scheme: light;
@@ -14,75 +14,391 @@
       * { box-sizing: border-box; }
       body { margin: 0; min-height: 100vh; }
       header {
-        padding: 48px 24px 72px;
+        padding: 40px 24px 64px;
         color: white;
         background: linear-gradient(135deg, #112f5b, #126f78);
       }
-      header div, main { width: min(100% - 32px, 960px); margin: 0 auto; }
-      h1 { margin: 0 0 12px; font-size: clamp(2rem, 5vw, 3.4rem); letter-spacing: -0.04em; }
-      header p { max-width: 680px; margin: 0; color: #d9f3f1; font-size: 1.08rem; line-height: 1.6; }
-      main { margin-top: -38px; padding-bottom: 48px; }
-      .panel { padding: 28px; border: 1px solid #dce3ee; border-radius: 18px; background: white; box-shadow: 0 18px 45px rgba(24, 48, 84, .12); }
-      h2 { margin: 0 0 20px; font-size: 1.15rem; }
-      .services { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
-      .service { padding: 18px; border: 1px solid #e1e7f0; border-radius: 12px; background: #fbfcfe; }
-      .service strong { display: block; margin-bottom: 10px; }
-      .status { display: inline-flex; align-items: center; gap: 8px; color: #536174; font-size: .92rem; }
+      header div, main { width: min(100% - 32px, 1040px); margin: 0 auto; }
+      h1 { margin: 0 0 10px; font-size: clamp(1.8rem, 4vw, 2.8rem); letter-spacing: -0.03em; }
+      header p { max-width: 720px; margin: 0; color: #d9f3f1; font-size: 1.05rem; line-height: 1.5; }
+      main { margin-top: -32px; padding-bottom: 60px; display: flex; flex-direction: column; gap: 24px; }
+      .panel { padding: 24px 28px; border: 1px solid #dce3ee; border-radius: 16px; background: white; box-shadow: 0 10px 30px rgba(24, 48, 84, .08); }
+      h2 { margin: 0 0 16px; font-size: 1.2rem; color: #112f5b; display: flex; align-items: center; justify-content: space-between; }
+      .services { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; }
+      .service { padding: 16px; border: 1px solid #e1e7f0; border-radius: 12px; background: #fbfcfe; }
+      .service strong { display: block; margin-bottom: 8px; font-size: 0.95rem; }
+      .status { display: inline-flex; align-items: center; gap: 8px; color: #536174; font-size: .88rem; text-decoration: none; }
       .status::before { width: 9px; height: 9px; border-radius: 50%; background: #9aa6b5; content: ""; }
-      .status.ok { color: #167247; }
+      .status.ok { color: #167247; font-weight: 600; }
       .status.ok::before { background: #20a365; box-shadow: 0 0 0 4px #dff6e9; }
-      .status.error { color: #a33737; }
+      .status.error { color: #a33737; font-weight: 600; }
       .status.error::before { background: #d64c4c; box-shadow: 0 0 0 4px #fde7e7; }
-      .note { margin: 24px 0 0; padding-top: 22px; border-top: 1px solid #e1e7f0; color: #536174; line-height: 1.6; }
-      code { padding: 3px 7px; border-radius: 6px; color: #143e69; background: #eef4fa; }
-      a { color: #096b74; font-weight: 650; }
-      @media (max-width: 680px) { .services { grid-template-columns: 1fr; } .panel { padding: 20px; } }
+      
+      .key-bar { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin-bottom: 16px; }
+      input, select, button { font-family: inherit; font-size: 0.92rem; padding: 9px 14px; border-radius: 8px; border: 1px solid #ccd6e4; }
+      input { flex: 1; min-width: 260px; }
+      input:focus, select:focus { outline: none; border-color: #096b74; box-shadow: 0 0 0 3px rgba(9, 107, 116, 0.15); }
+      button { background: #096b74; color: white; border: none; font-weight: 600; cursor: pointer; transition: background 0.15s; }
+      button:hover { background: #0b565d; }
+      button.secondary { background: #eef4fa; color: #143e69; border: 1px solid #ccd6e4; }
+      button.secondary:hover { background: #e2ecf5; }
+      button.danger { background: #c53030; color: white; }
+      button.danger:hover { background: #9b2c2c; }
+
+      .grid-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 16px; margin-top: 14px; }
+      .card { border: 1px solid #e1e7f0; border-radius: 12px; padding: 18px; background: #ffffff; display: flex; flex-direction: column; gap: 10px; }
+      .card-header { display: flex; justify-content: space-between; align-items: flex-start; }
+      .card-title { font-size: 1.1rem; font-weight: 700; color: #143e69; margin: 0; }
+      .badge { font-size: 0.78rem; font-weight: 700; padding: 4px 8px; border-radius: 6px; }
+      .badge.available { background: #dff6e9; color: #167247; }
+      .badge.full { background: #fde7e7; color: #c53030; }
+      .badge.info { background: #e0f2fe; color: #0369a1; }
+      .card-meta { font-size: 0.86rem; color: #536174; line-height: 1.4; }
+      .card-actions { display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap; }
+      .card-actions button { font-size: 0.84rem; padding: 6px 12px; }
+
+      .console { background: #0d1527; color: #e2e8f0; border-radius: 12px; padding: 18px; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace; font-size: 0.85rem; overflow-x: auto; max-height: 380px; }
+      .console .method { font-weight: bold; }
+      .console .status-badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 0.76rem; font-weight: bold; }
+      .console .s2xx { background: #166534; color: #bbf7d0; }
+      .console .s4xx { background: #991b1b; color: #fecaca; }
+      .console .s5xx { background: #7f1d1d; color: #fca5a5; }
+      .console-headers { color: #94a3b8; font-size: 0.78rem; margin: 6px 0; border-top: 1px solid #1e293b; padding-top: 6px; }
+      pre { margin: 0; white-space: pre-wrap; word-break: break-all; }
+
+      .presets { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 12px; font-size: 0.86rem; color: #536174; }
+      .preset-chip { cursor: pointer; padding: 4px 10px; background: #eef4fa; border: 1px solid #ccd6e4; border-radius: 16px; font-size: 0.82rem; font-weight: 500; }
+      .preset-chip:hover { background: #dce7f2; }
     </style>
   </head>
   <body>
     <header>
       <div>
         <h1>Gestión de Gimnasio</h1>
-        <p>El entorno local está iniciado. Esta entrega expone la estructura de tres microservicios y el mock del contrato de clases.</p>
+        <p>Entorno local interactivo — Entrega 2: Dominio propio de punta a punta con PostgreSQL, validación de membresías y trazabilidad distribuida W3C.</p>
       </div>
     </header>
     <main>
+      <!-- Panel de Salud de Microservicios -->
       <section class="panel" aria-labelledby="services-title">
-        <h2 id="services-title">Estado de los microservicios</h2>
+        <h2 id="services-title">
+          <span>Estado de los Microservicios</span>
+          <button class="secondary" onclick="checkHealth()">Actualizar estado</button>
+        </h2>
         <div class="services">
           <article class="service">
-            <strong>Socios y membresías</strong>
-            <a class="status" data-health="/health/socios" href="/health/socios">Comprobando…</a>
+            <strong>Socios y Membresías</strong>
+            <a class="status" data-health="/health/socios" href="/health/socios" target="_blank">Comprobando…</a>
           </article>
           <article class="service">
-            <strong>Clases y reservas</strong>
-            <a class="status" data-health="/health/clases" href="/health/clases">Comprobando…</a>
+            <strong>Clases y Reservas</strong>
+            <a class="status" data-health="/health/clases" href="/health/clases" target="_blank">Comprobando…</a>
           </article>
           <article class="service">
-            <strong>Accesos y ocupación</strong>
-            <a class="status" data-health="/health/accesos" href="/health/accesos">Comprobando…</a>
+            <strong>Accesos y Ocupación</strong>
+            <a class="status" data-health="/health/accesos" href="/health/accesos" target="_blank">Comprobando…</a>
+          </article>
+          <article class="service">
+            <strong>API Gateway NGINX</strong>
+            <a class="status" data-health="/health" href="/health" target="_blank">Comprobando…</a>
           </article>
         </div>
-        <p class="note">
-          El mock está disponible en <code>/api/v1/clases</code> y requiere la cabecera
-          <code>X-API-Key</code> con el valor <code>CAPACIDAD_API_KEY</code> del archivo local <code>.env</code>.
-          No se muestra la clave en esta página.
-        </p>
+      </section>
+
+      <!-- Panel de Clases y Reservas (Capacidad Compartida) -->
+      <section class="panel">
+        <h2>
+          <span>Capacidad Compartida: Catálogo de Clases y Reservas</span>
+          <button onclick="cargarClases()">Cargar Clases (/api/v1/clases)</button>
+        </h2>
+        <div class="key-bar">
+          <input type="text" id="apiKeyInput" placeholder="Pegar CAPACIDAD_API_KEY de .env" />
+          <button class="secondary" onclick="guardarClave()">Guardar Clave</button>
+          <input type="text" id="socioActivoInput" value="socio-demo-01" placeholder="Socio ID para reservar" style="max-width: 200px;" />
+        </div>
+        <div id="clasesContainer" class="grid-cards">
+          <p style="color: #64748b; font-size: 0.95rem;">Hacé click en <strong>Cargar Clases</strong> para consultar el almacenamiento PostgreSQL en tiempo real.</p>
+        </div>
+      </section>
+
+      <!-- Panel de Verificación de Socios y Membresías -->
+      <section class="panel">
+        <h2>Validación Sincrónica de Socios y Membresías (D5)</h2>
+        <div class="presets">
+          <span>Socios de prueba:</span>
+          <span class="preset-chip" onclick="probarSocio('socio-demo-01')">Juan Pérez (Activo / Habilitado)</span>
+          <span class="preset-chip" onclick="probarSocio('socio-vencido-01')">Pedro Vencido (Membresía Vencida)</span>
+          <span class="preset-chip" onclick="probarSocio('socio-suspendido-01')">Ana Suspendida (Suspendida)</span>
+        </div>
+        <div class="key-bar">
+          <input type="text" id="socioConsultaInput" value="socio-demo-01" placeholder="socioId" />
+          <button onclick="consultarSocio()">Validar Habilitación (/api/v1/socios/:id/habilitacion)</button>
+        </div>
+        <div id="socioResultado" style="margin-top: 10px; display: none;" class="card"></div>
+      </section>
+
+      <!-- Consola de Trazabilidad e Inspección -->
+      <section class="panel">
+        <h2>Consola en Vivo: Solicitud, Respuesta y Traza Distribuida (W3C)</h2>
+        <div id="liveConsole" class="console">
+          <p style="color: #64748b; margin: 0;">Las peticiones HTTP que ejecutes arriba mostrarán aquí su estado, cabeceras W3C (traceparent, X-Correlation-ID) y respuesta JSON.</p>
+        </div>
       </section>
     </main>
+
     <script>
-      for (const element of document.querySelectorAll('[data-health]')) {
-        fetch(element.dataset.health, { cache: 'no-store' })
-          .then(response => {
-            if (!response.ok) throw new Error(`HTTP ${response.status}`);
-            element.textContent = 'Disponible';
-            element.classList.add('ok');
-          })
-          .catch(() => {
-            element.textContent = 'No disponible';
-            element.classList.add('error');
-          });
+      // Cargar clave de API desde URL o LocalStorage
+      const urlParams = new URLSearchParams(window.location.search);
+      const urlKey = urlParams.get('key');
+      if (urlKey) {
+        localStorage.setItem('gimnasio_api_key', urlKey);
+        document.getElementById('apiKeyInput').value = urlKey;
+      } else {
+        const stored = localStorage.getItem('gimnasio_api_key');
+        if (stored) document.getElementById('apiKeyInput').value = stored;
       }
+
+      function getApiKey() {
+        return document.getElementById('apiKeyInput').value.trim();
+      }
+
+      function guardarClave() {
+        const key = getApiKey();
+        localStorage.setItem('gimnasio_api_key', key);
+        alert('Clave guardada en el navegador.');
+      }
+
+      function logResponse(method, url, res, data) {
+        const consoleEl = document.getElementById('liveConsole');
+        const statusClass = res.status < 300 ? 's2xx' : (res.status < 500 ? 's4xx' : 's5xx');
+        const traceparent = res.headers.get('traceparent') || 'N/A';
+        const correlationId = res.headers.get('x-correlation-id') || 'N/A';
+        
+        consoleEl.innerHTML = `
+          <div>
+            <span class="method">${method}</span> ${url} &rarr; 
+            <span class="status-badge ${statusClass}">HTTP ${res.status} ${res.statusText}</span>
+          </div>
+          <div class="console-headers">
+            <div><strong>W3C traceparent:</strong> ${traceparent}</div>
+            <div><strong>X-Correlation-ID:</strong> ${correlationId}</div>
+          </div>
+          <pre>${JSON.stringify(data, null, 2)}</pre>
+        `;
+      }
+
+      function checkHealth() {
+        for (const element of document.querySelectorAll('[data-health]')) {
+          element.textContent = 'Comprobando…';
+          element.className = 'status';
+          fetch(element.dataset.health, { cache: 'no-store' })
+            .then(res => {
+              if (!res.ok) throw new Error(`HTTP ${res.status}`);
+              element.textContent = 'Operativo';
+              element.classList.add('ok');
+            })
+            .catch(() => {
+              element.textContent = 'No disponible';
+              element.classList.add('error');
+            });
+        }
+      }
+
+      async function cargarClases() {
+        const apiKey = getApiKey();
+        const container = document.getElementById('clasesContainer');
+        container.innerHTML = '<p style="color: #64748b;">Consultando clases...</p>';
+
+        try {
+          const res = await fetch('/api/v1/clases?sedeId=sede-demo-01', {
+            headers: apiKey ? { 'X-API-Key': apiKey } : {}
+          });
+          const data = await res.json();
+          logResponse('GET', '/api/v1/clases?sedeId=sede-demo-01', res, data);
+
+          if (!res.ok) {
+            container.innerHTML = `<p style="color: #c53030;">Error ${res.status}: ${data.mensaje || 'Error al obtener clases'}. ¿Configuraste la clave X-API-Key arriba?</p>`;
+            return;
+          }
+
+          if (!data.items || data.items.length === 0) {
+            container.innerHTML = '<p>No se encontraron clases publicadas.</p>';
+            return;
+          }
+
+          container.innerHTML = data.items.map(c => {
+            const isFull = c.cuposDisponibles <= 0;
+            const badgeClass = isFull ? 'badge full' : 'badge available';
+            const badgeText = isFull ? '¡Sin cupos!' : `${c.cuposDisponibles} cupos libres`;
+            const fecha = new Date(c.inicio).toLocaleString('es-AR', { dateStyle: 'short', timeStyle: 'short' });
+
+            return `
+              <article class="card" id="card-${c.claseId}">
+                <div class="card-header">
+                  <h3 class="card-title">${c.nombre}</h3>
+                  <span class="${badgeClass}">${badgeText}</span>
+                </div>
+                <div class="card-meta">
+                  <div><strong>ID:</strong> ${c.claseId}</div>
+                  <div><strong>Horario:</strong> ${fecha}</div>
+                  <div><strong>Capacidad total:</strong> ${c.capacidad} socios</div>
+                </div>
+                <div class="card-actions">
+                  ${!isFull 
+                    ? `<button onclick="reservar('${c.claseId}')">Reservar Cupo</button>`
+                    : `<button class="secondary" onclick="unirseEspera('${c.claseId}')">Unirse a Espera</button>`
+                  }
+                  <button class="secondary" onclick="verReservas('${c.claseId}')">Ver Reservas</button>
+                </div>
+                <div id="detalles-${c.claseId}" style="margin-top: 8px; font-size: 0.82rem;"></div>
+              </article>
+            `;
+          }).join('');
+        } catch (err) {
+          container.innerHTML = `<p style="color: #c53030;">Error de red: ${err.message}</p>`;
+        }
+      }
+
+      async function reservar(claseId) {
+        const socioId = document.getElementById('socioActivoInput').value.trim() || 'socio-demo-01';
+        try {
+          const res = await fetch('/api/v1/reservas', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ claseId, socioId, ingresarEsperaSiLlena: true })
+          });
+          const data = await res.json();
+          logResponse('POST', '/api/v1/reservas', res, data);
+          if (res.ok) {
+            alert(`¡Reserva confirmada con éxito!\nReserva ID: ${data.reservaId}\nSocio: ${data.socioId}`);
+            cargarClases();
+          } else {
+            alert(`No se pudo reservar (${res.status}): ${data.mensaje || data.codigo}`);
+          }
+        } catch (err) {
+          alert('Error de red: ' + err.message);
+        }
+      }
+
+      async function unirseEspera(claseId) {
+        const socioId = document.getElementById('socioActivoInput').value.trim() || 'socio-demo-01';
+        try {
+          const res = await fetch(`/api/v1/clases/${encodeURIComponent(claseId)}/espera`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ socioId })
+          });
+          const data = await res.json();
+          logResponse('POST', `/api/v1/clases/${claseId}/espera`, res, data);
+          if (res.ok) {
+            alert(`¡Ingreso exitoso a la lista de espera!\nOrden en la fila: ${data.orden}`);
+            cargarClases();
+          } else {
+            alert(`No se pudo ingresar a la lista de espera: ${data.mensaje || data.codigo}`);
+          }
+        } catch (err) {
+          alert('Error: ' + err.message);
+        }
+      }
+
+      async function verReservas(claseId) {
+        const apiKey = getApiKey();
+        const detallesEl = document.getElementById(`detalles-${claseId}`);
+        detallesEl.innerHTML = '<em>Cargando auditoría...</em>';
+        try {
+          const res = await fetch(`/api/v1/clases/${encodeURIComponent(claseId)}/reservas`, {
+            headers: apiKey ? { 'X-API-Key': apiKey } : {}
+          });
+          const data = await res.json();
+          logResponse('GET', `/api/v1/clases/${claseId}/reservas`, res, data);
+          if (!res.ok) {
+            detallesEl.innerHTML = `<span style="color:#c53030;">Requiere X-API-Key válida para ver auditoría.</span>`;
+            return;
+          }
+          const activas = data.reservas ? data.reservas.filter(r => r.estado === 'CONFIRMADA') : [];
+          const espera = data.espera ? data.espera.filter(e => e.estado === 'PENDIENTE') : [];
+          
+          detallesEl.innerHTML = `
+            <div style="background: #f8fafc; padding: 10px; border-radius: 8px; border: 1px solid #e2e8f0;">
+              <div><strong>Reservas confirmadas (${activas.length}):</strong></div>
+              ${activas.map(r => `
+                <div style="display:flex; justify-content:space-between; align-items:center; margin: 4px 0;">
+                  <span>${r.socioId}</span>
+                  <button class="danger" style="padding: 2px 8px; font-size: 0.75rem;" onclick="cancelar('${r.reservaId}', '${claseId}')">Cancelar</button>
+                </div>
+              `).join('') || '<div style="color:#64748b;">Sin reservas activas</div>'}
+              <div style="margin-top: 6px;"><strong>En lista de espera (${espera.length}):</strong></div>
+              ${espera.map(e => `<div>#${e.orden} - ${e.socioId}</div>`).join('') || '<div style="color:#64748b;">Vacía</div>'}
+            </div>
+          `;
+        } catch (err) {
+          detallesEl.innerHTML = 'Error: ' + err.message;
+        }
+      }
+
+      async function cancelar(reservaId, claseId) {
+        if (!confirm('¿Seguro que deseas cancelar esta reserva? Si hay lista de espera, se promoverá automáticamente al siguiente socio.')) return;
+        try {
+          const res = await fetch(`/api/v1/reservas/${encodeURIComponent(reservaId)}/cancelar`, {
+            method: 'POST'
+          });
+          const data = await res.json();
+          logResponse('POST', `/api/v1/reservas/${reservaId}/cancelar`, res, data);
+          if (res.ok) {
+            if (data.promocion) {
+              alert(`Reserva cancelada. ¡Promoción automática activada para el socio ${data.promocion.socioId}!`);
+            } else {
+              alert('Reserva cancelada y cupo liberado.');
+            }
+            cargarClases();
+          } else {
+            alert('Error al cancelar: ' + (data.mensaje || data.codigo));
+          }
+        } catch (err) {
+          alert('Error: ' + err.message);
+        }
+      }
+
+      function probarSocio(id) {
+        document.getElementById('socioConsultaInput').value = id;
+        consultarSocio();
+      }
+
+      async function consultarSocio() {
+        const socioId = document.getElementById('socioConsultaInput').value.trim();
+        const resEl = document.getElementById('socioResultado');
+        resEl.style.display = 'block';
+        resEl.innerHTML = '<em>Consultando servicio de Socios y Membresías...</em>';
+
+        try {
+          const res = await fetch(`/api/v1/socios/${encodeURIComponent(socioId)}/habilitacion`);
+          const data = await res.json();
+          logResponse('GET', `/api/v1/socios/${socioId}/habilitacion`, res, data);
+
+          const badgeClass = data.habilitado ? 'badge available' : 'badge full';
+          const badgeText = data.habilitado ? 'HABILITADO PARA RESERVAR' : `NO HABILITADO (${data.motivo || 'DENEGADO'})`;
+
+          resEl.innerHTML = `
+            <div class="card-header">
+              <strong style="font-size: 1.05rem;">Socio: ${data.socioId}</strong>
+              <span class="${badgeClass}">${badgeText}</span>
+            </div>
+            ${data.membresia ? `
+              <div class="card-meta" style="margin-top: 6px;">
+                <div><strong>Membresía ID:</strong> ${data.membresia.membresiaId}</div>
+                <div><strong>Plan:</strong> ${data.membresia.tipoPlan}</div>
+                <div><strong>Estado:</strong> ${data.membresia.estado}</div>
+                <div><strong>Vigencia:</strong> ${new Date(data.membresia.fechaInicio).toLocaleDateString()} a ${new Date(data.membresia.fechaFin).toLocaleDateString()}</div>
+              </div>
+            ` : '<div style="color:#64748b; margin-top:4px;">Sin membresía asociada.</div>'}
+          `;
+        } catch (err) {
+          resEl.innerHTML = `<span style="color:#c53030;">Error al consultar: ${err.message}</span>`;
+        }
+      }
+
+      // Inicializar comprobación de salud al cargar
+      checkHealth();
     </script>
   </body>
 </html>

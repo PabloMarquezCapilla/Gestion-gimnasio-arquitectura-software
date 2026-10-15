@@ -1,4 +1,4 @@
-name: gimnasio-e1
+name: gimnasio-e2
 
 services:
   postgres:
