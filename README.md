@@ -74,10 +74,11 @@ npm ci --ignore-scripts
 npm test
 ```
 
-Esto ejecuta 13 pruebas automatizadas:
+Esto ejecuta 16 pruebas automatizadas:
 - Las 9 pruebas de conformidad estricta contra el contrato OpenAPI 3.1.1 en `services/clases-reservas/test/contract.test.mjs`.
 - Las 3 pruebas de integración de punta a punta en `test/flujo-principal.test.mjs` (verificación de membresía, reserva, duplicados, lista de espera y propagación de trazas W3C).
 - La prueba de concurrencia extrema en `test/concurrencia.test.mjs` (50 solicitudes simultáneas compitiendo por el último cupo libre, verificando aforo estricto y ausencia de sobreventa).
+- Las 3 pruebas de autenticación y gestión de credenciales en `test/auth.test.mjs` (registro con hash scrypt, login exitoso y rechazo de credenciales inválidas).
 
 ### 2. Demostración de Traza Distribuida y Logs Estructurados
 
@@ -97,9 +98,11 @@ El Gateway queda expuesto en `http://localhost:8080`:
 
 | Endpoint | Método | Descripción |
 |---|---|---|
-| `http://localhost:8080/` | `GET` | Dashboard web interactivo para probar todas las operaciones del gimnasio. |
+| `http://localhost:8080/` | `GET` | Portal web React (SPA) para socios y panel de administración. |
+| `http://localhost:8080/consola.html` | `GET` | Consola técnica interactiva de pruebas de arquitectura y trazas W3C. |
 | `http://localhost:8080/api/v1/clases` | `GET` | Capacidad compartida: clases y cupos reales (requiere `X-API-Key`). |
 | `http://localhost:8080/api/v1/clases/{id}` | `GET` | Detalle y disponibilidad de una clase real (requiere `X-API-Key`). |
+| `http://localhost:8080/api/v1/reservas/clases` | `GET` | Catálogo interno de clases y cupos para el portal de reservas. |
 | `http://localhost:8080/api/v1/reservas` | `POST` | Creación de reservas con validación sincrónica de membresía. |
 | `http://localhost:8080/api/v1/socios/{id}/habilitacion` | `GET` | Validación de vigencia y habilitación de membresía. |
 | `http://localhost:8080/metrics/clases` | `GET` | Métricas Prometheus de Clases y Reservas. |

@@ -3,15 +3,15 @@ info:
   title: Consulta de clases y cupos del gimnasio
   version: 1.0.0
   description: >-
-    Capacidad de consulta ofrecida por Clases y Reservas. Contrato inicial para
-    la Entrega 1; hay un mock local con datos ficticios. La implementación real
-    y su URL pública están pendientes.
-    Los cupos se calculan con datos del almacenamiento propietario al producir
-    la respuesta. Consultar no retiene un lugar ni valida la membresía de un
-    socio. El orden de la lista de espera puede condicionar la asignación.
+    Capacidad de consulta ofrecida por Clases y Reservas. Contrato diseñado en
+    la Entrega 1 y operativo sobre PostgreSQL 17 en la Entrega 2 (conservando
+    soporte de mock en memoria para pruebas aisladas de contrato).
+    Los cupos se calculan dinámicamente con datos del almacenamiento propietario
+    al producir la respuesta. Consultar no retiene un lugar ni valida la
+    membresía de un socio. El orden de la lista de espera puede condicionar la asignación.
 servers:
   - url: http://localhost:8080
-    description: Mock local con datos ficticios; iniciar según README.md.
+    description: Entorno local a través del API Gateway; iniciar según README.md.
   - url: /
     description: Base relativa. La URL pública se documentará al desplegar.
 security:

@@ -41,27 +41,78 @@ Cada servicio posee almacenamiento propio e independiente. Ningún servicio acce
 - **Logs estructurados:** Todos los servicios emiten logs en formato JSON estándar (Pino) con campos: `time`, `level`, `service`, `trace_id`, `span_id`, `parent_span_id`, `msg`.
 - **Correlación distribuida:** Cada petición que atraviesa el flujo principal comparte el mismo `trace_id` de 32 caracteres hexadecimales, evidenciado en el script `node scripts/demostrar-traza-distribuida.mjs`.
 
-## Diagrama de contenedores
+## Diagrama de contexto (C4 - Nivel 1)
+
+```mermaid
+flowchart LR
+    socio["👤 Socio del Gimnasio<br/>Consulta membresía, busca clases,<br/>reserva cupos o ingresa a espera"]
+    admin["👤 Administrador<br/>Gestiona socios, membresías,<br/>pagos, comprobantes y clases"]
+    recepcion["👤 Personal de Recepción<br/>Valida ingresos, registra<br/>egresos y consulta ocupación"]
+    consumidor["🏢 Sistema de Otro Grupo (Consumidor)<br/>Consulta clases publicadas<br/>y cupos disponibles (OpenAPI v1)"]
+    proveedor["🌐 Sistema de Otro Grupo (Proveedor)<br/>Capacidad externa consumida<br/>mediante Anti-Corruption Layer"]
+
+    sistema["🏋️ Sistema Integral de Gestión de Gimnasio<br/>(Plataforma de Microservicios)"]
+
+    socio -->|HTTPS / Web UI| sistema
+    admin -->|HTTPS / Web UI| sistema
+    recepcion -->|HTTPS / Web UI| sistema
+    consumidor -->|HTTPS GET /api/v1/clases + X-API-Key| sistema
+    sistema -.->|HTTPS / Cliente ACL con Resiliencia| proveedor
+```
+
+## Diagrama de contenedores (C4 - Nivel 2)
 
 ```mermaid
 flowchart TB
-    actores["Socio · Administrador · Recepción"] --> gateway
+    actores["Socio · Administrador · Recepción<br/>(Navegador Web / SPA React)"] --> gateway
     consumidor["Microservicio de otro grupo consumidor"] -->|X-API-Key: consulta clases y cupos| gateway
     
     subgraph backend["Backend Distribuido del Gimnasio"]
-        gateway["API Gateway (NGINX 1.28)<br/>Balanceo least_conn & Trazas W3C"]
+        gateway["API Gateway & Frontend (NGINX 1.28)<br/>Balanceo least_conn · Trazas W3C · SPA Estática"]
         
-        gateway -->|POST /api/v1/reservas<br/>GET /api/v1/clases| clases["Clases y Reservas<br/>Fastify + TypeScript"]
-        gateway -->|GET /api/v1/socios/:id| socios["Socios y Membresías<br/>Fastify + TypeScript"]
-        gateway -->|Sedes y ocupación| accesos["Accesos y Ocupación<br/>Fastify + TypeScript"]
+        gateway -->|POST /api/v1/reservas<br/>GET /api/v1/clases| clases["Clases y Reservas (2 réplicas)<br/>Fastify + TypeScript · Hexagonal"]
+        gateway -->|GET /api/v1/socios/:id<br/>POST /api/v1/auth/*| socios["Socios y Membresías<br/>Fastify + TypeScript · Capas"]
+        gateway -->|Sedes, accesos y ocupación| accesos["Accesos y Ocupación<br/>Fastify + TypeScript · Eventos"]
         
         clases -->|HTTP Síncrono: GET /habilitacion<br/>Timeout 3s + Retries + Traceparent| socios
-        clases --> dbClases[("Base de Datos Clases<br/>PostgreSQL 17<br/>clases, reservas, espera")]
-        socios --> dbSocios[("Base de Datos Socios<br/>PostgreSQL 17<br/>socios, membresías")]
+        clases --> dbClases[("Base de Datos Clases<br/>PostgreSQL 17<br/>clases, reservas, lista_espera")]
+        socios --> dbSocios[("Base de Datos Socios<br/>PostgreSQL 17<br/>socios, membresias")]
         accesos --> dbAccesos[("Base de Datos Accesos<br/>MongoDB 8.0 replica set")]
         
         socios -.->|Evento MembresiaActualizada (Outbox)| rabbitmq["RabbitMQ 4.1"]
         rabbitmq -.->|Consumo asíncrono| clases
+    end
+```
+
+## Diagrama de secuencia del flujo principal (Entrega 2)
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Socio
+    participant GW as API Gateway (NGINX)
+    participant CR as Clases y Reservas
+    participant SM as Socios y Membresías
+    participant DB_SM as PostgreSQL (socios)
+    participant DB_CR as PostgreSQL (clases)
+
+    Socio->>GW: POST /api/v1/reservas { claseId, socioId }
+    GW->>CR: Proxy + traceparent (00-traceId-spanId-01)
+    CR->>DB_CR: SELECT clase (verificar existencia y que no haya iniciado)
+    CR->>SM: GET /api/v1/socios/:socioId/habilitacion?fecha=inicio (Child Span)
+    SM->>DB_SM: SELECT socio + membresía activa
+    DB_SM-->>SM: Estado y vigencia
+    SM-->>CR: 200 OK { habilitado: true, membresia }
+    CR->>DB_CR: BEGIN; SELECT ... FROM clases FOR UPDATE
+    CR->>DB_CR: Verificar duplicado (uq_reserva_activa) y contar cupos ocupados
+    alt Hay cupo disponible
+        CR->>DB_CR: INSERT INTO reservas (CONFIRMADA); COMMIT
+        CR-->>GW: 201 Created (Reserva confirmada + traceparent)
+        GW-->>Socio: 201 Created
+    else Clase sin cupos
+        CR->>DB_CR: ROLLBACK
+        CR-->>GW: 409 Conflict { codigo: CLASE_SIN_CUPOS, puedeIngresarEspera: true }
+        GW-->>Socio: 409 Conflict (Ofrece lista de espera)
     end
 ```
 

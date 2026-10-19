@@ -1,10 +1,10 @@
 # Capacidad compartida: consulta de clases y cupos
 
 **Servicio propietario:** Clases y Reservas.  
-**Contrato vigente de diseño:** [openapi-v1.yaml](openapi-v1.yaml), versión `1.0.0`, formato [OpenAPI 3.1.1](https://spec.openapis.org/oas/v3.1.1.html).  
-**Estado:** capacidad seleccionada y mock local preparado para la Entrega 1; implementación real y URL pública pendientes. El grupo consumidor todavía no fue asignado por la cátedra.
+**Contrato vigente:** [openapi-v1.yaml](openapi-v1.yaml), versión `1.0.0`, formato [OpenAPI 3.1.1](https://spec.openapis.org/oas/v3.1.1.html).  
+**Estado:** capacidad operativa en la **Entrega 2** sobre almacenamiento relacional **PostgreSQL 17** (y modo mock en memoria preservado para pruebas de contrato aisladas de la Entrega 1). El grupo consumidor todavía no fue asignado por la cátedra.
 
-El contrato y este documento cumplen la documentación de integración solicitada en las secciones 3 y 4.1 del enunciado. Su justificación está en [D8](../adr/ADR-008-contrato-propio.md).
+El contrato y este documento cumplen la documentación de integración solicitada en las secciones 3 y 4.1 del enunciado. Su justificación y validación en la Entrega 2 están en [D8](../adr/ADR-008-contrato-propio.md).
 
 ## Qué ofrece y cómo integrarla
 
@@ -12,15 +12,16 @@ Permite consultar clases publicadas y los cupos que tienen libres. El microservi
 
 El uso dentro de un flujo importante del consumidor deberá acordarse cuando se asigne el grupo. Esta documentación no presupone su dominio ni afirma que la integración ya esté validada.
 
-## Mock de la Entrega 1
+## Implementación Operativa (Entrega 2) y Mock de Diseño (Entrega 1)
 
-Se inicia siguiendo el [README principal](../../README.md#ejecutar-localmente), con `node scripts/iniciar.mjs`. La base local es `http://localhost:8080` y las rutas son las del contrato. `CAPACIDAD_API_KEY` del `.env` generado se envía en `X-API-Key`; no se publica ninguna clave real.
+Se inicia siguiendo el [README principal](../../README.md), con `node scripts/iniciar.mjs`. La base local es `http://localhost:8080` y las rutas son las del contrato. `CAPACIDAD_API_KEY` del `.env` generado se envía en `X-API-Key`; no se publica ninguna clave real.
 
-El mock se ejecuta dentro de Clases y Reservas con cuatro clases ficticias en memoria: una con cupos, una llena, una de otra sede y una ya iniciada. `consultadoEn` se genera en cada consulta. Las respuestas exitosas llevan `Cache-Control: no-store` y el encabezado adicional `X-Mock: true` para identificar esos datos. No consulta la base, no valida membresías ni modifica reservas.
+- **Modo Operativo Real (Entrega 2 - por defecto con PostgreSQL):** Consulta la tabla `clases` y calcula dinámicamente `cuposDisponibles` restando las reservas con estado `CONFIRMADA` en `reservas`. Cada nueva reserva o cancelación actualiza inmediatamente los cupos devueltos por este contrato.
+- **Modo Mock (Entrega 1 - pruebas de contrato en memoria):** Cuando se instancia con el adaptador en memoria (`isMock: true`), se ejecuta con las cuatro clases semilla en memoria y agrega el encabezado `X-Mock: true`.
 
-Las pruebas de `npm test` verifican esquemas y encabezados del contrato, autenticación, filtros, intervalos, paginación, orden y errores. El hito se llama «Diseño y contrato con mock» en la sección 6.2, página 7; la estructura inicial se solicita en página 8.
+Las respuestas exitosas llevan siempre `Cache-Control: no-store`. Las pruebas de `npm test` verifican esquemas y encabezados del contrato, autenticación, filtros, intervalos, paginación, orden y errores, así como la integración de punta a punta con actualización de cupos.
 
-Esta URL sirve en la máquina donde se levanta el entorno. La URL pública de la implementación real se documentará al desplegarla; no se presenta localhost como un despliegue accesible al otro grupo.
+Esta URL sirve en la máquina donde se levanta el entorno. La URL pública del despliegue se registrará aquí al publicar el entorno compartido.
 
 ## Operaciones
 
