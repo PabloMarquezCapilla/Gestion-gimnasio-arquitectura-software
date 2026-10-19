@@ -23,6 +23,7 @@ async function start() {
         connectionString: databaseUrl,
         connectionTimeoutMillis: 5000,
         statement_timeout: 4000,
+        lock_timeout: 2500,
         max: 20,
       });
       const pgRepo = new PostgresClaseRepository(pool);

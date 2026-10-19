@@ -1,8 +1,10 @@
 import { Pool } from 'pg';
 import { Socio, Membresia, ResultadoHabilitacion } from './types';
+import { hashPassword } from './security';
 
 export interface ISociosRepository {
   obtenerSocio(socioId: string): Promise<Socio | null>;
+  buscarPorEmailODni(identificador: string): Promise<Socio | null>;
   obtenerMembresia(socioId: string): Promise<Membresia | null>;
   crearSocio(socio: Socio): Promise<Socio>;
   crearMembresia(membresia: Membresia): Promise<Membresia>;
@@ -14,10 +16,24 @@ export interface ISociosRepository {
 
 export const SEED_SOCIOS: Socio[] = [
   {
+    socioId: 'admin-01',
+    dni: '99999999',
+    nombre: 'Valeria Méndez',
+    email: 'admin@pulse.com',
+    passwordHash: hashPassword('admin123'),
+    rol: 'ADMIN',
+    telefono: '+54 9 11 9999-0000',
+    estado: 'ACTIVO',
+    createdAt: '2026-01-01T00:00:00.000Z',
+  },
+  {
     socioId: 'socio-demo-01',
     dni: '11111111',
     nombre: 'Juan Pérez',
     email: 'juan.perez@example.com',
+    passwordHash: hashPassword('socio123'),
+    rol: 'SOCIO',
+    telefono: '+54 9 11 3914-2201',
     estado: 'ACTIVO',
     createdAt: '2026-01-01T00:00:00.000Z',
   },
@@ -26,6 +42,9 @@ export const SEED_SOCIOS: Socio[] = [
     dni: '22222222',
     nombre: 'María Gómez',
     email: 'maria.gomez@example.com',
+    passwordHash: hashPassword('socio123'),
+    rol: 'SOCIO',
+    telefono: '+54 9 11 4829-1102',
     estado: 'ACTIVO',
     createdAt: '2026-01-01T00:00:00.000Z',
   },
@@ -34,6 +53,9 @@ export const SEED_SOCIOS: Socio[] = [
     dni: '33333333',
     nombre: 'Lucas Silva',
     email: 'lucas.silva@example.com',
+    passwordHash: hashPassword('socio123'),
+    rol: 'SOCIO',
+    telefono: '+54 9 11 5509-8833',
     estado: 'ACTIVO',
     createdAt: '2026-01-01T00:00:00.000Z',
   },
@@ -42,6 +64,9 @@ export const SEED_SOCIOS: Socio[] = [
     dni: '44444444',
     nombre: 'Pedro Vencido',
     email: 'pedro.vencido@example.com',
+    passwordHash: hashPassword('socio123'),
+    rol: 'SOCIO',
+    telefono: '+54 9 11 6021-9988',
     estado: 'ACTIVO',
     createdAt: '2025-01-01T00:00:00.000Z',
   },
@@ -50,6 +75,9 @@ export const SEED_SOCIOS: Socio[] = [
     dni: '55555555',
     nombre: 'Ana Suspendida',
     email: 'ana.suspendida@example.com',
+    passwordHash: hashPassword('socio123'),
+    rol: 'SOCIO',
+    telefono: '+54 9 11 4110-3329',
     estado: 'ACTIVO',
     createdAt: '2026-01-01T00:00:00.000Z',
   },
@@ -130,7 +158,18 @@ export class MemorySociosRepository implements ISociosRepository {
   }
 
   async obtenerSocio(socioId: string): Promise<Socio | null> {
-    return this.socios.get(socioId) ?? null;
+    const s = this.socios.get(socioId);
+    return s ? { ...s } : null;
+  }
+
+  async buscarPorEmailODni(identificador: string): Promise<Socio | null> {
+    const clean = identificador.trim().toLowerCase();
+    for (const socio of this.socios.values()) {
+      if (socio.email.toLowerCase() === clean || socio.dni.trim() === identificador.trim()) {
+        return { ...socio };
+      }
+    }
+    return null;
   }
 
   async obtenerMembresia(socioId: string): Promise<Membresia | null> {
@@ -235,15 +274,23 @@ export class PostgresSociosRepository implements ISociosRepository {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
+      await client.query('SELECT pg_advisory_xact_lock(1002)');
       await client.query(`
         CREATE TABLE IF NOT EXISTS socios (
           socio_id VARCHAR(50) PRIMARY KEY,
           dni VARCHAR(20) NOT NULL UNIQUE,
           nombre VARCHAR(100) NOT NULL,
           email VARCHAR(100) NOT NULL,
+          password_hash VARCHAR(255),
+          rol VARCHAR(20) NOT NULL DEFAULT 'SOCIO',
+          telefono VARCHAR(50),
           estado VARCHAR(20) NOT NULL DEFAULT 'ACTIVO',
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
+
+        ALTER TABLE socios ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255);
+        ALTER TABLE socios ADD COLUMN IF NOT EXISTS rol VARCHAR(20) DEFAULT 'SOCIO';
+        ALTER TABLE socios ADD COLUMN IF NOT EXISTS telefono VARCHAR(50);
 
         CREATE TABLE IF NOT EXISTS membresias (
           membresia_id VARCHAR(50) PRIMARY KEY,
@@ -259,25 +306,25 @@ export class PostgresSociosRepository implements ISociosRepository {
         CREATE INDEX IF NOT EXISTS idx_membresias_socio ON membresias(socio_id);
       `);
 
-      // Seed if empty
-      const countRes = await client.query('SELECT count(*)::int AS count FROM socios');
-      if (countRes.rows[0].count === 0) {
-        for (const s of SEED_SOCIOS) {
-          await client.query(
-            `INSERT INTO socios (socio_id, dni, nombre, email, estado, created_at)
-             VALUES ($1, $2, $3, $4, $5, $6)
-             ON CONFLICT (socio_id) DO NOTHING`,
-            [s.socioId, s.dni, s.nombre, s.email, s.estado, s.createdAt]
-          );
-        }
-        for (const m of SEED_MEMBRESIAS) {
-          await client.query(
-            `INSERT INTO membresias (membresia_id, socio_id, tipo_plan, fecha_inicio, fecha_fin, estado, created_at, updated_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-             ON CONFLICT (membresia_id) DO NOTHING`,
-            [m.membresiaId, m.socioId, m.tipoPlan, m.fechaInicio, m.fechaFin, m.estado, m.createdAt, m.updatedAt]
-          );
-        }
+      // Seed if empty or upsert seeded users
+      for (const s of SEED_SOCIOS) {
+        await client.query(
+          `INSERT INTO socios (socio_id, dni, nombre, email, password_hash, rol, telefono, estado, created_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+           ON CONFLICT (socio_id) DO UPDATE SET
+             password_hash = COALESCE(socios.password_hash, EXCLUDED.password_hash),
+             rol = COALESCE(socios.rol, EXCLUDED.rol),
+             telefono = COALESCE(socios.telefono, EXCLUDED.telefono)`,
+          [s.socioId, s.dni, s.nombre, s.email, s.passwordHash ?? null, s.rol ?? 'SOCIO', s.telefono ?? null, s.estado, s.createdAt]
+        );
+      }
+      for (const m of SEED_MEMBRESIAS) {
+        await client.query(
+          `INSERT INTO membresias (membresia_id, socio_id, tipo_plan, fecha_inicio, fecha_fin, estado, created_at, updated_at)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+           ON CONFLICT (membresia_id) DO NOTHING`,
+          [m.membresiaId, m.socioId, m.tipoPlan, m.fechaInicio, m.fechaFin, m.estado, m.createdAt, m.updatedAt]
+        );
       }
       await client.query('COMMIT');
     } catch (err) {
@@ -290,7 +337,7 @@ export class PostgresSociosRepository implements ISociosRepository {
 
   async obtenerSocio(socioId: string): Promise<Socio | null> {
     const res = await this.pool.query(
-      'SELECT socio_id, dni, nombre, email, estado, created_at FROM socios WHERE socio_id = $1',
+      'SELECT socio_id, dni, nombre, email, password_hash, rol, telefono, estado, created_at FROM socios WHERE socio_id = $1',
       [socioId]
     );
     if (res.rows.length === 0) return null;
@@ -300,6 +347,33 @@ export class PostgresSociosRepository implements ISociosRepository {
       dni: row.dni,
       nombre: row.nombre,
       email: row.email,
+      passwordHash: row.password_hash ?? undefined,
+      rol: (row.rol as 'ADMIN' | 'SOCIO') ?? 'SOCIO',
+      telefono: row.telefono ?? undefined,
+      estado: row.estado,
+      createdAt: row.created_at.toISOString(),
+    };
+  }
+
+  async buscarPorEmailODni(identificador: string): Promise<Socio | null> {
+    const clean = identificador.trim();
+    const res = await this.pool.query(
+      `SELECT socio_id, dni, nombre, email, password_hash, rol, telefono, estado, created_at 
+       FROM socios 
+       WHERE LOWER(email) = LOWER($1) OR dni = $1 
+       LIMIT 1`,
+      [clean]
+    );
+    if (res.rows.length === 0) return null;
+    const row = res.rows[0];
+    return {
+      socioId: row.socio_id,
+      dni: row.dni,
+      nombre: row.nombre,
+      email: row.email,
+      passwordHash: row.password_hash ?? undefined,
+      rol: (row.rol as 'ADMIN' | 'SOCIO') ?? 'SOCIO',
+      telefono: row.telefono ?? undefined,
       estado: row.estado,
       createdAt: row.created_at.toISOString(),
     };
@@ -327,9 +401,19 @@ export class PostgresSociosRepository implements ISociosRepository {
 
   async crearSocio(socio: Socio): Promise<Socio> {
     await this.pool.query(
-      `INSERT INTO socios (socio_id, dni, nombre, email, estado, created_at)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [socio.socioId, socio.dni, socio.nombre, socio.email, socio.estado, socio.createdAt]
+      `INSERT INTO socios (socio_id, dni, nombre, email, password_hash, rol, telefono, estado, created_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+      [
+        socio.socioId,
+        socio.dni,
+        socio.nombre,
+        socio.email,
+        socio.passwordHash ?? null,
+        socio.rol ?? 'SOCIO',
+        socio.telefono ?? null,
+        socio.estado,
+        socio.createdAt,
+      ]
     );
     return socio;
   }

@@ -1,4 +1,5 @@
 import { readFileSync } from 'node:fs';
+import { hostname } from 'node:os';
 import { resolve } from 'node:path';
 import Fastify, { FastifyReply, FastifyRequest } from 'fastify';
 import Ajv2020 from 'ajv/dist/2020';
@@ -127,19 +128,33 @@ export function buildApp(options: AppOptions) {
     }
   }
 
+  const instanceId = hostname();
+  let httpRequestsTotal = 0;
+  let httpErrorsTotal = 0;
+
+  app.addHook('onResponse', async (request, reply) => {
+    httpRequestsTotal += 1;
+    if (reply.statusCode >= 500) {
+      httpErrorsTotal += 1;
+    }
+  });
+
   function successHeaders(reply: FastifyReply) {
     reply.header('Cache-Control', 'no-store');
+    reply.header('X-Instance-ID', instanceId);
     if (repository.isMock) {
       reply.header('X-Mock', 'true');
     }
   }
 
   app.get('/health', async (request, reply) => {
+    reply.header('X-Instance-ID', instanceId);
     const salud = await repository.verificarSalud();
     if (!salud.ok) {
       reply.code(503);
       return {
         servicio: 'clases-reservas',
+        instancia: instanceId,
         estado: 'error',
         persistencia: repository.isMock ? 'memoria' : 'postgresql',
         error: salud.detalle,
@@ -155,6 +170,7 @@ export function buildApp(options: AppOptions) {
     }
     return {
       servicio: 'clases-reservas',
+      instancia: instanceId,
       estado: 'operativo',
       modo: 'produccion',
       persistencia: 'postgresql',
@@ -164,16 +180,20 @@ export function buildApp(options: AppOptions) {
 
   app.get('/metrics', async (request, reply) => {
     reply.header('content-type', 'text/plain; version=0.0.4');
+    reply.header('X-Instance-ID', instanceId);
     return [
       '# HELP http_requests_total Total de solicitudes HTTP procesadas',
       '# TYPE http_requests_total counter',
-      'http_requests_total{service="clases-reservas"} 1',
+      `http_requests_total{service="clases-reservas",instance="${instanceId}"} ${httpRequestsTotal}`,
+      '# HELP http_errors_total Total de respuestas HTTP 5xx emitidas',
+      '# TYPE http_errors_total counter',
+      `http_errors_total{service="clases-reservas",instance="${instanceId}"} ${httpErrorsTotal}`,
       '# HELP pg_pool_active_connections Conexiones en el pool de base de datos',
       '# TYPE pg_pool_active_connections gauge',
-      `pg_pool_active_connections{service="clases-reservas"} ${repository.isMock ? 0 : 1}`,
+      `pg_pool_active_connections{service="clases-reservas",instance="${instanceId}"} ${repository.isMock ? 0 : 1}`,
       '# HELP process_uptime_seconds Tiempo de actividad en segundos',
       '# TYPE process_uptime_seconds gauge',
-      `process_uptime_seconds{service="clases-reservas"} ${Math.floor(process.uptime())}`,
+      `process_uptime_seconds{service="clases-reservas",instance="${instanceId}"} ${Math.floor(process.uptime())}`,
     ].join('\n') + '\n';
   });
 
@@ -363,16 +383,12 @@ export function buildApp(options: AppOptions) {
             { candidatoSocioId, inicioClase },
             'Validando candidato de lista de espera para promocion automatica'
           );
-          try {
-            const ev = await sociosClient.verificarHabilitacion(
-              candidatoSocioId,
-              inicioClase,
-              request.traceContext
-            );
-            return ev.habilitado;
-          } catch {
-            return false;
-          }
+          const ev = await sociosClient.verificarHabilitacion(
+            candidatoSocioId,
+            inicioClase,
+            request.traceContext
+          );
+          return ev.habilitado;
         }
       );
 
@@ -446,6 +462,30 @@ export function buildApp(options: AppOptions) {
 
     return reply.code(201).send(res.espera);
   });
+
+  // Consulta interna para el portal web del socio (clases publicadas y sus reservas/esperas activas)
+  app.get<{ Querystring: { socioId?: string; sedeId?: string } }>(
+    '/api/v1/reservas/clases',
+    async (request, reply) => {
+      const consultadoEn = clock().toISOString();
+      const { socioId, sedeId } = request.query ?? {};
+      const catalogo = await repository.listarClases(
+        { sedeId, pagina: 1, tamanio: 100 },
+        consultadoEn
+      );
+      const misDatos = socioId
+        ? await repository.obtenerReservasPorSocio(socioId)
+        : { reservas: [], espera: [] };
+      reply.header('Cache-Control', 'no-store');
+      reply.header('X-Instance-ID', instanceId);
+      return {
+        items: catalogo.items,
+        total: catalogo.total,
+        reservasSocio: misDatos.reservas,
+        esperaSocio: misDatos.espera,
+      };
+    }
+  );
 
   // Endpoint de diagnostico/auditoria de reservas por clase protegido con clave de consumidor
   app.get<{ Params: { claseId: string } }>(

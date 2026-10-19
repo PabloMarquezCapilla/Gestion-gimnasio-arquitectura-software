@@ -25,6 +25,7 @@ export interface IClaseRepository {
   ingresarListaEspera(claseId: string, socioId: string): Promise<{ exito: boolean; codigo?: string; espera?: EntradaEspera }>;
   obtenerReservasPorClase(claseId: string): Promise<Reserva[]>;
   obtenerEsperaPorClase(claseId: string): Promise<EntradaEspera[]>;
+  obtenerReservasPorSocio(socioId: string): Promise<{ reservas: Reserva[]; espera: EntradaEspera[] }>;
 }
 
 export class MemoryClaseRepository implements IClaseRepository {
@@ -297,6 +298,16 @@ export class MemoryClaseRepository implements IClaseRepository {
       .filter((e) => e.claseId === claseId)
       .sort((a, b) => a.orden - b.orden);
   }
+
+  async obtenerReservasPorSocio(socioId: string): Promise<{ reservas: Reserva[]; espera: EntradaEspera[] }> {
+    const reservas = Array.from(this.reservas.values()).filter(
+      (r) => r.socioId === socioId && r.estado === 'CONFIRMADA'
+    );
+    const espera = Array.from(this.listaEspera.values()).filter(
+      (e) => e.socioId === socioId && e.estado === 'PENDIENTE'
+    );
+    return { reservas, espera };
+  }
 }
 
 export class PostgresClaseRepository implements IClaseRepository {
@@ -317,6 +328,8 @@ export class PostgresClaseRepository implements IClaseRepository {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
+      // Bloqueo consultivo transaccional para evitar condición de carrera cuando inician múltiples réplicas (D12)
+      await client.query('SELECT pg_advisory_xact_lock(1001)');
       await client.query(`
         CREATE TABLE IF NOT EXISTS clases (
           clase_id VARCHAR(50) PRIMARY KEY,
@@ -330,6 +343,13 @@ export class PostgresClaseRepository implements IClaseRepository {
           publicada BOOLEAN NOT NULL DEFAULT TRUE,
           created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
         );
+
+        ALTER TABLE clases ADD COLUMN IF NOT EXISTS documento_busqueda tsvector
+        GENERATED ALWAYS AS (
+          setweight(to_tsvector('spanish', coalesce(nombre, '')), 'A') ||
+          setweight(to_tsvector('spanish', coalesce(actividad, '')), 'B') ||
+          setweight(to_tsvector('spanish', coalesce(profesor, '')), 'C')
+        ) STORED;
 
         CREATE TABLE IF NOT EXISTS reservas (
           reserva_id VARCHAR(50) PRIMARY KEY,
@@ -353,19 +373,22 @@ export class PostgresClaseRepository implements IClaseRepository {
         CREATE UNIQUE INDEX IF NOT EXISTS uq_reserva_activa ON reservas (clase_id, socio_id) WHERE estado = 'CONFIRMADA';
         CREATE UNIQUE INDEX IF NOT EXISTS uq_espera_activa ON lista_espera (clase_id, socio_id) WHERE estado = 'PENDIENTE';
         CREATE INDEX IF NOT EXISTS idx_clases_consulta ON clases (publicada, sede_id, inicio);
+        CREATE INDEX IF NOT EXISTS idx_clases_fts ON clases USING GIN (documento_busqueda);
       `);
 
       const countRes = await client.query('SELECT count(*)::int AS count FROM clases');
       if (countRes.rows[0].count === 0) {
         for (const c of mockClasses) {
           await client.query(
-            `INSERT INTO clases (clase_id, nombre, sede_id, inicio, fin, capacidad, publicada, created_at)
-             VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
+            `INSERT INTO clases (clase_id, nombre, sede_id, profesor, actividad, inicio, fin, capacidad, publicada, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW())
              ON CONFLICT (clase_id) DO NOTHING`,
             [
               c.claseId,
               c.nombre,
               c.sedeId,
+              c.nombre.includes('Yoga') ? 'Lucía Santoro' : 'Camila Rossi',
+              c.nombre.includes('Yoga') ? 'YOGA' : 'PILATES',
               c.inicio,
               new Date(new Date(c.inicio).getTime() + 60 * 60 * 1000).toISOString(),
               c.capacidad,
@@ -768,5 +791,37 @@ export class PostgresClaseRepository implements IClaseRepository {
       createdAt: r.created_at.toISOString(),
       updatedAt: r.updated_at.toISOString(),
     }));
+  }
+
+  async obtenerReservasPorSocio(socioId: string): Promise<{ reservas: Reserva[]; espera: EntradaEspera[] }> {
+    const [resR, resE] = await Promise.all([
+      this.pool.query(
+        "SELECT reserva_id, clase_id, socio_id, estado, created_at, updated_at FROM reservas WHERE socio_id = $1 AND estado = 'CONFIRMADA' ORDER BY created_at DESC",
+        [socioId]
+      ),
+      this.pool.query(
+        "SELECT espera_id, clase_id, socio_id, orden, estado, created_at, updated_at FROM lista_espera WHERE socio_id = $1 AND estado = 'PENDIENTE' ORDER BY orden ASC",
+        [socioId]
+      ),
+    ]);
+    return {
+      reservas: resR.rows.map((r) => ({
+        reservaId: r.reserva_id,
+        claseId: r.clase_id,
+        socioId: r.socio_id,
+        estado: r.estado,
+        createdAt: r.created_at.toISOString(),
+        updatedAt: r.updated_at.toISOString(),
+      })),
+      espera: resE.rows.map((r) => ({
+        esperaId: r.espera_id,
+        claseId: r.clase_id,
+        socioId: r.socio_id,
+        orden: Number(r.orden),
+        estado: r.estado,
+        createdAt: r.created_at.toISOString(),
+        updatedAt: r.updated_at.toISOString(),
+      })),
+    };
   }
 }

@@ -24,7 +24,7 @@ export interface ISociosClient {
 export class HttpSociosClient implements ISociosClient {
   constructor(
     private baseUrl: string,
-    private timeoutMs: number = 1200
+    private timeoutMs: number = 3000
   ) {}
 
   async verificarHabilitacion(
@@ -69,11 +69,15 @@ export class HttpSociosClient implements ISociosClient {
           };
         }
 
-        // Errores 5xx pueden reintentarse con jitter
-        if (response.status >= 500 && intento === 0) {
-          const jitter = 75 + Math.floor(Math.random() * 50);
-          await new Promise((resolve) => setTimeout(resolve, jitter));
-          continue;
+        // Errores 5xx pueden reintentarse con jitter; si persisten, fallar hacia 503
+        if (response.status >= 500) {
+          lastError = new Error(`HTTP ${response.status} desde servicio de socios`);
+          if (intento === 0) {
+            const jitter = 75 + Math.floor(Math.random() * 50);
+            await new Promise((resolve) => setTimeout(resolve, jitter));
+            continue;
+          }
+          break;
         }
 
         return {

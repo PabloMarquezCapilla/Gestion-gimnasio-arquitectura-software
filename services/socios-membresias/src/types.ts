@@ -1,13 +1,38 @@
 export type EstadoSocio = 'ACTIVO' | 'INACTIVO';
 export type EstadoMembresia = 'HABILITADA' | 'SUSPENDIDA' | 'VENCIDA';
+export type RolUsuario = 'SOCIO' | 'ADMIN';
 
 export interface Socio {
   socioId: string;
   dni: string;
   nombre: string;
   email: string;
+  passwordHash?: string;
+  rol?: RolUsuario;
+  telefono?: string;
   estado: EstadoSocio;
   createdAt: string;
+}
+
+export interface RegistroDTO {
+  dni: string;
+  nombre: string;
+  email: string;
+  password: string;
+  telefono?: string;
+  tipoPlan?: string;
+  rol?: RolUsuario;
+}
+
+export interface LoginDTO {
+  emailOrDni: string;
+  password: string;
+}
+
+export interface AuthResponse {
+  token: string;
+  socio: Omit<Socio, 'passwordHash'>;
+  membresia?: Membresia | null;
 }
 
 export interface Membresia {
