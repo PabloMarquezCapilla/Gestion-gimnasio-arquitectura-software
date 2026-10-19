@@ -82,6 +82,7 @@ if (run(['compose', 'up', '--build', '--detach', '--wait', '--wait-timeout', '18
     'postgres', 'postgres-init', 'mongodb', 'mongo-init', 'rabbitmq']);
   stop('El inicio no se completó. Los datos y volúmenes se conservaron; revisar los mensajes anteriores antes de volver a intentar.');
 }
-console.log(`Entorno listo. Abrir http://localhost:${port}`);
-console.log(`Mock: http://localhost:${port}/api/v1/clases`);
-console.log('La clave X-API-Key está en CAPACIDAD_API_KEY dentro de .env. Los datos son ficticios.');
+console.log(`Entorno listo. Aplicación web disponible en http://localhost:${port}`);
+console.log(`Consola interactiva de API y Trazas W3C: http://localhost:${port}/consola.html`);
+console.log(`Capacidad compartida (PostgreSQL real): http://localhost:${port}/api/v1/clases`);
+console.log('La clave X-API-Key está en CAPACIDAD_API_KEY dentro de .env.');

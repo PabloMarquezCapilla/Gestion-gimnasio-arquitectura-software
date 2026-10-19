@@ -112,6 +112,8 @@ services:
       dockerfile: infra/node/Dockerfile
       args:
         SERVICE: clases-reservas
+    deploy:
+      replicas: 2
     environment:
       PORT: "3000"
       DATABASE_URL: postgres://clases:${CLASES_DB_PASSWORD:?Falta CLASES_DB_PASSWORD en .env}@postgres:5432/clases
@@ -152,12 +154,14 @@ services:
       start_period: 5s
 
   gateway:
-    image: nginx:1.28-alpine
+    build:
+      context: .
+      dockerfile: infra/gateway/Dockerfile
+    image: gimnasio-gateway:latest
     ports:
       - "127.0.0.1:${GATEWAY_PORT:-8080}:80"
     volumes:
       - ./infra/gateway/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./infra/gateway/index.html:/usr/share/nginx/html/index.html:ro
     depends_on:
       socios-membresias:
         condition: service_healthy
