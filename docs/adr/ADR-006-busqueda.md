@@ -1,73 +1,28 @@
 # D6 - Búsqueda
 
-**Estado:** decidida para la Entrega 2; implementada inicialmente con índices B-Tree en PostgreSQL para el contrato actual y planificada con FTS/GIN para texto libre en la siguiente fase.  
-**Fecha:** 12/10/2026.
+**Estado:** decisión de PostgreSQL FTS conservada; catálogo filtrado operativo, búsqueda textual pendiente de conectar a la API.
+**Fecha original:** 12/10/2026. **Revisión factual:** 19/10/2026.
+**Enunciado:** §5, D6, página 7; §6.3, página 8; requisito general §2.6, página 2.
 
-## Contexto
+## Contexto y decisión
 
-El catálogo de clases y actividades del gimnasio constituye la principal vía de descubrimiento para los socios y para los sistemas consumidores externos. Los usuarios necesitan encontrar clases mediante múltiples dimensiones de búsqueda:
-- Texto libre (nombre de la actividad, disciplina o profesor).
-- Sede geográfica (`sedeId`).
-- Ventana temporal (rango de fechas y franjas horarias `desde` y `hasta`).
-- Nivel de intensidad o categoría.
-- Clases que cuenten con cupos disponibles para reserva inmediata.
+Clases y Reservas es propietario del catálogo. Se mantiene PostgreSQL Full-Text Search (FTS) con GIN para buscar texto en nombre, actividad y profesor, evitando operar un segundo motor y sincronizar otra copia del catálogo. Un motor dedicado sigue siendo una alternativa si las mediciones justifican su complejidad. No se afirma una cantidad de usuarios o clases que el equipo no haya confirmado.
 
-Es necesario definir la estrategia de indexación, los criterios de consulta, la arquitectura de actualización del índice y el retraso de sincronización aceptable para el negocio.
+## Implementado y verificado
 
-## Decisión
+- `PostgresClaseRepository.inicializarEsquema` crea `documento_busqueda`, columna `tsvector` generada con diccionario español y pesos A/B/C para nombre/actividad/profesor, e índice GIN `idx_clases_fts`.
+- El índice B-Tree real es `idx_clases_consulta (publicada, sede_id, inicio)`. No se han creado los otros índices descritos por la versión inicial del documento.
+- `listarClases` consulta clases publicadas, filtra por sede y rango de inicio `[desde, hasta)`, pagina con offset (20 por defecto, máximo 100) y ordena por `inicio, clase_id`. El desempate es estable para un conjunto sin modificaciones; no garantiza una instantánea entre páginas ante escrituras concurrentes.
+- Vector e índices se actualizan en la misma transacción que los campos de la clase: no hay sincronización por eventos ni demora adicional de indexación. Esto no equivale a latencia de consulta cero.
 
-Se adopta una estrategia evolutiva donde en la **Entrega 2** la búsqueda opera mediante **índices B-Tree compuestos** (`publicada`, `sede_id`, `inicio`) sobre PostgreSQL para dar soporte al contrato actual `GET /api/v1/clases`, y se proyecta la incorporación de **PostgreSQL Full-Text Search (FTS) con índices GIN** para la búsqueda por texto libre y similitud en la fase de escalabilidad:.
+## Pendiente para completar búsqueda de texto
 
-### 1. Información indexada
+La consulta HTTP todavía no acepta texto ni utiliza `@@ plainto_tsquery`. Tener GIN creado no acredita búsqueda textual operativa. Falta conectar el filtro, validar consultas y probar coincidencias, paginación y actualización del índice. No se agregan ahora filtros de intensidad, similitud o cupo que no estén implementados/acordados.
 
-El índice de búsqueda del servicio `Clases y Reservas` cubre:
+Para mantenimiento se prevé `REINDEX INDEX CONCURRENTLY idx_clases_fts`, fuera de una transacción explícita; deberá ensayarse antes de una operación real. Las altas/publicación administrativa de clases tampoco están implementadas como flujo completo.
 
-| Campo | Tipo de índice | Criterio de uso |
-|---|---|---|
-| `nombre`, `actividad`, `profesor` | Índice GIN sobre vector de texto (`tsvector`) con ponderaciones | Búsqueda por texto libre, similitud y lenguaje natural (stemming en español). |
-| `sede_id` | B-Tree | Filtrado exacto por sede. |
-| `inicio`, `fin` | B-Tree | Filtrado por rango temporal y ordenamiento cronológico. |
-| `publicada` | B-Tree parcial | Filtrado para omitir borradores o clases despublicadas. |
-| `(inicio, clase_id)` | B-Tree compuesto | Desempate determinista para paginación estable por cursor u offset. |
+## Consecuencias y rectificación
 
-Definición del vector de búsqueda en PostgreSQL:
-```sql
-ALTER TABLE clases ADD COLUMN IF NOT EXISTS documento_busqueda tsvector
-GENERATED ALWAYS AS (
-  setweight(to_tsvector('spanish', coalesce(nombre, '')), 'A') ||
-  setweight(to_tsvector('spanish', coalesce(actividad, '')), 'B') ||
-  setweight(to_tsvector('spanish', coalesce(profesor, '')), 'C')
-) STORED;
+Se reutiliza la base propietaria y se evita una copia eventual del catálogo. Los cupos se calculan sobre reservas transaccionales; incluso una lectura reciente no garantiza que el cupo continúe libre al reservar.
 
-CREATE INDEX IF NOT EXISTS idx_clases_fts ON clases USING GIN (documento_busqueda);
-CREATE INDEX IF NOT EXISTS idx_clases_consulta ON clases (publicada, sede_id, inicio);
-```
-
-### 2. Criterios de consulta y paginación
-
-- **Filtros combinados:** Las consultas aplican intersección booleana entre el filtro de texto (`@@ plainto_tsquery('spanish', :query)`), filtros de igualdad (`sede_id = :sedeId`), y restricciones de intervalo temporal (`inicio >= :desde AND inicio < :hasta`).
-- **Orden determinista:** Los resultados se ordenan en primer término por fecha y hora de inicio (`inicio ASC`) y, en caso de coincidencia idéntica, por identificador único (`clase_id ASC`). Esto garantiza que la paginación no duplique ni omita registros entre páginas consecutivas.
-- **Paginación estricta:** Límite máximo de 100 resultados por página (por defecto 20), evitando consultas masivas no acotadas que saturen la memoria de los procesos Node.js.
-
-### 3. Actualización y reconstrucción del índice
-
-- **Actualización sincrónica inmediata:** Al utilizar columnas generadas almacenadas (`GENERATED ALWAYS ... STORED`) e índices GIN sobre PostgreSQL, la actualización del índice ocurre en la **misma transacción** que da de alta o modifica la clase.
-- **Retraso aceptable:** **0 segundos (retraso nulo)** respecto de los datos transaccionales de la clase. Tan pronto como un administrador publica una clase o modifica sus horarios, la clase aparece inmediatamente disponible en las búsquedas.
-- **Reconstrucción del índice:** En caso de mantenimiento, cambio de diccionarios de idioma o corrupción de índices, PostgreSQL permite la reconstrucción sin bloqueo de lecturas mediante:
-  ```sql
-  REINDEX INDEX CONCURRENTLY idx_clases_fts;
-  ```
-
-### 4. Alternativa considerada: Motor dedicado (Elasticsearch / OpenSearch)
-
-- *Alternativa:* Levantar un cluster independiente de Elasticsearch y sincronizar los datos de clases mediante eventos de RabbitMQ o Change Data Capture (Debezium).
-- *Motivos de descarte en esta etapa:*
-  1. **Complejidad operativa excesiva:** Requiere administrar un cluster Java con alto consumo de memoria RAM (mínimo 2-4 GB adicionales), configuración de shards y monitoreo dedicado.
-  2. **Consistencia eventual no deseada para cupos:** Elasticsearch introduce una ventana de refresco de 1 a 2 segundos (`refresh_interval`), lo que causaría que un usuario vea una clase con disponibilidad cuando el cupo real ya fue tomado.
-  3. **Volumen del negocio:** Un gimnasio maneja decenas o cientos de clases semanales, un orden de magnitud que PostgreSQL maneja en submilisegundos mediante índices GIN sin necesidad de componentes externos.
-
-## Consecuencias
-
-- **Cero latencia de sincronización:** La búsqueda refleja el estado real de publicación de forma instantánea.
-- **Menor huella de infraestructura:** Se aprovecha el motor PostgreSQL 17 ya existente sin incorporar contenedores o servicios adicionales.
-- **Evolución futura protegida:** La capa de abstracción del repositorio (`IClaseRepository.listarClases`) aísla la consulta; si en el futuro se incorpora Elasticsearch, solo se reemplazará la implementación del repositorio sin alterar la API de Fastify ni los contratos expuestos.
+La revisión corrige afirmaciones anteriores de filtros, índices y tiempos ya implementados. Conserva la decisión FTS/GIN y su historia en Git; no presenta tiempos submilisegundo ni el requisito general §2.6 como demostrados.

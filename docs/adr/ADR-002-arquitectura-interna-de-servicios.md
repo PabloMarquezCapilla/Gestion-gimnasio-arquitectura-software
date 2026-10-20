@@ -1,7 +1,9 @@
 # D2 - Arquitectura interna de los servicios
 
-**Estado:** decidida para la Entrega 2.  
-**Fecha:** 12/10/2026.
+**Estado:** patrones conservados y estructura de Socios/Clases implementada en el paso 4. Tienda tiene estructura propia desde el paso 6; su cliente externo y el dominio de Accesos siguen pendientes.
+**Fecha:** 12/10/2026; validación de estructura 19/10/2026.
+
+**Referencia:** sección 2.1, página 2 (al menos dos servicios con patrones internos diferentes), D2 en sección 5 y actualización documental en sección 3, página 4. Se mantienen Hexagonal y Capas; no se sustituye la decisión inicial.
 
 ## Contexto
 
@@ -15,21 +17,26 @@ Para cumplir con el requisito de la sección 2.1 del enunciado (*"Al menos dos s
 
 | Microservicio | Patrón de Arquitectura Interna | Adecuación al problema del servicio |
 |---|---|---|
-| **`Clases y Reservas`** | **Arquitectura Hexagonal (Ports & Adapters)** | El servicio concentra las reglas de negocio más críticas (aforo, reservas concurrentes, lista de espera, promoción automática), expone el contrato OpenAPI compartido a otros grupos y consume sincrónicamente a `Socios y Membresías`. Aislar el núcleo mediante puertos (`IClaseRepository`, `ISociosClient`) y adaptadores intercambiables (`PostgresClaseRepository`, `MemoryClaseRepository`, `HttpSociosClient`, `MockSociosClient`) permite validar reglas y contratos sin acoplamiento a la infraestructura. |
-| **`Socios y Membresías`** | **Arquitectura en Capas (Layered Architecture)** | El dominio de socios, autenticación y vigencia de membresías sigue un flujo transaccional vertical clásico: Capa de Presentación/Controladores HTTP (`app.ts`) $\rightarrow$ Capa de Servicios de Dominio y Seguridad Criptográfica (`security.ts`, reglas de vigencia) $\rightarrow$ Capa de Acceso a Datos (`repository.ts`). Esta organización minimiza la indirección y facilita las operaciones ABM y de validación. |
-| **`Accesos y Ocupación`** | **Arquitectura Orientada a Eventos / Proyección de Lectura (CQRS-lite)** | Separa el flujo de escritura de alta frecuencia (registro de eventos de ingreso y egreso en colecciones documentales de MongoDB) de la vista proyectada de lectura rápida (cálculo y caché de ocupación actual por sede). |
+| **`Clases y Reservas`** | **Arquitectura Hexagonal (Ports & Adapters)** | `ReservasService` concentra reservas, espera, validación remota y recuperación. Depende de puertos propios; HTTP, PostgreSQL y memoria son adaptadores. Conserva las consultas de clases, que ya no son la capacidad ofrecida al otro grupo. |
+| **`Socios y Membresías`** | **Arquitectura en Capas (Layered Architecture)** | HTTP en `app.ts`/`empleados.http.ts` → casos de uso `AuthService`, `SociosService` y `EmpleadosService` → persistencia en `repository.ts`; `security.ts` ofrece operaciones criptográficas. El POST externo utiliza las mismas capas y PostgreSQL; el mock separado se conserva. |
+| **`Accesos y Ocupación`** | **Arquitectura Orientada a Eventos / Proyección de Lectura (CQRS-lite), prevista** | Diseño para separar registro de movimientos y lectura de ocupación. Actualmente solo tiene estructura HTTP; este paso no implementa esas reglas ni su proyección. |
+| **`Tienda`** | **Estructura en Capas, integración pendiente** | `app.ts` controla transporte/autenticación, `services.ts` representa la consulta no habilitada y `server.ts` arranca el proceso. Sin repositorio ni cliente externo mientras no exista contrato; no se incorpora un patrón nuevo distinto de los ya elegidos. |
 
 ### 1. Detalle de `Clases y Reservas`: Arquitectura Hexagonal (Ports & Adapters)
 
 ```text
 services/clases-reservas/src/
 ├── types.ts                  # Núcleo de Dominio: entidades, invariantes y contratos de resultado
-├── repository.ts             # Puerto de Salida (IClaseRepository) + Adaptadores (Postgres / Memory)
+├── ports.ts                  # Puertos propios IClaseRepository e ISociosClient
+├── application/
+│   └── reservas.service.ts   # Casos de uso, reglas y recuperación; sin Fastify ni pg
+├── repository.ts             # Adaptadores de persistencia Postgres / Memory
 ├── clients/
-│   └── socios.client.ts      # Puerto de Salida (ISociosClient) + Adaptador ACL HTTP con resiliencia
+│   └── socios.client.ts      # Adaptadores HTTP / Mock del puerto ISociosClient
+├── auth.ts                   # Validación de sesión en el adaptador HTTP
 ├── tracing.ts                # Aspecto transversal: contexto distribuido W3C (traceparent)
-├── app.ts                    # Adaptador Primario (Driving Adapter HTTP/Fastify + casos de uso)
-└── server.ts                 # Composición e Inyección de Dependencias ( Composition Root )
+├── app.ts                    # Adaptador de entrada HTTP: valida y traduce resultados
+└── server.ts                 # Composición, arranque y trabajador de recuperación
 ```
 
 - **Puertos de Salida (Driven Ports):**
@@ -37,7 +44,7 @@ services/clases-reservas/src/
   - `ISociosClient`: abstrae la colaboración remota hacia `Socios y Membresías`.
 - **Adaptadores Secundarios (Driven Adapters):**
   - `PostgresClaseRepository`: implementa transacciones ACID con bloqueo pesimista (`SELECT ... FOR UPDATE`) e índices únicos parciales.
-  - `HttpSociosClient`: implementa timeout de 3000 ms, reintentos con jitter y propagación W3C Trace Context.
+  - `HttpSociosClient`: presupuesto total de 3000 ms por verificación, incluida lectura del cuerpo y como máximo un reintento; credencial técnica y propagación W3C.
   - `MemoryClaseRepository` y `MockSociosClient`: adaptadores de prueba para tests de contrato y concurrencia en memoria.
 
 ### 2. Detalle de `Socios y Membresías`: Arquitectura en Capas (Layered Architecture)
@@ -45,10 +52,15 @@ services/clases-reservas/src/
 ```text
 services/socios-membresias/src/
 ├── app.ts                    # Capa de Presentación / Transporte HTTP (Rutas REST y DTOs)
-├── security.ts               # Capa de Lógica de Negocio y Seguridad (Hashing scrypt + timingSafeEqual)
+├── services.ts               # AuthService/SociosService: identidad, permisos, altas y vigencia
+├── empleados.http.ts         # Transporte externo, validación del contrato y credencial de origen
+├── empleados.service.ts      # Alta pendiente y contrato de persistencia atómica
+├── security.ts               # scrypt, comparación de claves y configuración JWT
+├── errors.ts                 # Errores de aplicación e identidad duplicada
 ├── repository.ts             # Capa de Acceso a Datos (Persistencia relacional de socios y membresías)
 ├── types.ts                  # Modelos de datos transversales a las capas
 ├── tracing.ts                # Middleware transversal de trazabilidad y logs estructurados
+├── crear-admin.ts            # Entrada local explícita para el administrador inicial
 └── server.ts                 # Inicialización del proceso y pool de conexiones
 ```
 
@@ -64,5 +76,5 @@ services/socios-membresias/src/
 ## Consecuencias
 
 - **Cumplimiento arquitectónico y adecuación al problema:** Cada microservicio utiliza el patrón que mejor resuelve su complejidad específica (Hexagonal donde hay orquestación e integraciones múltiples; Capas donde predomina la gestión transaccional de entidades).
-- **Alta Testabilidad:** Permite ejecutar la suite de pruebas de contrato OpenAPI (`services/clases-reservas/test/contract.test.mjs`), autenticación (`test/auth.test.mjs`), concurrencia (`test/concurrencia.test.mjs`) e integración de punta a punta (`test/flujo-principal.test.mjs`) en ~1.5 segundos.
+- **Verificación:** los casos de uso pueden probarse sin red ni SQL; `npm test` incluye contratos, autenticación, reglas, concurrencia e interfaz. `npm run test:postgres` comprueba por separado los adaptadores reales con dos instancias. Los resultados del cierre se registran en README, sin prometer duraciones de ejecución.
 - **Flexibilidad Operativa:** Facilita extender adaptadores (Redis, RabbitMQ, MongoDB) sin modificar las reglas de negocio ni la API pública.

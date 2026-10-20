@@ -1,7 +1,10 @@
 # D8 - Contrato de la capacidad propia
 
-**Estado:** capacidad implementada operativamente sobre almacenamiento real en la Entrega 2; contrato OpenAPI v1.0.0 sin cambios incompatibles.  
+**Estado actual:** reemplazado el 19/10/2026 por [ADR-014 - Contrato de recepción de empleados](ADR-014-contrato-empleados.md). Se conserva el contenido siguiente como antecedente de la capacidad anterior.
+
 **Fecha:** 07/10/2026 (diseño inicial y mock) | 12/10/2026 (actualización e implementación operativa sobre PostgreSQL).
+
+**Aclaración de evidencia del 19/10/2026:** las pruebas `contract.test.mjs` y `flujo-principal.test.mjs` citadas en este registro utilizan repositorios en memoria. Sus resultados no representan una validación exhaustiva de PostgreSQL. La consulta de clases continúa como función del gimnasio; la capacidad ofrecida al otro grupo pasa a ser el POST de empleados documentado en el sucesor.
 
 ## Contexto
 

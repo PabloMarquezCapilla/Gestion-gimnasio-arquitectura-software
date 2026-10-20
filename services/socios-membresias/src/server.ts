@@ -1,55 +1,74 @@
 import { Pool } from 'pg';
 import { buildSociosApp } from './app';
-import { PostgresSociosRepository, MemorySociosRepository } from './repository';
+import { PostgresSociosRepository, MemorySociosRepository, ISociosRepository } from './repository';
+import { configuracionAuth } from './security';
+import { credencialesEmpleadosDesdeEntorno } from './empleados.http';
 
 async function start() {
+  // Validar secretos antes de inicializar el almacenamiento o abrir el puerto.
+  const auth = configuracionAuth();
+  const empleadosCredenciales = credencialesEmpleadosDesdeEntorno();
+  if (!empleadosCredenciales.length) throw new Error('Configurar EMPLEADOS_API_KEY y EMPLEADOS_ORIGEN_ID para la capacidad externa.');
   const databaseUrl = process.env.DATABASE_URL;
-  let repository;
-
-  if (databaseUrl && !process.env.USE_MEMORY_DB) {
-    try {
-      const pool = new Pool({
-        connectionString: databaseUrl,
-        connectionTimeoutMillis: 5000,
-        statement_timeout: 4000,
-        lock_timeout: 2500,
-        max: 20,
-      });
-      const pgRepo = new PostgresSociosRepository(pool);
-      await pgRepo.inicializarEsquema();
-      console.log('[socios-membresias] Conectado a PostgreSQL y esquema inicializado.');
-      repository = pgRepo;
-    } catch (err) {
-      if (process.env.NODE_ENV === 'production' || !process.env.ALLOW_MEMORY_FALLBACK) {
-        throw new Error(
-          `[socios-membresias] Error fatal al conectar con PostgreSQL: ${
-            err instanceof Error ? err.message : String(err)
-          }`
-        );
-      }
-      console.warn('[socios-membresias] No se pudo conectar a PostgreSQL, iniciando en memoria para desarrollo:', err);
-      repository = new MemorySociosRepository();
-    }
-  } else {
-    console.log('[socios-membresias] Iniciando con repositorio en memoria.');
+  const usarMemoria = process.env.USE_MEMORY_DB === 'true';
+  if (usarMemoria && process.env.NODE_ENV === 'production') {
+    throw new Error('USE_MEMORY_DB no está permitido en producción.');
+  }
+  if (!usarMemoria && !databaseUrl) {
+    throw new Error('DATABASE_URL es obligatoria; no se inicia un almacenamiento en memoria implícito.');
+  }
+  let repository: ISociosRepository;
+  let pool: Pool | undefined;
+  if (usarMemoria) {
     repository = new MemorySociosRepository();
+    console.log('[socios-membresias] Memoria habilitada explícitamente para desarrollo.');
+  } else {
+    pool = new Pool({
+      connectionString: databaseUrl,
+      connectionTimeoutMillis: 5000,
+      statement_timeout: 4000,
+      lock_timeout: 2500,
+      max: 20,
+    });
+    try {
+      repository = new PostgresSociosRepository(pool);
+      await repository.inicializarEsquema();
+    } catch {
+      await pool.end();
+      throw new Error('No se pudo inicializar PostgreSQL; no se modifican ni reparan duplicados automáticamente.');
+    }
+    console.log('[socios-membresias] Conectado a PostgreSQL y esquema inicializado.');
   }
 
-  const app = buildSociosApp({ repository, logger: true });
-
+  const app = buildSociosApp({
+    repository,
+    ...auth,
+    empleadosCredenciales,
+    logger: { redact: ['req.headers.authorization', 'req.headers.x-service-key', 'req.headers.x-api-key', 'req.headers.idempotency-key'] },
+  });
+  if (pool) {
+    const activePool = pool;
+    app.addHook('onClose', async () => { await activePool.end(); });
+  }
   const port = Number(process.env.PORT ?? 3000);
+  if (!Number.isInteger(port) || port < 1 || port > 65535) {
+    await app.close();
+    throw new Error('PORT debe ser un entero entre 1 y 65535.');
+  }
   for (const signal of ['SIGINT', 'SIGTERM'] as const) {
     process.once(signal, () => {
-      void app.close().catch(() => {
-        process.exitCode = 1;
-      });
+      void app.close().catch(() => { process.exitCode = 1; });
     });
   }
-
-  await app.listen({ port, host: '0.0.0.0' });
+  try {
+    await app.listen({ port, host: '0.0.0.0' });
+  } catch (error) {
+    await app.close();
+    throw error;
+  }
 }
 
 void start().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : 'No se pudo iniciar Socios y Membresias.');
+  console.error(error instanceof Error ? error.message : 'No se pudo iniciar Socios y Membresías.');
   process.exitCode = 1;
 });

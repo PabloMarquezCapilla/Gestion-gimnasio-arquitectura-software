@@ -27,3 +27,29 @@ export function verifyPassword(password: string, storedHash?: string): boolean {
     return false;
   }
 }
+
+export function clavesIguales(received: string, expected: string): boolean {
+  const a = Buffer.from(received);
+  const b = Buffer.from(expected);
+  return a.length === b.length && crypto.timingSafeEqual(a, b);
+}
+
+export function configuracionAuth(options: {
+  jwtSecret?: string;
+  internalApiKey?: string;
+  jwtTtlSeconds?: number;
+} = {}) {
+  const jwtSecret = options.jwtSecret ?? process.env.AUTH_JWT_SECRET;
+  const internalApiKey = options.internalApiKey ?? process.env.SERVICIOS_API_KEY;
+  const jwtTtlSeconds = options.jwtTtlSeconds ?? Number(process.env.AUTH_JWT_TTL_SECONDS ?? 3600);
+  if (typeof jwtSecret !== 'string' || jwtSecret.trim().length < 32) {
+    throw new Error('AUTH_JWT_SECRET debe contener al menos 32 caracteres y no tiene valor predeterminado.');
+  }
+  if (typeof internalApiKey !== 'string' || !internalApiKey.trim()) {
+    throw new Error('SERVICIOS_API_KEY es obligatoria y no tiene valor predeterminado.');
+  }
+  if (!Number.isSafeInteger(jwtTtlSeconds) || jwtTtlSeconds < 1) {
+    throw new Error('AUTH_JWT_TTL_SECONDS debe ser un entero positivo.');
+  }
+  return { jwtSecret, internalApiKey, jwtTtlSeconds };
+}

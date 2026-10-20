@@ -1,219 +1,133 @@
-import { AuthUser, UserMembresia } from '../types/auth';
+import type { AuthResponse, AuthUser, UserMembresia } from '../types/auth';
 
-const API_BASE = ''; // Usa el proxy del gateway o Vite
+const API_BASE = ''; // Las peticiones pasan por el gateway del mismo origen.
+let sessionToken: string | null = null;
+let onUnauthorized: (() => void) | undefined;
 
-export async function apiLogin(emailOrDni: string, password: string): Promise<{ token: string; socio: AuthUser; membresia: UserMembresia | null }> {
-  try {
-    const res = await fetch(`${API_BASE}/api/v1/auth/login`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ emailOrDni, password }),
-    });
+// La sesión vive únicamente en memoria; no se recupera desde localStorage.
+export function setApiSession(token: string | null, unauthorized?: () => void) {
+  sessionToken = token;
+  onUnauthorized = unauthorized;
+}
 
-    if (res.ok) {
-      const data = await res.json();
-      return {
-        token: data.token,
-        socio: { ...data.socio, membresia: data.membresia },
-        membresia: data.membresia,
-      };
-    }
-
-    const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.mensaje || 'Error al iniciar sesión');
-  } catch (err: any) {
-    // Si la API no está disponible en dev o devuelve error de red, soporte demo local
-    if (emailOrDni.toLowerCase() === 'admin@pulse.com' && password === 'admin123') {
-      return {
-        token: 'mock-token-admin',
-        socio: {
-          socioId: 'admin-01',
-          dni: '99999999',
-          nombre: 'Valeria Méndez',
-          email: 'admin@pulse.com',
-          rol: 'ADMIN',
-          estado: 'ACTIVO',
-          createdAt: new Date().toISOString(),
-          telefono: '+54 9 11 9999-0000',
-        },
-        membresia: null,
-      };
-    }
-    if ((emailOrDni.toLowerCase() === 'juan.perez@example.com' || emailOrDni === '11111111') && password === 'socio123') {
-      return {
-        token: 'mock-token-socio',
-        socio: {
-          socioId: 'socio-demo-01',
-          dni: '11111111',
-          nombre: 'Juan Pérez',
-          email: 'juan.perez@example.com',
-          rol: 'SOCIO',
-          estado: 'ACTIVO',
-          createdAt: '2026-01-01T00:00:00.000Z',
-          telefono: '+54 9 11 3914-2201',
-          membresia: {
-            membresiaId: 'mem-001',
-            socioId: 'socio-demo-01',
-            tipoPlan: 'FULL_ANUAL',
-            fechaInicio: '2026-01-01T00:00:00.000Z',
-            fechaFin: '2027-12-31T23:59:59.000Z',
-            estado: 'HABILITADA',
-          },
-        },
-        membresia: {
-          membresiaId: 'mem-001',
-          socioId: 'socio-demo-01',
-          tipoPlan: 'FULL_ANUAL',
-          fechaInicio: '2026-01-01T00:00:00.000Z',
-          fechaFin: '2027-12-31T23:59:59.000Z',
-          estado: 'HABILITADA',
-        },
-      };
-    }
-    throw err;
+export class ApiError extends Error {
+  constructor(message: string, public readonly status: number, public readonly codigo?: string) {
+    super(message);
+    this.name = 'ApiError';
   }
 }
 
-export async function apiRegistro(payload: {
-  dni: string;
-  nombre: string;
-  email: string;
-  password: string;
-  telefono?: string;
-  tipoPlan?: string;
-}): Promise<{ token: string; socio: AuthUser; membresia: UserMembresia | null }> {
-  try {
-    const res = await fetch(`${API_BASE}/api/v1/auth/registro`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    });
-
-    if (res.ok) {
-      const data = await res.json();
-      return {
-        token: data.token,
-        socio: { ...data.socio, membresia: data.membresia },
-        membresia: data.membresia,
-      };
-    }
-
-    const errData = await res.json().catch(() => ({}));
-    throw new Error(errData.mensaje || 'Error al crear cuenta');
-  } catch (err: any) {
-    // Si la API no está corriendo o red rechaza, crear socio demo localmente
-    const plan = payload.tipoPlan || 'STANDARD_SEMESTRAL';
-    const fakeSocio: AuthUser = {
-      socioId: `socio-${Date.now()}`,
-      dni: payload.dni,
-      nombre: payload.nombre,
-      email: payload.email,
-      rol: 'SOCIO',
-      estado: 'ACTIVO',
-      telefono: payload.telefono,
-      createdAt: new Date().toISOString(),
-      membresia: {
-        membresiaId: `mem-${Date.now()}`,
-        socioId: `socio-${Date.now()}`,
-        tipoPlan: plan,
-        fechaInicio: new Date().toISOString(),
-        fechaFin: new Date(Date.now() + 180 * 86400000).toISOString(),
-        estado: 'HABILITADA',
-      },
-    };
-    return {
-      token: `local-token-${Date.now()}`,
-      socio: fakeSocio,
-      membresia: fakeSocio.membresia ?? null,
-    };
+async function request<T>(path: string, options: RequestInit = {}, privateRequest = true): Promise<T> {
+  const tokenUsed = sessionToken;
+  if (privateRequest && !tokenUsed) {
+    throw new ApiError('Iniciá sesión para realizar esta operación.', 401, 'SESION_REQUERIDA');
   }
+  const headers = new Headers(options.headers);
+  if (options.body) headers.set('Content-Type', 'application/json');
+  if (privateRequest && tokenUsed) headers.set('Authorization', 'Bearer ' + tokenUsed);
+  let response: Response;
+  try {
+    response = await fetch(API_BASE + path, { ...options, headers });
+  } catch {
+    throw new ApiError('No se pudo conectar con el servidor. Verificá la conexión y volvé a intentar.', 0, 'ERROR_RED');
+  }
+  let data: unknown;
+  try { data = await response.json(); } catch { data = undefined; }
+  if (!response.ok) {
+    if (privateRequest && response.status === 401 && sessionToken === tokenUsed) {
+      const callback = onUnauthorized;
+      setApiSession(null);
+      callback?.();
+    }
+    const error = data as { mensaje?: string; codigo?: string } | undefined;
+    throw new ApiError(error?.mensaje || (response.status === 401
+      ? 'La sesión venció o no es válida. Iniciá sesión nuevamente.'
+      : 'El servidor no pudo completar la operación (' + response.status + ').'), response.status, error?.codigo);
+  }
+  if (!data || typeof data !== 'object') {
+    throw new ApiError('El servidor devolvió una respuesta no válida.', response.status, 'RESPUESTA_INVALIDA');
+  }
+  return data as T;
+}
+
+export async function apiLogin(emailOrDni: string, password: string): Promise<AuthResponse> {
+  const data = await request<AuthResponse>('/api/v1/auth/login', {
+    method: 'POST', body: JSON.stringify({ emailOrDni, password }),
+  }, false);
+  if (!data.token || !data.socio?.socioId || !['ADMIN', 'SOCIO'].includes(data.socio.rol)) {
+    throw new ApiError('La respuesta de inicio de sesión no es válida.', 502, 'RESPUESTA_INVALIDA');
+  }
+  return { ...data, socio: { ...data.socio, membresia: data.membresia ?? null } };
+}
+
+// Alta administrativa: no crea membresía ni cambia la sesión del administrador.
+export async function apiRegistro(payload: {
+  dni: string; nombre: string; email: string; password: string; telefono?: string;
+}): Promise<{ socio: AuthUser; membresia: null }> {
+  const data = await request<{ socio: AuthUser; membresia: null }>('/api/v1/auth/registro', { method: 'POST', body: JSON.stringify(payload) });
+  if (!data.socio?.socioId || data.socio.rol !== 'SOCIO' || data.membresia !== null) {
+    throw new ApiError('El servidor no confirmó el alta del socio sin membresía.', 502, 'RESPUESTA_INVALIDA');
+  }
+  return data;
+}
+
+export function apiObtenerSocio(socioId: string): Promise<AuthUser & { membresia: UserMembresia | null }> {
+  return request('/api/v1/socios/' + encodeURIComponent(socioId));
+}
+
+// La estructura solo informa indisponibilidad hasta acordar el contrato real.
+// No interpretar una respuesta desconocida como un catálogo vacío o stock cero.
+export async function apiConsultarTienda(): Promise<never> {
+  await request('/api/v1/tienda/productos');
+  throw new ApiError('No se pudo interpretar la respuesta de la tienda.', 502, 'RESPUESTA_INVALIDA');
 }
 
 export interface BackendClaseDTO {
-  claseId: string;
-  nombre: string;
-  sedeId: string;
-  inicio: string;
-  capacidad: number;
-  cuposDisponibles: number;
-  consultadoEn: string;
+  claseId: string; nombre: string; sedeId: string; inicio: string;
+  capacidad: number; cuposDisponibles: number; consultadoEn: string;
 }
-
 export interface BackendReserva {
-  reservaId: string;
-  claseId: string;
-  socioId: string;
-  estado: 'CONFIRMADA' | 'CANCELADA';
-  createdAt: string;
+  reservaId: string; claseId: string; socioId: string;
+  estado: 'CONFIRMADA' | 'CANCELADA'; createdAt: string;
 }
-
 export interface BackendEspera {
-  esperaId: string;
-  claseId: string;
-  socioId: string;
-  orden: number;
-  estado: 'PENDIENTE' | 'PROMOVIDO' | 'CANCELADO';
-  createdAt: string;
+  esperaId: string; claseId: string; socioId: string; orden: number;
+  estado: 'PENDIENTE' | 'PROMOVIDO' | 'CANCELADO'; createdAt: string;
+}
+export interface ClasesYReservas {
+  items: BackendClaseDTO[]; reservasSocio: BackendReserva[]; esperaSocio: BackendEspera[];
 }
 
-export async function apiObtenerClasesYReservas(socioId?: string): Promise<{
-  items: BackendClaseDTO[];
-  reservasSocio: BackendReserva[];
-  esperaSocio: BackendEspera[];
-} | null> {
-  try {
-    const query = socioId ? `?socioId=${encodeURIComponent(socioId)}` : '';
-    const res = await fetch(`${API_BASE}/api/v1/reservas/clases${query}`);
-    if (!res.ok) return null;
-    return await res.json();
-  } catch {
-    return null;
+export async function apiObtenerClasesYReservas(socioId: string): Promise<ClasesYReservas> {
+  const data = await request<ClasesYReservas>('/api/v1/reservas/clases?socioId=' + encodeURIComponent(socioId));
+  if (![data.items, data.reservasSocio, data.esperaSocio].every(Array.isArray)) {
+    throw new ApiError('El servidor devolvió un listado no válido.', 502, 'RESPUESTA_INVALIDA');
   }
+  return data;
 }
 
-export async function apiReservarClase(
-  claseId: string,
-  socioId: string,
-  ingresarEsperaSiLlena = false
-): Promise<{
-  status: number;
-  ok: boolean;
-  data: any;
-}> {
-  const res = await fetch(`${API_BASE}/api/v1/reservas`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ claseId, socioId, ingresarEsperaSiLlena }),
+export async function apiReservarClase(claseId: string, socioId: string, ingresarEsperaSiLlena = false): Promise<{ reservaId: string; estado: string }> {
+  const data = await request<{ reservaId: string; estado: string }>('/api/v1/reservas', {
+    method: 'POST', body: JSON.stringify({ claseId, socioId, ingresarEsperaSiLlena }),
   });
-  const data = await res.json().catch(() => ({}));
-  return { status: res.status, ok: res.ok, data };
+  if (!data.reservaId || data.estado !== 'CONFIRMADA') {
+    throw new ApiError('El servidor no confirmó la reserva. Actualizá el listado antes de volver a intentar.', 502, 'RESPUESTA_INVALIDA');
+  }
+  return data;
 }
 
-export async function apiUnirseEspera(
-  claseId: string,
-  socioId: string
-): Promise<{
-  status: number;
-  ok: boolean;
-  data: any;
-}> {
-  const res = await fetch(`${API_BASE}/api/v1/clases/${encodeURIComponent(claseId)}/espera`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ socioId }),
+export async function apiUnirseEspera(claseId: string, socioId: string): Promise<{ esperaId: string; orden: number; estado: string }> {
+  const data = await request<{ esperaId: string; orden: number; estado: string }>('/api/v1/clases/' + encodeURIComponent(claseId) + '/espera', {
+    method: 'POST', body: JSON.stringify({ socioId }),
   });
-  const data = await res.json().catch(() => ({}));
-  return { status: res.status, ok: res.ok, data };
+  if (!data.esperaId || data.estado !== 'PENDIENTE') {
+    throw new ApiError('El servidor no confirmó la inscripción a la espera. Actualizá el listado.', 502, 'RESPUESTA_INVALIDA');
+  }
+  return data;
 }
 
-export async function apiCancelarReserva(reservaId: string): Promise<{
-  status: number;
-  ok: boolean;
-  data: any;
+export function apiCancelarReserva(reservaId: string): Promise<{
+  exito: boolean; promocion?: unknown; reasignacionPendiente?: boolean;
 }> {
-  const res = await fetch(`${API_BASE}/api/v1/reservas/${encodeURIComponent(reservaId)}/cancelar`, {
-    method: 'POST',
-  });
-  const data = await res.json().catch(() => ({}));
-  return { status: res.status, ok: res.ok, data };
+  return request('/api/v1/reservas/' + encodeURIComponent(reservaId) + '/cancelar', { method: 'POST' });
 }

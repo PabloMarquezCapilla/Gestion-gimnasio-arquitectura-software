@@ -1,117 +1,157 @@
-# Capacidad compartida: consulta de clases y cupos
+# Capacidad compartida: recepción de empleados
 
-**Servicio propietario:** Clases y Reservas.  
-**Contrato vigente:** [openapi-v1.yaml](openapi-v1.yaml), versión `1.0.0`, formato [OpenAPI 3.1.1](https://spec.openapis.org/oas/v3.1.1.html).  
-**Estado:** capacidad operativa en la **Entrega 2** sobre almacenamiento relacional **PostgreSQL 17** (y modo mock en memoria preservado para pruebas de contrato aisladas de la Entrega 1). El grupo consumidor todavía no fue asignado por la cátedra.
+**Servicio propietario:** Socios y Membresías.
 
-El contrato y este documento cumplen la documentación de integración solicitada en las secciones 3 y 4.1 del enunciado. Su justificación y validación en la Entrega 2 están en [D8](../adr/ADR-008-contrato-propio.md).
+**Contrato:** [openapi-empleados-v1.yaml](openapi-empleados-v1.yaml), versión 1.0.1, OpenAPI 3.1.1.
 
-## Qué ofrece y cómo integrarla
+**Estado al 19/10/2026, paso 5:** POST persistente publicado por el gateway local y mock separado conservado. La URL accesible al otro grupo, su identidad operativa, credenciales compartidas y prueba conjunta siguen pendientes.
 
-Permite consultar clases publicadas y los cupos que tienen libres. El microservicio responsable del flujo del grupo consumidor llamará a nuestra URL de proveedor; nuestro API Gateway dirigirá las consultas a Clases y Reservas.
+Esta capacidad reemplaza la consulta de clases como integración ofrecida por asignación del profesor confirmada por el equipo. Su justificación está en [D8, ADR-014](../adr/ADR-014-contrato-empleados.md), que reemplaza [ADR-008](../adr/ADR-008-contrato-propio.md). El [contrato anterior de clases](openapi-v1.yaml) y sus pruebas se conservan como antecedentes; clases y reservas continúan como funciones del gimnasio.
 
-El uso dentro de un flujo importante del consumidor deberá acordarse cuando se asigne el grupo. Esta documentación no presupone su dominio ni afirma que la integración ya esté validada.
+**Origen:** sección 4.1 del enunciado, páginas 5-6 (integración y contrato); sección 6.2, páginas 7-8 (diseño y mock); sección 5, página 7 (historia de decisiones). Datos y reglas confirmados por el equipo el 19/10/2026.
 
-## Implementación Operativa (Entrega 2) y Mock de Diseño (Entrega 1)
+## Operación y resultado
 
-Se inicia siguiendo el [README principal](../../README.md), con `node scripts/iniciar.mjs`. La base local es `http://localhost:8080` y las rutas son las del contrato. `CAPACIDAD_API_KEY` del `.env` generado se envía en `X-API-Key`; no se publica ninguna clave real.
+**POST /api/v1/integraciones/empleados**
 
-- **Modo Operativo Real (Entrega 2 - por defecto con PostgreSQL):** Consulta la tabla `clases` y calcula dinámicamente `cuposDisponibles` restando las reservas con estado `CONFIRMADA` en `reservas`. Cada nueva reserva o cancelación actualiza inmediatamente los cupos devueltos por este contrato.
-- **Modo Mock (Entrega 1 - pruebas de contrato en memoria):** Cuando se instancia con el adaptador en memoria (`isMock: true`), se ejecuta con las cuatro clases semilla en memoria y agrega el encabezado `X-Mock: true`.
+El grupo consumidor envía un empleado para crear al socio y una solicitud de membresía pendiente. El administrador del gimnasio seleccionará el plan y confirmará el pago. Este POST no habilita una membresía ni genera una contraseña, sesión o permiso de administrador.
 
-Las respuestas exitosas llevan siempre `Cache-Control: no-store`. Las pruebas de `npm test` verifican esquemas y encabezados del contrato, autenticación, filtros, intervalos, paginación, orden y errores, así como la integración de punta a punta con actualización de cupos.
-
-Esta URL sirve en la máquina donde se levanta el entorno. La URL pública del despliegue se registrará aquí al publicar el entorno compartido.
-
-## Operaciones
-
-| Operación | Resultado |
+| Campo obligatorio | Significado |
 |---|---|
-| `GET /api/v1/clases` | Listado paginado de clases con su disponibilidad. Filtros opcionales: `sedeId`, `desde` y `hasta`. |
-| `GET /api/v1/clases/{claseId}` | Datos y cupos de una clase publicada concreta. |
+| empleadoExternoId | Identificador del empleado en el sistema del grupo consumidor. |
+| dni | DNI del empleado, expresado como texto. |
+| nombre | Nombre del empleado. |
+| email | Correo del empleado. |
 
-El listado se ordena por inicio ascendente y, en caso de empate, por `claseId` ascendente. `pagina` empieza en 1; `tamanio` vale 20 por defecto y admite de 1 a 100. Los filtros temporales se aplican al inicio de la clase: `desde` es inclusivo y `hasta` exclusivo. Las fechas llevan zona horaria; si se proporcionan ambos límites, `desde` debe ser anterior a `hasta`. Sin esos filtros también pueden aparecer clases iniciadas.
+Se eliminan espacios al principio y al final de los cuatro campos y se normaliza el email a minúsculas. El contrato declara sus tipos y longitudes; no admite campos adicionales como plan, contraseña, rol o grupo de origen.
 
-Los identificadores son valores opacos; el consumidor no debe deducir significado de su formato. No se publican datos personales de socios, membresías o pagos.
+La respuesta 201 contiene socioId, solicitudId, estadoSolicitud = PENDIENTE y membresiaHabilitada = false. La solicitud pendiente es distinta del estado de una membresía; no establece plan ni fechas de vigencia.
 
-## Significado de la disponibilidad
+## Autenticación e idempotencia
 
-- `cuposDisponibles` corresponde a capacidad menos reservas confirmadas; debe estar entre cero y la capacidad.
-- Se calcula con datos del almacenamiento propietario al producir la respuesta, evitando presentar el índice de búsqueda como disponibilidad actual.
-- Las respuestas exitosas enviarán `Cache-Control: no-store` para evitar su reutilización desde cachés HTTP, conforme a [RFC 9111](https://www.rfc-editor.org/rfc/rfc9111.html#section-5.2.2.5).
-- `consultadoEn` indica el instante de consulta de esos datos. La disponibilidad puede cambiar después o entre dos consultas.
-- Consultar no retiene un cupo ni valida la membresía de un socio. Una eventual reserva debe aplicar las reglas de membresía, inicio y prioridad de la lista de espera del gimnasio.
-- Una clase llena devuelve `200` con cero cupos. Una clase iniciada sigue siendo consultable si existe, aunque no admita nuevas reservas.
-- Las páginas se consultan por separado; los cambios concurrentes pueden modificar los resultados entre páginas.
+- **X-API-Key:** identifica al grupo consumidor. El servidor obtiene el origen de la configuración de esa credencial; el cuerpo no puede elegirlo. En el entorno operativo se utilizará HTTPS y las credenciales se comunicarán fuera del repositorio.
+- **Idempotency-Key:** es obligatoria y se interpreta dentro del grupo autenticado.
+- Repetir la misma clave y los mismos datos normalizados devuelve el mismo resultado 201 y los mismos identificadores del alta original.
+- Reutilizar la clave con datos distintos devuelve 409.
+- Con otra clave se vuelven a comprobar los conflictos: DNI o email ya registrados, o un identificador externo reutilizado para otro DNI. Esos casos devuelven 409 sin sobrescribir ni crear registros.
+- Las respuestas llevan Cache-Control: no-store. El mock agrega X-Mock: true, que identifica datos y persistencia simulados.
 
-## Autenticación, idempotencia y errores
+En el servicio operativo, socio, solicitud, referencia externa y respuesta de idempotencia se guardan en una única transacción PostgreSQL. Los reintentos simultáneos entre instancias y después de reiniciar conservan los mismos identificadores. Los errores no consumen la clave como un alta exitosa. Se conserva el resultado original sin caducidad automática en esta etapa; el replay no consulta si la membresía cambió posteriormente.
 
-La propuesta inicial utiliza una clave del grupo consumidor enviada en `X-API-Key`. En el entorno operativo se utilizará HTTPS. La clave real se entregará fuera del repositorio y se configurará como secreto del entorno. No se exige una cuenta de socio para estas consultas.
+**Límite del mock:** las claves, altas y solicitudes solo se recuerdan mientras vive el proceso. Reiniciarlo borra ese estado. Estas garantías persistentes se comprueban por separado contra el backend real, no mediante el mock.
 
-Las respuestas `401` incluirán `WWW-Authenticate: ApiKey realm="clases"`, según el requisito de desafío de autenticación de [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html#section-15.5.2).
+## Ejecutar y probar el servicio operativo
 
-Las dos operaciones son lecturas idempotentes: repetirlas no modifica registros ni crea reservas. No requieren una clave de idempotencia; sus resultados pueden cambiar con el estado del gimnasio.
+Desde la raíz del proyecto:
 
-| HTTP | Código del cuerpo | Interpretación |
+~~~sh
+node scripts/iniciar.mjs
+~~~
+
+Este comando construye el servicio con el contrato incluido en su imagen y publica `POST http://localhost:8080/api/v1/integraciones/empleados` (o el puerto `GATEWAY_PORT`). Las variables nuevas son:
+
+| Variable | Uso |
+|---|---|
+| `EMPLEADOS_API_KEY` | Credencial propia de esta integración, generada aleatoriamente si falta; distinta de CAPACIDAD_API_KEY, SERVICIOS_API_KEY y JWT. No se versiona. |
+| `EMPLEADOS_ORIGEN_ID` | Identificador estable de origen asociado a la clave. El inicio completa `grupo-ficticio-local` si no se configuró; es solo un marcador de prueba, no la identidad real del grupo. |
+
+El script conserva las credenciales existentes. Mantener origen y clave al reiniciar; cambiar el origen cambia el ámbito de idempotencia. La configuración por entorno del servidor actual corresponde a un consumidor; las pruebas utilizan dos orígenes configurados explícitamente para comprobar su separación.
+
+### Ejemplo operativo en PowerShell
+
+Abrir PowerShell en la carpeta del repositorio, donde está `.env`, después del inicio:
+
+~~~powershell
+$claveEmpleados = (Select-String -LiteralPath .env -Pattern '^EMPLEADOS_API_KEY=').Line.Split('=', 2)[1]
+$bodyEmpleado = @{
+    empleadoExternoId = 'empleado-demo-001'
+    dni = '40111222'
+    nombre = 'Empleado Ficticio'
+    email = 'empleado.demo@example.com'
+} | ConvertTo-Json
+
+Invoke-RestMethod -Method Post -Uri 'http://localhost:8080/api/v1/integraciones/empleados' -ContentType 'application/json' -Headers @{
+    'X-API-Key' = $claveEmpleados
+    'Idempotency-Key' = 'alta-demo-001'
+} -Body $bodyEmpleado
+~~~
+
+Usar el puerto configurado si difiere de 8080. Se obtiene HTTP 201 con los IDs, `estadoSolicitud: PENDIENTE` y `membresiaHabilitada: false`, sin `X-Mock`. Repetir el mismo comando devuelve los mismos IDs incluso después de reiniciar. Cambiar datos conservando esa clave devuelve 409. El POST no devuelve contraseña ni JWT; no permite iniciar sesión por el empleado ni asignar plan, pago o rol ADMIN.
+
+## Errores
+
+| HTTP | Código | Acción del consumidor |
 |---|---|---|
-| `400` | `PARAMETROS_INVALIDOS` | Corregir filtros, intervalo o paginación del listado. |
-| `401` | `NO_AUTENTICADO` | Revisar la clave, ausente o inválida. |
-| `404` | `CLASE_NO_ENCONTRADA` | El detalle solicitado no corresponde a una clase publicada. |
-| `500` | `ERROR_INTERNO` | No se pudo completar la consulta. |
-| `503` | `SERVICIO_NO_DISPONIBLE` | Servicio o almacenamiento temporalmente indisponible. |
+| 400 | PARAMETROS_INVALIDOS | Corregir campos, JSON o clave de idempotencia según el contrato. |
+| 401 | NO_AUTENTICADO | Revisar X-API-Key; la respuesta incluye el desafío de autenticación. |
+| 409 | IDEMPOTENCIA_EN_CONFLICTO | No reutilizar una clave para otra solicitud. |
+| 409 | EMPLEADO_EXTERNO_EN_CONFLICTO | Revisar la identificación del empleado; no se actualiza el alta existente. |
+| 409 | DNI_EXISTENTE | Resolver el DNI ya registrado mediante la administración del gimnasio. |
+| 409 | EMAIL_EXISTENTE | Corregir o resolver el email ya registrado. |
+| 415 | TIPO_CONTENIDO_NO_ADMITIDO | Enviar el cuerpo como application/json. |
+| 500 | ERROR_INTERNO | El resultado no debe suponerse exitoso; resolver o reintentar la misma solicitud con su misma clave. |
 
-Un listado sin coincidencias devuelve `200` con `items: []`. Ante fallas HTTP, tiempo de espera agotado o falta de respuesta, el consumidor debe tratar la disponibilidad como desconocida; no equivale a cero cupos. Sus tiempos de espera y reintentos se definirán en la integración correspondiente.
+Los mensajes son explicativos; el consumidor interpreta los códigos estables. El mock no simula disponibilidad del proveedor ni errores de PostgreSQL.
 
-## Ejemplos
+## Ejecutar el mock
 
-Todos los identificadores, actividades y fechas de los ejemplos son ficticios. `<host-del-proveedor>` y `<clave-del-consumidor>` son marcadores que deberán reemplazarse cuando se publique el entorno.
+Desde la raíz del proyecto, con Node.js 22 y las dependencias instaladas:
 
-```http
-GET /api/v1/clases?sedeId=sede-demo-01&pagina=1&tamanio=20 HTTP/1.1
-Host: <host-del-proveedor>
-X-API-Key: <clave-del-consumidor>
-Accept: application/json
-```
+~~~sh
+npm ci --ignore-scripts
+npm run mock:empleados
+~~~
 
-Respuesta `200`:
+El mock escucha solo en http://127.0.0.1:3005. Sus valores predeterminados son ficticios:
 
-```json
-{
-  "items": [
-    {
-      "claseId": "clase-demo-001",
-      "nombre": "Yoga",
-      "sedeId": "sede-demo-01",
-      "inicio": "2026-11-12T18:00:00-03:00",
-      "capacidad": 20,
-      "cuposDisponibles": 3,
-      "consultadoEn": "2026-11-12T17:30:00-03:00"
-    }
-  ],
-  "pagina": 1,
-  "tamanio": 20,
-  "total": 1
-}
-```
+- X-API-Key: clave-ficticia-solo-pruebas.
+- Grupo asociado: grupo-ficticio.
+- Puerto configurable con MOCK_EMPLEADOS_PORT; credencial y grupo configurables con MOCK_EMPLEADOS_API_KEY y MOCK_EMPLEADOS_GRUPO_ID.
 
-```http
-GET /api/v1/clases/clase-demo-001 HTTP/1.1
-Host: <host-del-proveedor>
-X-API-Key: <clave-del-consumidor>
-Accept: application/json
-```
+Este comando compila Socios y Membresías y arranca únicamente el mock separado. No inicia el servidor operativo, Docker ni bases de datos. Se detiene con Ctrl+C.
 
-El detalle devuelve el objeto de la clase mostrado dentro de `items`. El contrato incluye además ejemplos de clase llena, listado vacío y errores. Ejemplo de `404`:
+### Ejemplo en PowerShell
 
-```json
-{"codigo": "CLASE_NO_ENCONTRADA", "mensaje": "No se encontró la clase solicitada."}
-```
+En otra terminal:
 
-## Versionado y publicación
+~~~powershell
+$bodyEmpleado = @{
+    empleadoExternoId = 'empleado-demo-001'
+    dni = '40111222'
+    nombre = 'Empleado Ficticio'
+    email = 'empleado.demo@example.com'
+} | ConvertTo-Json
 
-- La versión inicial del contrato es `1.0.0`; las rutas identifican la versión mayor con `/api/v1`.
-- Se conservará el contrato de cada versión mayor. Un cambio incompatible, como eliminar campos u operaciones o modificar su significado, requerirá una nueva versión mayor y coordinación con el consumidor.
-- Los cambios compatibles, como agregar campos opcionales, incrementarán la versión menor. El consumidor debe tolerar campos nuevos y no depender del texto de los mensajes de error.
-- Las correcciones documentales que mantengan el comportamiento incrementarán la versión de parche. Todo cambio se documentará junto al contrato.
-- El mock local utiliza el contrato inicial `1.0.0`; su base es `http://localhost:8080`. La URL operativa pública se registrará aquí cuando exista.
-- El contrato quedará junto al código en el repositorio público. La capacidad real deberá desplegarse y mantenerse accesible durante la evaluación, según el enunciado.
+Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:3005/api/v1/integraciones/empleados' -ContentType 'application/json' -Headers @{
+    'X-API-Key' = 'clave-ficticia-solo-pruebas'
+    'Idempotency-Key' = 'alta-demo-001'
+} -Body $bodyEmpleado
+~~~
+
+Se obtienen los identificadores ficticios generados y la solicitud PENDIENTE, con membresiaHabilitada en false. Repetir el comando durante la misma ejecución devuelve esos mismos identificadores.
+
+Todos los datos del ejemplo son ficticios. Las claves mostradas son exclusivas de demostración y no representan credenciales operativas.
+
+## Comprobar el contrato
+
+~~~sh
+npm run test:contrato-empleados
+~~~
+
+Ese comando conserva las 11 pruebas del mock y los esquemas del contrato. Para comprobar también el servidor operativo y PostgreSQL:
+
+~~~sh
+npm test
+npm run test:postgres
+~~~
+
+La suite incluye 7 casos adicionales del endpoint operativo con el adaptador en memoria. La prueba PostgreSQL usa un contenedor efímero propio y HTTP real con dos instancias de Socios; comprueba 20 reintentos, unicidad concurrente, replay tras recrear el servicio y rollback total ante un fallo provocado. Ninguna de estas comprobaciones acredita una integración con el otro grupo ni una habilitación por pago.
+
+**Evidencia histórica del paso 2, 19/10/2026:** las 11 pruebas del mock y las 16 pruebas anteriores aprobaron mediante `npm test`. Una comprobación adicional inició el mock en un puerto temporal y verificó por HTTP 201, repetición y 409. El cierre actualizado del paso 5 se registra en README.
+
+## Versionado y pendientes
+
+- La versión 1.0.0 fue el diseño inicial de la API de empleados. La versión 1.0.1 actualiza descripciones y servidores al estado operativo; conserva los mismos campos, códigos y comportamiento. El contrato anterior de clases mantiene su versión y rutas.
+- Cambios incompatibles requieren una nueva versión mayor y coordinación con el consumidor. Cambios compatibles incrementan la menor; correcciones documentales compatibles, el parche.
+- Todavía faltan identificación y datos de conexión del otro grupo, credenciales operativas y URL de publicación. El mock local no es la URL compartida requerida para la capacidad operativa.
+- El servicio Tienda, separado y sin una base de datos nueva, consumirá productos y stock de la distribuidora según [D1, ADR-015](../adr/ADR-015-limites-con-tienda.md). Su implementación y el contrato externo siguen pendientes; esta guía no inventa esa API.

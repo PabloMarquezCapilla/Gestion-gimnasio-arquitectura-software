@@ -1,4 +1,10 @@
-import { Pool } from 'pg';
+import { Pool, PoolClient } from 'pg';
+import { randomUUID } from 'node:crypto';
+import { IClaseRepository, Instante, OpcionesReserva, ResultadoPromocion } from './ports';
+export { IClaseRepository } from './ports';
+
+function instante(value?: Instante) { return typeof value === 'function' ? value() : value ?? new Date().toISOString(); }
+
 import {
   ClaseDTO,
   ClaseEntidad,
@@ -10,26 +16,9 @@ import {
 } from './types';
 import { mockClasses, MockClass } from './mock-data';
 
-export interface IClaseRepository {
-  readonly isMock: boolean;
-  inicializarEsquema(): Promise<void>;
-  verificarSalud(): Promise<{ ok: boolean; detalle?: string }>;
-  listarClases(filtros: FiltrosClases, consultadoEn: string): Promise<{ items: ClaseDTO[]; total: number }>;
-  obtenerClase(claseId: string, consultadoEn: string): Promise<ClaseDTO | null>;
-  obtenerEntidadClase(claseId: string): Promise<ClaseEntidad | null>;
-  reservarCupo(claseId: string, socioId: string): Promise<ResultadoReserva>;
-  cancelarReserva(
-    reservaId: string,
-    promoverCallback?: (socioId: string, inicioClase?: string) => Promise<boolean>
-  ): Promise<ResultadoCancelacion>;
-  ingresarListaEspera(claseId: string, socioId: string): Promise<{ exito: boolean; codigo?: string; espera?: EntradaEspera }>;
-  obtenerReservasPorClase(claseId: string): Promise<Reserva[]>;
-  obtenerEsperaPorClase(claseId: string): Promise<EntradaEspera[]>;
-  obtenerReservasPorSocio(socioId: string): Promise<{ reservas: Reserva[]; espera: EntradaEspera[] }>;
-}
-
 export class MemoryClaseRepository implements IClaseRepository {
   public readonly isMock: boolean;
+  conexionesActivas(): number { return 0; }
   private clases: Map<string, ClaseEntidad> = new Map();
   private reservas: Map<string, Reserva> = new Map();
   private listaEspera: Map<string, EntradaEspera> = new Map();
@@ -126,167 +115,151 @@ export class MemoryClaseRepository implements IClaseRepository {
   }
 
   async obtenerEntidadClase(claseId: string): Promise<ClaseEntidad | null> {
-    return this.clases.get(claseId) ?? null;
+    const clase = this.clases.get(claseId);
+    return clase ? { ...clase } : null;
   }
 
-  async reservarCupo(claseId: string, socioId: string): Promise<ResultadoReserva> {
-    const clase = this.clases.get(claseId);
-    if (!clase) {
-      return { exito: false, codigo: 'CLASE_NO_ENCONTRADA', mensaje: 'La clase no existe.' };
-    }
-    if (Date.now() >= Date.parse(clase.inicio)) {
-      return { exito: false, codigo: 'CLASE_INICIADA', mensaje: 'La clase ya ha iniciado.' };
-    }
 
-    // Verificar reserva duplicada activa
-    for (const r of this.reservas.values()) {
-      if (r.claseId === claseId && r.socioId === socioId && r.estado === 'CONFIRMADA') {
-        return {
-          exito: false,
-          codigo: 'RESERVA_DUPLICADA',
-          mensaje: 'El socio ya posee una reserva confirmada para esta clase.',
-        };
-      }
-    }
+  private bloqueos = new Map<string, Promise<void>>();
 
-    const cupos = this.calcularCuposDisponibles(claseId, clase.capacidad);
-    if (cupos <= 0) {
-      return {
-        exito: false,
-        codigo: 'CLASE_SIN_CUPOS',
-        mensaje: 'No hay cupos disponibles.',
-        puedeIngresarEspera: true,
-      };
+  private async conClase<T>(claseId: string, operation: () => T | Promise<T>): Promise<T> {
+    const anterior = this.bloqueos.get(claseId) ?? Promise.resolve();
+    let liberar!: () => void;
+    const puerta = new Promise<void>((resolve) => { liberar = resolve; });
+    const actual = anterior.then(() => puerta);
+    this.bloqueos.set(claseId, actual);
+    await anterior;
+    try { return await operation(); }
+    finally {
+      liberar();
+      if (this.bloqueos.get(claseId) === actual) this.bloqueos.delete(claseId);
     }
+  }
 
-    const reservaId = `res-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    const nuevaReserva: Reserva = {
-      reservaId,
-      claseId,
-      socioId,
-      estado: 'CONFIRMADA',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+  private primero(claseId: string) {
+    return [...this.listaEspera.values()]
+      .filter((entry) => entry.claseId === claseId && entry.estado === 'PENDIENTE')
+      .sort((a, b) => a.orden - b.orden)[0];
+  }
+
+  private agregarEspera(claseId: string, socioId: string, ahora: string) {
+    const existente = [...this.listaEspera.values()].find(
+      (entry) => entry.claseId === claseId && entry.socioId === socioId && entry.estado === 'PENDIENTE',
+    );
+    if (existente) return { exito: false, codigo: 'YA_EN_ESPERA', espera: { ...existente } };
+    const orden = Math.max(0, ...[...this.listaEspera.values()]
+      .filter((entry) => entry.claseId === claseId).map((entry) => entry.orden)) + 1;
+    const entrada: EntradaEspera = {
+      esperaId: 'esp-' + randomUUID(), claseId, socioId, orden, estado: 'PENDIENTE',
+      createdAt: ahora, updatedAt: ahora,
     };
-    this.reservas.set(reservaId, nuevaReserva);
-
-    // Si estaba en lista de espera, marcar como promovido
-    for (const e of this.listaEspera.values()) {
-      if (e.claseId === claseId && e.socioId === socioId && e.estado === 'PENDIENTE') {
-        e.estado = 'PROMOVIDO';
-        e.updatedAt = new Date().toISOString();
-      }
-    }
-
-    return { exito: true, reserva: nuevaReserva };
+    this.listaEspera.set(entrada.esperaId, entrada);
+    return { exito: true, espera: { ...entrada } };
   }
 
-  async cancelarReserva(
-    reservaId: string,
-    promoverCallback?: (socioId: string, inicioClase?: string) => Promise<boolean>
-  ): Promise<ResultadoCancelacion> {
+  async obtenerReserva(reservaId: string): Promise<Reserva | null> {
     const reserva = this.reservas.get(reservaId);
-    if (!reserva || reserva.estado !== 'CONFIRMADA') {
-      return {
-        exito: false,
-        codigo: 'RESERVA_NO_ENCONTRADA',
-        mensaje: 'No se encontro una reserva confirmada activa con ese identificador.',
-      };
-    }
-
-    const clase = this.clases.get(reserva.claseId);
-    if (clase && Date.now() >= Date.parse(clase.inicio)) {
-      return {
-        exito: false,
-        codigo: 'CLASE_YA_INICIADA',
-        mensaje: 'No se puede cancelar una reserva despues del inicio de la clase.',
-      };
-    }
-
-    reserva.estado = 'CANCELADA';
-    reserva.updatedAt = new Date().toISOString();
-
-    // Reasignacion automatica por orden de lista de espera
-    let promocion: { socioId: string; reservaId: string } | undefined;
-    const candidatos = Array.from(this.listaEspera.values())
-      .filter((e) => e.claseId === reserva.claseId && e.estado === 'PENDIENTE')
-      .sort((a, b) => a.orden - b.orden);
-
-    for (const candidato of candidatos) {
-      let habilitado = true;
-      if (promoverCallback) {
-        try {
-          habilitado = await promoverCallback(candidato.socioId, clase?.inicio);
-        } catch {
-          // Si falla la comunicacion, conservar prioridad y continuar sin descartar
-          continue;
-        }
-      }
-
-      if (habilitado) {
-        candidato.estado = 'PROMOVIDO';
-        candidato.updatedAt = new Date().toISOString();
-        const nuevaReservaId = `res-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-        const resPromovida: Reserva = {
-          reservaId: nuevaReservaId,
-          claseId: reserva.claseId,
-          socioId: candidato.socioId,
-          estado: 'CONFIRMADA',
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString(),
-        };
-        this.reservas.set(nuevaReservaId, resPromovida);
-        promocion = { socioId: candidato.socioId, reservaId: nuevaReservaId };
-        break;
-      } else {
-        // No habilitado, retirar de espera y evaluar al siguiente
-        candidato.estado = 'CANCELADO';
-        candidato.updatedAt = new Date().toISOString();
-      }
-    }
-
-    return { exito: true, reserva, promocion };
+    return reserva ? { ...reserva } : null;
   }
 
-  async ingresarListaEspera(
-    claseId: string,
-    socioId: string
-  ): Promise<{ exito: boolean; codigo?: string; espera?: EntradaEspera }> {
-    const clase = this.clases.get(claseId);
-    if (!clase) {
-      return { exito: false, codigo: 'CLASE_NO_ENCONTRADA' };
-    }
-    if (Date.now() >= Date.parse(clase.inicio)) {
-      return { exito: false, codigo: 'CLASE_INICIADA' };
-    }
+  async reservarCupo(claseId: string, socioId: string, opciones?: OpcionesReserva): Promise<ResultadoReserva> {
+    return this.conClase<ResultadoReserva>(claseId, () => {
+      const ahora = instante(opciones?.ahora);
+      const clase = this.clases.get(claseId);
+      if (!clase?.publicada) return { exito: false, codigo: 'CLASE_NO_ENCONTRADA' };
+      if (Date.parse(ahora) >= Date.parse(clase.inicio)) return { exito: false, codigo: 'CLASE_INICIADA' };
+      if ([...this.reservas.values()].some((r) => r.claseId === claseId && r.socioId === socioId && r.estado === 'CONFIRMADA')) {
+        return { exito: false, codigo: 'RESERVA_DUPLICADA' };
+      }
+      if (this.calcularCuposDisponibles(claseId, clase.capacidad) <= 0 || this.primero(claseId)) {
+        return opciones?.ingresarEsperaSiLlena
+          ? this.agregarEspera(claseId, socioId, ahora)
+          : { exito: false, codigo: 'CLASE_SIN_CUPOS', puedeIngresarEspera: true };
+      }
+      const reserva: Reserva = {
+        reservaId: 'res-' + randomUUID(), claseId, socioId, estado: 'CONFIRMADA',
+        createdAt: ahora, updatedAt: ahora,
+      };
+      this.reservas.set(reserva.reservaId, reserva);
+      return { exito: true, reserva: { ...reserva } };
+    });
+  }
 
-    for (const r of this.reservas.values()) {
-      if (r.claseId === claseId && r.socioId === socioId && r.estado === 'CONFIRMADA') {
+  async ingresarListaEspera(claseId: string, socioId: string, momento?: Instante) {
+    return this.conClase(claseId, () => {
+      const ahora = instante(momento);
+      const clase = this.clases.get(claseId);
+      if (!clase?.publicada) return { exito: false, codigo: 'CLASE_NO_ENCONTRADA' };
+      if (Date.parse(ahora) >= Date.parse(clase.inicio)) return { exito: false, codigo: 'CLASE_INICIADA' };
+      if ([...this.reservas.values()].some((r) => r.claseId === claseId && r.socioId === socioId && r.estado === 'CONFIRMADA')) {
         return { exito: false, codigo: 'TIENE_RESERVA_CONFIRMADA' };
       }
-    }
-
-    for (const e of this.listaEspera.values()) {
-      if (e.claseId === claseId && e.socioId === socioId && e.estado === 'PENDIENTE') {
-        return { exito: false, codigo: 'YA_EN_ESPERA', espera: e };
+      if (this.calcularCuposDisponibles(claseId, clase.capacidad) > 0 && !this.primero(claseId)) {
+        return { exito: false, codigo: 'CLASE_CON_CUPOS' };
       }
-    }
+      return this.agregarEspera(claseId, socioId, ahora);
+    });
+  }
 
-    const allEntries = Array.from(this.listaEspera.values()).filter((e) => e.claseId === claseId);
-    const maxOrden = allEntries.reduce((max, e) => Math.max(max, e.orden), 0);
-    const orden = maxOrden + 1;
-    const esperaId = `esp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-    const entrada: EntradaEspera = {
-      esperaId,
-      claseId,
-      socioId,
-      orden,
-      estado: 'PENDIENTE',
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    };
-    this.listaEspera.set(esperaId, entrada);
-    return { exito: true, espera: entrada };
+  async cancelarReserva(reservaId: string, momento?: Instante): Promise<ResultadoCancelacion> {
+    const original = this.reservas.get(reservaId);
+    if (!original) return { exito: false, codigo: 'RESERVA_NO_ENCONTRADA' };
+    return this.conClase<ResultadoCancelacion>(original.claseId, () => {
+      const ahora = instante(momento);
+      const reserva = this.reservas.get(reservaId)!;
+      const clase = this.clases.get(reserva.claseId)!;
+      if (reserva.estado === 'CONFIRMADA' && Date.parse(ahora) >= Date.parse(clase.inicio)) {
+        return { exito: false, codigo: 'CLASE_INICIADA' };
+      }
+      if (reserva.estado === 'CONFIRMADA') {
+        reserva.estado = 'CANCELADA';
+        reserva.updatedAt = ahora;
+      }
+      return {
+        exito: true, reserva: { ...reserva },
+        reasignacionPendiente: Date.parse(ahora) < Date.parse(clase.inicio) && !!this.primero(clase.claseId),
+      };
+    });
+  }
+
+  async obtenerPrimerCandidato(claseId: string) {
+    const clase = this.clases.get(claseId);
+    const espera = this.primero(claseId);
+    if (!clase || !espera || this.calcularCuposDisponibles(claseId, clase.capacidad) <= 0) return null;
+    return { clase: { ...clase }, espera: { ...espera } };
+  }
+
+  async aplicarEvaluacionEspera(claseId: string, esperaId: string, habilitado: boolean, momento: Instante): Promise<ResultadoPromocion> {
+    return this.conClase<ResultadoPromocion>(claseId, () => {
+      const ahora = instante(momento);
+      const clase = this.clases.get(claseId);
+      if (!clase || Date.parse(ahora) >= Date.parse(clase.inicio)) return { estado: 'CLASE_INICIADA' };
+      if (this.calcularCuposDisponibles(claseId, clase.capacidad) <= 0) return { estado: 'SIN_CUPO' };
+      const candidato = this.primero(claseId);
+      if (!candidato || candidato.esperaId !== esperaId) return { estado: 'CAMBIO' };
+      candidato.updatedAt = ahora;
+      if (!habilitado) {
+        candidato.estado = 'CANCELADO';
+        return { estado: 'RETIRADO' };
+      }
+      candidato.estado = 'PROMOVIDO';
+      if ([...this.reservas.values()].some((r) => r.claseId === claseId && r.socioId === candidato.socioId && r.estado === 'CONFIRMADA')) {
+        return { estado: 'CAMBIO' };
+      }
+      const reserva: Reserva = {
+        reservaId: 'res-' + randomUUID(), claseId, socioId: candidato.socioId,
+        estado: 'CONFIRMADA', createdAt: ahora, updatedAt: ahora,
+      };
+      this.reservas.set(reserva.reservaId, reserva);
+      return { estado: 'PROMOVIDO', promocion: { socioId: reserva.socioId, reservaId: reserva.reservaId } };
+    });
+  }
+
+  async listarClasesConEsperaYCupo(ahora: string): Promise<string[]> {
+    return [...this.clases.values()]
+      .filter((c) => c.publicada && Date.parse(c.inicio) > Date.parse(ahora)
+        && this.calcularCuposDisponibles(c.claseId, c.capacidad) > 0 && this.primero(c.claseId))
+      .map((c) => c.claseId).slice(0, 100);
   }
 
   async obtenerReservasPorClase(claseId: string): Promise<Reserva[]> {
@@ -314,6 +287,8 @@ export class PostgresClaseRepository implements IClaseRepository {
   public readonly isMock = false;
 
   constructor(private pool: Pool) {}
+
+  conexionesActivas(): number { return this.pool.totalCount - this.pool.idleCount; }
 
   async verificarSalud(): Promise<{ ok: boolean; detalle?: string }> {
     try {
@@ -511,255 +486,170 @@ export class PostgresClaseRepository implements IClaseRepository {
     };
   }
 
-  async reservarCupo(claseId: string, socioId: string): Promise<ResultadoReserva> {
-    const client = await this.pool.connect();
-    try {
-      await client.query('BEGIN');
 
-      // Bloqueo pesimista a nivel de fila para garantizar consistencia estricta en concurrencia (D4)
-      const claseRes = await client.query(
-        'SELECT clase_id, capacidad, inicio FROM clases WHERE clase_id = $1 FOR UPDATE',
-        [claseId]
-      );
-      if (claseRes.rows.length === 0) {
-        await client.query('ROLLBACK');
-        return { exito: false, codigo: 'CLASE_NO_ENCONTRADA', mensaje: 'La clase no existe.' };
-      }
-
-      const clase = claseRes.rows[0];
-      if (new Date() >= new Date(clase.inicio)) {
-        await client.query('ROLLBACK');
-        return { exito: false, codigo: 'CLASE_INICIADA', mensaje: 'La clase ya ha iniciado.' };
-      }
-
-      // Validar si ya tiene reserva confirmada activa
-      const dupRes = await client.query(
-        "SELECT reserva_id FROM reservas WHERE clase_id = $1 AND socio_id = $2 AND estado = 'CONFIRMADA'",
-        [claseId, socioId]
-      );
-      if (dupRes.rows.length > 0) {
-        await client.query('ROLLBACK');
-        return {
-          exito: false,
-          codigo: 'RESERVA_DUPLICADA',
-          mensaje: 'El socio ya posee una reserva confirmada para esta clase.',
-        };
-      }
-
-      // Conteo actual de reservas confirmadas
-      const countRes = await client.query(
-        "SELECT count(*)::int AS ocupados FROM reservas WHERE clase_id = $1 AND estado = 'CONFIRMADA'",
-        [claseId]
-      );
-      const ocupados = countRes.rows[0].ocupados;
-      if (ocupados >= clase.capacidad) {
-        await client.query('ROLLBACK');
-        return {
-          exito: false,
-          codigo: 'CLASE_SIN_CUPOS',
-          mensaje: 'No hay cupos disponibles.',
-          puedeIngresarEspera: true,
-        };
-      }
-
-      const reservaId = `res-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-      await client.query(
-        `INSERT INTO reservas (reserva_id, clase_id, socio_id, estado, created_at, updated_at)
-         VALUES ($1, $2, $3, 'CONFIRMADA', NOW(), NOW())`,
-        [reservaId, claseId, socioId]
-      );
-
-      // Si estaba en espera, marcar promovido
-      await client.query(
-        "UPDATE lista_espera SET estado = 'PROMOVIDO', updated_at = NOW() WHERE clase_id = $1 AND socio_id = $2 AND estado = 'PENDIENTE'",
-        [claseId, socioId]
-      );
-
-      await client.query('COMMIT');
-
-      const nuevaReserva: Reserva = {
-        reservaId,
-        claseId,
-        socioId,
-        estado: 'CONFIRMADA',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-      return { exito: true, reserva: nuevaReserva };
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
-    }
-  }
-
-  async cancelarReserva(
-    reservaId: string,
-    promoverCallback?: (socioId: string, inicioClase?: string) => Promise<boolean>
-  ): Promise<ResultadoCancelacion> {
-    const client = await this.pool.connect();
-    try {
-      await client.query('BEGIN');
-
-      const resRow = await client.query(
-        "SELECT reserva_id, clase_id, socio_id, estado FROM reservas WHERE reserva_id = $1 AND estado = 'CONFIRMADA' FOR UPDATE",
-        [reservaId]
-      );
-      if (resRow.rows.length === 0) {
-        await client.query('ROLLBACK');
-        return {
-          exito: false,
-          codigo: 'RESERVA_NO_ENCONTRADA',
-          mensaje: 'No se encontro una reserva confirmada activa con ese identificador.',
-        };
-      }
-
-      const reservaActual = resRow.rows[0];
-      const claseRes = await client.query('SELECT inicio FROM clases WHERE clase_id = $1', [
-        reservaActual.clase_id,
-      ]);
-      if (claseRes.rows.length > 0 && new Date() >= new Date(claseRes.rows[0].inicio)) {
-        await client.query('ROLLBACK');
-        return {
-          exito: false,
-          codigo: 'CLASE_YA_INICIADA',
-          mensaje: 'No se puede cancelar una reserva despues del inicio de la clase.',
-        };
-      }
-
-      await client.query(
-        "UPDATE reservas SET estado = 'CANCELADA', updated_at = NOW() WHERE reserva_id = $1",
-        [reservaId]
-      );
-
-      // Buscar candidatos en lista de espera
-      const candidatosRes = await client.query(
-        "SELECT espera_id, socio_id FROM lista_espera WHERE clase_id = $1 AND estado = 'PENDIENTE' ORDER BY orden ASC FOR UPDATE",
-        [reservaActual.clase_id]
-      );
-
-      const inicioClase = claseRes.rows[0]?.inicio?.toISOString();
-      let promocion: { socioId: string; reservaId: string } | undefined;
-      for (const candidato of candidatosRes.rows) {
-        let habilitado = true;
-        if (promoverCallback) {
-          try {
-            habilitado = await promoverCallback(candidato.socio_id, inicioClase);
-          } catch {
-            // Error de comunicacion con el servicio externo: preservar prioridad y no descartar (D10)
-            continue;
-          }
-        }
-
-        if (habilitado) {
-          await client.query(
-            "UPDATE lista_espera SET estado = 'PROMOVIDO', updated_at = NOW() WHERE espera_id = $1",
-            [candidato.espera_id]
-          );
-          const nuevaReservaId = `res-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-          await client.query(
-            `INSERT INTO reservas (reserva_id, clase_id, socio_id, estado, created_at, updated_at)
-             VALUES ($1, $2, $3, 'CONFIRMADA', NOW(), NOW())`,
-            [nuevaReservaId, reservaActual.clase_id, candidato.socio_id]
-          );
-          promocion = { socioId: candidato.socio_id, reservaId: nuevaReservaId };
-          break;
-        } else {
-          await client.query(
-            "UPDATE lista_espera SET estado = 'CANCELADO', updated_at = NOW() WHERE espera_id = $1",
-            [candidato.espera_id]
-          );
-        }
-      }
-
-      await client.query('COMMIT');
-
-      const reservaCancelada: Reserva = {
-        reservaId,
-        claseId: reservaActual.clase_id,
-        socioId: reservaActual.socio_id,
-        estado: 'CANCELADA',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
-      };
-
-      return { exito: true, reserva: reservaCancelada, promocion };
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
-    }
-  }
-
-  async ingresarListaEspera(
+  private async conClase<T>(
     claseId: string,
-    socioId: string
-  ): Promise<{ exito: boolean; codigo?: string; espera?: EntradaEspera }> {
+    operation: (client: PoolClient, clase: { clase_id: string; capacidad: number; inicio: Date; publicada: boolean } | null) => Promise<T>,
+  ): Promise<T> {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
+      const row = await client.query(
+        'SELECT clase_id, capacidad, inicio, publicada FROM clases WHERE clase_id = $1 FOR UPDATE', [claseId],
+      );
+      const result = await operation(client, row.rows[0] ?? null);
+      await client.query('COMMIT');
+      return result;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally { client.release(); }
+  }
 
-      const claseRes = await client.query('SELECT clase_id, inicio FROM clases WHERE clase_id = $1 FOR UPDATE', [
-        claseId,
-      ]);
-      if (claseRes.rows.length === 0) {
-        await client.query('ROLLBACK');
-        return { exito: false, codigo: 'CLASE_NO_ENCONTRADA' };
+  private async primero(client: PoolClient, claseId: string) {
+    const result = await client.query(
+      "SELECT espera_id, clase_id, socio_id, orden, estado, created_at, updated_at FROM lista_espera WHERE clase_id=$1 AND estado='PENDIENTE' ORDER BY orden, espera_id LIMIT 1 FOR UPDATE",
+      [claseId],
+    );
+    return result.rows[0];
+  }
+
+  private async agregarEspera(client: PoolClient, claseId: string, socioId: string, ahora: string) {
+    const existente = await client.query(
+      "SELECT espera_id FROM lista_espera WHERE clase_id=$1 AND socio_id=$2 AND estado='PENDIENTE'", [claseId, socioId],
+    );
+    if (existente.rowCount) return { exito: false, codigo: 'YA_EN_ESPERA' };
+    const ordenRes = await client.query('SELECT COALESCE(MAX(orden),0)::int+1 AS orden FROM lista_espera WHERE clase_id=$1', [claseId]);
+    const espera: EntradaEspera = {
+      esperaId: 'esp-' + randomUUID(), claseId, socioId, orden: ordenRes.rows[0].orden,
+      estado: 'PENDIENTE', createdAt: ahora, updatedAt: ahora,
+    };
+    await client.query(
+      "INSERT INTO lista_espera (espera_id,clase_id,socio_id,orden,estado,created_at,updated_at) VALUES($1,$2,$3,$4,'PENDIENTE',$5,$5)",
+      [espera.esperaId, claseId, socioId, espera.orden, ahora],
+    );
+    return { exito: true, espera };
+  }
+
+  async obtenerReserva(reservaId: string): Promise<Reserva | null> {
+    const result = await this.pool.query('SELECT * FROM reservas WHERE reserva_id=$1', [reservaId]);
+    const row = result.rows[0];
+    return row ? {
+      reservaId: row.reserva_id, claseId: row.clase_id, socioId: row.socio_id, estado: row.estado,
+      createdAt: row.created_at.toISOString(), updatedAt: row.updated_at.toISOString(),
+    } : null;
+  }
+
+  async reservarCupo(claseId: string, socioId: string, opciones?: OpcionesReserva): Promise<ResultadoReserva> {
+    return this.conClase<ResultadoReserva>(claseId, async (client, clase) => {
+      const ahora = instante(opciones?.ahora);
+      if (!clase?.publicada) return { exito: false, codigo: 'CLASE_NO_ENCONTRADA' };
+      if (Date.parse(ahora) >= clase.inicio.getTime()) return { exito: false, codigo: 'CLASE_INICIADA' };
+      const dup = await client.query("SELECT 1 FROM reservas WHERE clase_id=$1 AND socio_id=$2 AND estado='CONFIRMADA'", [claseId, socioId]);
+      if (dup.rowCount) return { exito: false, codigo: 'RESERVA_DUPLICADA' };
+      const count = await client.query("SELECT COUNT(*)::int AS ocupados FROM reservas WHERE clase_id=$1 AND estado='CONFIRMADA'", [claseId]);
+      if (count.rows[0].ocupados >= clase.capacidad || await this.primero(client, claseId)) {
+        return opciones?.ingresarEsperaSiLlena
+          ? this.agregarEspera(client, claseId, socioId, ahora)
+          : { exito: false, codigo: 'CLASE_SIN_CUPOS', puedeIngresarEspera: true };
       }
-      if (new Date() >= new Date(claseRes.rows[0].inicio)) {
-        await client.query('ROLLBACK');
+      const reserva: Reserva = {
+        reservaId: 'res-' + randomUUID(), claseId, socioId, estado: 'CONFIRMADA', createdAt: ahora, updatedAt: ahora,
+      };
+      await client.query(
+        "INSERT INTO reservas(reserva_id,clase_id,socio_id,estado,created_at,updated_at) VALUES($1,$2,$3,'CONFIRMADA',$4,$4)",
+        [reserva.reservaId, claseId, socioId, ahora],
+      );
+      return { exito: true, reserva };
+    });
+  }
+
+  async ingresarListaEspera(claseId: string, socioId: string, momento?: Instante) {
+    return this.conClase(claseId, async (client, clase) => {
+      const ahora = instante(momento);
+      if (!clase?.publicada) return { exito: false, codigo: 'CLASE_NO_ENCONTRADA' };
+      if (Date.parse(ahora) >= clase.inicio.getTime()) return { exito: false, codigo: 'CLASE_INICIADA' };
+      const dup = await client.query("SELECT 1 FROM reservas WHERE clase_id=$1 AND socio_id=$2 AND estado='CONFIRMADA'", [claseId, socioId]);
+      if (dup.rowCount) return { exito: false, codigo: 'TIENE_RESERVA_CONFIRMADA' };
+      const count = await client.query("SELECT COUNT(*)::int AS ocupados FROM reservas WHERE clase_id=$1 AND estado='CONFIRMADA'", [claseId]);
+      if (count.rows[0].ocupados < clase.capacidad && !await this.primero(client, claseId)) {
+        return { exito: false, codigo: 'CLASE_CON_CUPOS' };
+      }
+      return this.agregarEspera(client, claseId, socioId, ahora);
+    });
+  }
+
+  async cancelarReserva(reservaId: string, momento?: Instante): Promise<ResultadoCancelacion> {
+    const original = await this.obtenerReserva(reservaId);
+    if (!original) return { exito: false, codigo: 'RESERVA_NO_ENCONTRADA' };
+    return this.conClase<ResultadoCancelacion>(original.claseId, async (client, clase) => {
+      const ahora = instante(momento);
+      const result = await client.query('SELECT * FROM reservas WHERE reserva_id=$1 FOR UPDATE', [reservaId]);
+      const row = result.rows[0];
+      if (!row || !clase) return { exito: false, codigo: 'RESERVA_NO_ENCONTRADA' };
+      if (row.estado === 'CONFIRMADA' && Date.parse(ahora) >= clase.inicio.getTime()) {
         return { exito: false, codigo: 'CLASE_INICIADA' };
       }
-
-      const dupRes = await client.query(
-        "SELECT reserva_id FROM reservas WHERE clase_id = $1 AND socio_id = $2 AND estado = 'CONFIRMADA'",
-        [claseId, socioId]
-      );
-      if (dupRes.rows.length > 0) {
-        await client.query('ROLLBACK');
-        return { exito: false, codigo: 'TIENE_RESERVA_CONFIRMADA' };
+      if (row.estado === 'CONFIRMADA') {
+        await client.query("UPDATE reservas SET estado='CANCELADA',updated_at=$2 WHERE reserva_id=$1", [reservaId, ahora]);
       }
-
-      const ordenRes = await client.query(
-        "SELECT COALESCE(MAX(orden), 0)::int AS max_orden FROM lista_espera WHERE clase_id = $1",
-        [claseId]
-      );
-      const orden = ordenRes.rows[0].max_orden + 1;
-      const esperaId = `esp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
-
-      const insertRes = await client.query(
-        `INSERT INTO lista_espera (espera_id, clase_id, socio_id, orden, estado, created_at, updated_at)
-         VALUES ($1, $2, $3, $4, 'PENDIENTE', NOW(), NOW())
-         ON CONFLICT (clase_id, socio_id) WHERE estado = 'PENDIENTE' DO NOTHING
-         RETURNING espera_id`,
-        [esperaId, claseId, socioId, orden]
-      );
-
-      if (insertRes.rowCount === 0) {
-        await client.query('ROLLBACK');
-        return { exito: false, codigo: 'YA_EN_ESPERA' };
-      }
-
-      await client.query('COMMIT');
-
-      const entrada: EntradaEspera = {
-        esperaId,
-        claseId,
-        socioId,
-        orden,
-        estado: 'PENDIENTE',
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString(),
+      return {
+        exito: true,
+        reserva: {
+          reservaId, claseId: row.clase_id, socioId: row.socio_id, estado: 'CANCELADA',
+          createdAt: row.created_at.toISOString(), updatedAt: row.estado === 'CONFIRMADA' ? ahora : row.updated_at.toISOString(),
+        },
+        reasignacionPendiente: Date.parse(ahora) < clase.inicio.getTime() && !!await this.primero(client, original.claseId),
       };
-      return { exito: true, espera: entrada };
-    } catch (err) {
-      await client.query('ROLLBACK');
-      throw err;
-    } finally {
-      client.release();
-    }
+    });
+  }
+
+  async obtenerPrimerCandidato(claseId: string) {
+    const clase = await this.obtenerEntidadClase(claseId);
+    if (!clase) return null;
+    const result = await this.pool.query(
+      "SELECT * FROM lista_espera WHERE clase_id=$1 AND estado='PENDIENTE' ORDER BY orden,espera_id LIMIT 1", [claseId],
+    );
+    const row = result.rows[0];
+    if (!row) return null;
+    const disponibilidad = await this.obtenerClase(claseId, new Date().toISOString());
+    if (!disponibilidad || disponibilidad.cuposDisponibles <= 0) return null;
+    return { clase, espera: {
+      esperaId: row.espera_id, claseId, socioId: row.socio_id, orden: row.orden,
+      estado: row.estado as EntradaEspera['estado'], createdAt: row.created_at.toISOString(), updatedAt: row.updated_at.toISOString(),
+    } };
+  }
+
+  async aplicarEvaluacionEspera(claseId: string, esperaId: string, habilitado: boolean, momento: Instante): Promise<ResultadoPromocion> {
+    return this.conClase<ResultadoPromocion>(claseId, async (client, clase) => {
+      const ahora = instante(momento);
+      if (!clase || Date.parse(ahora) >= clase.inicio.getTime()) return { estado: 'CLASE_INICIADA' };
+      const count = await client.query("SELECT COUNT(*)::int AS ocupados FROM reservas WHERE clase_id=$1 AND estado='CONFIRMADA'", [claseId]);
+      if (count.rows[0].ocupados >= clase.capacidad) return { estado: 'SIN_CUPO' };
+      const primero = await this.primero(client, claseId);
+      if (!primero || primero.espera_id !== esperaId) return { estado: 'CAMBIO' };
+      if (!habilitado) {
+        await client.query("UPDATE lista_espera SET estado='CANCELADO',updated_at=$2 WHERE espera_id=$1", [esperaId, ahora]);
+        return { estado: 'RETIRADO' };
+      }
+      await client.query("UPDATE lista_espera SET estado='PROMOVIDO',updated_at=$2 WHERE espera_id=$1", [esperaId, ahora]);
+      const dup = await client.query("SELECT 1 FROM reservas WHERE clase_id=$1 AND socio_id=$2 AND estado='CONFIRMADA'", [claseId, primero.socio_id]);
+      if (dup.rowCount) return { estado: 'CAMBIO' };
+      const reservaId = 'res-' + randomUUID();
+      await client.query(
+        "INSERT INTO reservas(reserva_id,clase_id,socio_id,estado,created_at,updated_at) VALUES($1,$2,$3,'CONFIRMADA',$4,$4)",
+        [reservaId, claseId, primero.socio_id, ahora],
+      );
+      return { estado: 'PROMOVIDO', promocion: { socioId: primero.socio_id, reservaId } };
+    });
+  }
+
+  async listarClasesConEsperaYCupo(ahora: string): Promise<string[]> {
+    const result = await this.pool.query(
+      "SELECT c.clase_id FROM clases c WHERE c.publicada=TRUE AND c.inicio>$1 AND c.capacidad>(SELECT COUNT(*) FROM reservas r WHERE r.clase_id=c.clase_id AND r.estado='CONFIRMADA') AND EXISTS(SELECT 1 FROM lista_espera e WHERE e.clase_id=c.clase_id AND e.estado='PENDIENTE') ORDER BY c.inicio,c.clase_id LIMIT 100",
+      [ahora],
+    );
+    return result.rows.map((row) => row.clase_id);
   }
 
   async obtenerReservasPorClase(claseId: string): Promise<Reserva[]> {

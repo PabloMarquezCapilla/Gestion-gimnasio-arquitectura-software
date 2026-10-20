@@ -56,6 +56,7 @@ export interface ResultadoReserva {
   codigo?: string;
   mensaje?: string;
   reserva?: Reserva;
+  espera?: EntradaEspera;
   puedeIngresarEspera?: boolean;
 }
 
@@ -64,6 +65,7 @@ export interface ResultadoCancelacion {
   codigo?: string;
   mensaje?: string;
   reserva?: Reserva;
+  reasignacionPendiente?: boolean;
   promocion?: {
     socioId: string;
     reservaId: string;

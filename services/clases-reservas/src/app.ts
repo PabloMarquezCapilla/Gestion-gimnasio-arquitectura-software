@@ -9,6 +9,8 @@ import { MockClass, mockClasses } from './mock-data';
 import { IClaseRepository, MemoryClaseRepository } from './repository';
 import { ISociosClient, MockSociosClient } from './clients/socios.client';
 import { registerTracing } from './tracing';
+import { registerSessionAuth } from './auth';
+import { ReservasService } from './application/reservas.service';
 
 interface Parameter {
   name: string;
@@ -37,6 +39,9 @@ interface ListQuery {
 
 export interface AppOptions {
   apiKey: string;
+  jwtSecret?: string;
+  internalApiKey?: string;
+  jwtTtlSeconds?: number;
   logger?: boolean | Record<string, unknown>;
   clock?: () => Date;
   classes?: readonly MockClass[];
@@ -78,14 +83,16 @@ export function buildApp(options: AppOptions) {
 
   const loggerConfig =
     typeof options.logger === 'object' && options.logger !== null
-      ? { redact: ['req.headers["x-api-key"]', 'req.headers.authorization'], ...options.logger }
+      ? { redact: ['req.headers["x-api-key"]', 'req.headers["x-service-key"]', 'req.headers.authorization'], ...options.logger }
       : options.logger
-        ? { redact: ['req.headers["x-api-key"]', 'req.headers.authorization'] }
+        ? { redact: ['req.headers["x-api-key"]', 'req.headers["x-service-key"]', 'req.headers.authorization'] }
         : false;
 
   const app = Fastify({
     logger: loggerConfig,
   });
+
+  const auth = registerSessionAuth(app, options);
 
   const clock = options.clock ?? (() => new Date());
 
@@ -96,6 +103,8 @@ export function buildApp(options: AppOptions) {
 
   const sociosClient: ISociosClient =
     options.sociosClient ?? new MockSociosClient();
+
+  const reservasService = new ReservasService(repository, sociosClient, { clock });
 
   // Registro de trazabilidad distribuida W3C (D11)
   void registerTracing(app, { serviceName: 'clases-reservas' });
@@ -188,9 +197,9 @@ export function buildApp(options: AppOptions) {
       '# HELP http_errors_total Total de respuestas HTTP 5xx emitidas',
       '# TYPE http_errors_total counter',
       `http_errors_total{service="clases-reservas",instance="${instanceId}"} ${httpErrorsTotal}`,
-      '# HELP pg_pool_active_connections Conexiones en el pool de base de datos',
+      '# HELP pg_pool_active_connections Conexiones ocupadas del pool de base de datos',
       '# TYPE pg_pool_active_connections gauge',
-      `pg_pool_active_connections{service="clases-reservas",instance="${instanceId}"} ${repository.isMock ? 0 : 1}`,
+      `pg_pool_active_connections{service="clases-reservas",instance="${instanceId}"} ${repository.conexionesActivas()}`,
       '# HELP process_uptime_seconds Tiempo de actividad en segundos',
       '# TYPE process_uptime_seconds gauge',
       `process_uptime_seconds{service="clases-reservas",instance="${instanceId}"} ${Math.floor(process.uptime())}`,
@@ -265,238 +274,87 @@ export function buildApp(options: AppOptions) {
     }
   );
 
-  // =========================================================================
-  // Flujo Principal: Reservas de clases con consistencia y validacion (D1, D3, D4, D5)
-  // =========================================================================
+  function forbidden(reply: FastifyReply) {
+    return reply.code(403).send({ codigo: 'NO_AUTORIZADO', mensaje: 'No puede operar sobre otro socio.' });
+  }
 
-  app.post<{
-    Body: { claseId: string; socioId: string; ingresarEsperaSiLlena?: boolean };
-  }>('/api/v1/reservas', async (request, reply) => {
-    const { claseId, socioId, ingresarEsperaSiLlena } = request.body ?? {};
-
-    if (!claseId || !socioId) {
-      return reply.code(400).send({
-        codigo: 'PARAMETROS_INVALIDOS',
-        mensaje: 'claseId y socioId son requeridos.',
-      });
-    }
-
-    request.log.info({ claseId, socioId }, 'Iniciando solicitud de reserva para clase');
-
-    // 1. Verificar existencia de la clase
-    const clase = await repository.obtenerEntidadClase(claseId);
-    if (!clase) {
-      return reply.code(404).send({
-        codigo: 'CLASE_NO_ENCONTRADA',
-        mensaje: 'No se encontro la clase solicitada.',
-      });
-    }
-
-    if (clock() >= new Date(clase.inicio)) {
-      return reply.code(400).send({
-        codigo: 'CLASE_YA_INICIADA',
-        mensaje: 'No se puede reservar una clase que ya comenzo.',
-      });
-    }
-
-    // 2. Colaboracion sincrona con Socios y Membresias (D5)
-    request.log.info(
-      { socioId, claseInicio: clase.inicio },
-      'Llamando a Socios y Membresias para validar habilitacion'
-    );
-
-    let evaluacion;
-    try {
-      evaluacion = await sociosClient.verificarHabilitacion(
-        socioId,
-        clase.inicio,
-        request.traceContext
-      );
-    } catch (err) {
-      request.log.error({ err }, 'Error de comunicacion al consultar habilitacion de membresia');
-      return reply.code(503).send({
-        codigo: 'SERVICIO_NO_DISPONIBLE',
-        mensaje: 'No se pudo verificar la membresia con el servicio de socios.',
-      });
-    }
-
-    if (!evaluacion.habilitado) {
-      request.log.warn({ socioId, motivo: evaluacion.motivo }, 'Membresia no habilitada para reservar');
-      return reply.code(422).send({
-        codigo: 'MEMBRESIA_NO_HABILITADA',
-        mensaje: 'La membresia del socio no esta habilitada para la fecha de la clase.',
-        motivo: evaluacion.motivo,
-      });
-    }
-
-    // 3. Persistencia con garantias de concurrencia y cupos (D3 / D4)
-    const resultado = await repository.reservarCupo(claseId, socioId);
-
-    if (resultado.exito && resultado.reserva) {
-      request.log.info({ reservaId: resultado.reserva.reservaId }, 'Reserva confirmada exitosamente');
-      return reply.code(201).send(resultado.reserva);
-    }
-
-    if (resultado.codigo === 'RESERVA_DUPLICADA') {
-      return reply.code(409).send({
-        codigo: 'RESERVA_DUPLICADA',
-        mensaje: resultado.mensaje,
-      });
-    }
-
-    if (resultado.codigo === 'CLASE_SIN_CUPOS') {
-      if (ingresarEsperaSiLlena) {
-        request.log.info({ socioId, claseId }, 'Clase llena, ingresando a lista de espera');
-        const esperaRes = await repository.ingresarListaEspera(claseId, socioId);
-        if (esperaRes.exito) {
-          return reply.code(200).send({
-            estado: 'LISTA_ESPERA',
-            mensaje: 'Clase llena; socio incorporado a la lista de espera.',
-            espera: esperaRes.espera,
-          });
-        }
-      }
-      return reply.code(409).send({
-        codigo: 'CLASE_SIN_CUPOS',
-        mensaje: 'La clase no dispone de cupos libres.',
-        puedeIngresarEspera: true,
-      });
-    }
-
-    return reply.code(400).send({
-      codigo: resultado.codigo || 'ERROR_RESERVA',
-      mensaje: resultado.mensaje || 'No se pudo completar la reserva.',
+  function businessError(reply: FastifyReply, codigo?: string) {
+    const status = codigo === 'MEMBRESIA_NO_HABILITADA' ? 422
+      : codigo === 'CLASE_NO_ENCONTRADA' || codigo === 'RESERVA_NO_ENCONTRADA' ? 404
+      : codigo === 'CLASE_INICIADA' ? 400 : 409;
+    return reply.code(status).send({
+      codigo: codigo ?? 'ERROR_RESERVA',
+      mensaje: 'No se pudo completar la operación: ' + (codigo ?? 'ERROR_RESERVA'),
+      ...(codigo === 'CLASE_SIN_CUPOS' ? { puedeIngresarEspera: true } : {}),
     });
-  });
+  }
 
-  // Cancelacion de reserva y promocion automatica de lista de espera
-  app.post<{ Params: { reservaId: string } }>(
-    '/api/v1/reservas/:reservaId/cancelar',
-    async (request, reply) => {
-      const { reservaId } = request.params;
-      request.log.info({ reservaId }, 'Solicitud de cancelacion de reserva');
-
-      const resultado = await repository.cancelarReserva(
-        reservaId,
-        async (candidatoSocioId, inicioClase) => {
-          request.log.info(
-            { candidatoSocioId, inicioClase },
-            'Validando candidato de lista de espera para promocion automatica'
-          );
-          const ev = await sociosClient.verificarHabilitacion(
-            candidatoSocioId,
-            inicioClase,
-            request.traceContext
-          );
-          return ev.habilitado;
-        }
-      );
-
-      if (!resultado.exito) {
-        return reply.code(400).send({
-          codigo: resultado.codigo,
-          mensaje: resultado.mensaje,
-        });
+  app.post<{ Body: { claseId?: unknown; socioId?: unknown; ingresarEsperaSiLlena?: unknown } }>(
+    '/api/v1/reservas', { onRequest: auth.session }, async (request, reply) => {
+      const body = request.body ?? {};
+      const socioId = auth.target(request, body.socioId);
+      if (!socioId) return forbidden(reply);
+      if (typeof body.claseId !== 'string' || !body.claseId.trim()
+        || (body.ingresarEsperaSiLlena !== undefined && typeof body.ingresarEsperaSiLlena !== 'boolean')) {
+        return sendError(reply, 400, 'PARAMETROS_INVALIDOS', 'Clase y opción de espera inválidas.');
       }
-
-      request.log.info(
-        { reservaId, promocion: resultado.promocion },
-        'Reserva cancelada exitosamente'
+      request.log.info({ claseId: body.claseId.trim(), socioId }, 'Solicitud de reserva');
+      const result = await reservasService.reservar(
+        body.claseId.trim(), socioId, body.ingresarEsperaSiLlena === true, request.traceContext,
       );
-      return reply.code(200).send(resultado);
-    }
+      request.log.info({
+        claseId: body.claseId.trim(), socioId, codigo: result.codigo,
+        estado: result.reserva?.estado ?? (result.espera ? 'LISTA_ESPERA' : 'RECHAZADA'),
+      }, 'Resultado de reserva');
+      if (!result.exito) return businessError(reply, result.codigo);
+      if (result.espera) return reply.code(200).send({ estado: 'LISTA_ESPERA', espera: result.espera });
+      return reply.code(201).send(result.reserva);
+    },
   );
 
-  // Ingreso voluntario a lista de espera
-  app.post<{
-    Params: { claseId: string };
-    Body: { socioId: string };
-  }>('/api/v1/clases/:claseId/espera', async (request, reply) => {
-    const { claseId } = request.params;
-    const { socioId } = request.body ?? {};
+  app.post<{ Params: { reservaId: string } }>(
+    '/api/v1/reservas/:reservaId/cancelar', { onRequest: auth.session }, async (request, reply) => {
+      const reserva = await repository.obtenerReserva(request.params.reservaId);
+      if (!reserva) return businessError(reply, 'RESERVA_NO_ENCONTRADA');
+      if (!auth.target(request, reserva.socioId)) return forbidden(reply);
+      const result = await reservasService.cancelarReserva(reserva.reservaId);
+      if (!result.exito) return businessError(reply, result.codigo);
+      return result;
+    },
+  );
 
-    if (!socioId) {
-      return reply.code(400).send({
-        codigo: 'PARAMETROS_INVALIDOS',
-        mensaje: 'socioId es requerido.',
-      });
-    }
+  app.post<{ Params: { claseId: string }; Body: { socioId?: unknown } }>(
+    '/api/v1/clases/:claseId/espera', { onRequest: auth.session }, async (request, reply) => {
+      const socioId = auth.target(request, request.body?.socioId);
+      if (!socioId) return forbidden(reply);
+      const result = await reservasService.ingresarEspera(request.params.claseId, socioId, request.traceContext);
+      if (!result.exito) return businessError(reply, result.codigo);
+      return reply.code(201).send(result.espera);
+    },
+  );
 
-    const clase = await repository.obtenerEntidadClase(claseId);
-    if (!clase) {
-      return reply.code(404).send({
-        codigo: 'CLASE_NO_ENCONTRADA',
-        mensaje: 'La clase no existe.',
-      });
-    }
-
-    let ev;
-    try {
-      ev = await sociosClient.verificarHabilitacion(
-        socioId,
-        clase.inicio,
-        request.traceContext
-      );
-    } catch (err) {
-      request.log.error({ err }, 'Error de comunicacion con socios al unirse a espera');
-      return reply.code(503).send({
-        codigo: 'SERVICIO_NO_DISPONIBLE',
-        mensaje: 'No se pudo verificar la membresia con el servicio de socios.',
-      });
-    }
-
-    if (!ev.habilitado) {
-      return reply.code(422).send({
-        codigo: 'MEMBRESIA_NO_HABILITADA',
-        mensaje: 'El socio no tiene membresia habilitada para unirse a la espera.',
-      });
-    }
-
-    const res = await repository.ingresarListaEspera(claseId, socioId);
-    if (!res.exito) {
-      return reply.code(409).send({
-        codigo: res.codigo,
-        mensaje: 'No se pudo agregar a la lista de espera.',
-      });
-    }
-
-    return reply.code(201).send(res.espera);
-  });
-
-  // Consulta interna para el portal web del socio (clases publicadas y sus reservas/esperas activas)
   app.get<{ Querystring: { socioId?: string; sedeId?: string } }>(
-    '/api/v1/reservas/clases',
-    async (request, reply) => {
-      const consultadoEn = clock().toISOString();
-      const { socioId, sedeId } = request.query ?? {};
+    '/api/v1/reservas/clases', { onRequest: auth.session }, async (request, reply) => {
+      const socioId = auth.target(request, request.query.socioId);
+      if (!socioId) return forbidden(reply);
       const catalogo = await repository.listarClases(
-        { sedeId, pagina: 1, tamanio: 100 },
-        consultadoEn
+        { sedeId: request.query.sedeId, pagina: 1, tamanio: 100 }, clock().toISOString(),
       );
-      const misDatos = socioId
-        ? await repository.obtenerReservasPorSocio(socioId)
-        : { reservas: [], espera: [] };
+      const personal = await repository.obtenerReservasPorSocio(socioId);
       reply.header('Cache-Control', 'no-store');
       reply.header('X-Instance-ID', instanceId);
-      return {
-        items: catalogo.items,
-        total: catalogo.total,
-        reservasSocio: misDatos.reservas,
-        esperaSocio: misDatos.espera,
-      };
-    }
+      return { items: catalogo.items, total: catalogo.total, reservasSocio: personal.reservas, esperaSocio: personal.espera };
+    },
   );
 
-  // Endpoint de diagnostico/auditoria de reservas por clase protegido con clave de consumidor
   app.get<{ Params: { claseId: string } }>(
-    '/api/v1/clases/:claseId/reservas',
-    { onRequest: authenticate },
-    async (request, reply) => {
-      const { claseId } = request.params;
-      const reservas = await repository.obtenerReservasPorClase(claseId);
-      const espera = await repository.obtenerEsperaPorClase(claseId);
-      return { claseId, reservas, espera };
-    }
+    '/api/v1/clases/:claseId/reservas', { onRequest: auth.admin }, async (request) => {
+      const claseId = request.params.claseId;
+      return {
+        claseId, reservas: await repository.obtenerReservasPorClase(claseId),
+        espera: await repository.obtenerEsperaPorClase(claseId),
+      };
+    },
   );
 
   app.setErrorHandler((error, request, reply) => {
@@ -517,5 +375,5 @@ export function buildApp(options: AppOptions) {
     return sendError(reply, 500, 'ERROR_INTERNO', 'No se pudo completar la consulta.');
   });
 
-  return app;
+  return Object.assign(app, { reservasService });
 }

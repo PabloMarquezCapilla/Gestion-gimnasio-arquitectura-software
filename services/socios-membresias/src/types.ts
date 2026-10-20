@@ -20,8 +20,6 @@ export interface RegistroDTO {
   email: string;
   password: string;
   telefono?: string;
-  tipoPlan?: string;
-  rol?: RolUsuario;
 }
 
 export interface LoginDTO {
@@ -31,8 +29,22 @@ export interface LoginDTO {
 
 export interface AuthResponse {
   token: string;
-  socio: Omit<Socio, 'passwordHash'>;
-  membresia?: Membresia | null;
+  socio: SocioPublico;
+  membresia: Membresia | null;
+}
+
+export type SocioPublico = Omit<Socio, 'passwordHash' | 'rol'> & { rol: RolUsuario };
+
+export interface Identidad {
+  socioId: string;
+  rol: RolUsuario;
+}
+
+export interface JwtIdentidad {
+  sub: string;
+  rol: RolUsuario;
+  iat: number;
+  exp: number;
 }
 
 export interface Membresia {

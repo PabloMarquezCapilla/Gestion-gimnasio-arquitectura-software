@@ -1,5 +1,6 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { AuthUser } from './types/auth';
+import { useState, useMemo, useEffect, useRef } from 'react';
+import type { AuthResponse, AuthState } from './types/auth';
+import { setApiSession } from './services/api';
 import { AuthModal } from './components/AuthModal';
 import { UserPanel } from './components/UserPanel';
 
@@ -24,50 +25,11 @@ export interface Member {
   lastDate: string;
 }
 
-export interface ReceiptData {
-  receiptNumber: string;
-  date: string;
-  member: Member;
-  planTitle: string;
-  baseAmount: number;
-  discount: number;
-  total: number;
-  paymentMethod: 'cash' | 'transfer';
-  cashGiven?: number;
-  cashChange?: number;
-  operationCode?: string;
-  validityStart: string;
-  validityEnd: string;
-  cashier: string;
-}
-
 export default function App() {
   // --- Auth & Role View States ---
-  const [currentUser, setCurrentUser] = useState<AuthUser | null>(() => {
-    const saved = localStorage.getItem('pulse_auth_user');
-    if (saved) {
-      try {
-        return JSON.parse(saved);
-      } catch (e) {
-        console.error(e);
-      }
-    }
-    // Usuario por defecto: Valeria Méndez (ADMIN)
-    return {
-      socioId: 'admin-01',
-      dni: '99999999',
-      nombre: 'Valeria Méndez',
-      email: 'admin@pulse.com',
-      rol: 'ADMIN',
-      estado: 'ACTIVO',
-      createdAt: '2026-01-01T00:00:00.000Z',
-      telefono: '+54 9 11 9999-0000',
-    };
-  });
-
-  const [viewMode, setViewMode] = useState<'admin' | 'socio'>(() => {
-    return currentUser?.rol === 'SOCIO' ? 'socio' : 'admin';
-  });
+  const [auth, setAuth] = useState<AuthState>({ user: null, token: null, isAuthenticated: false });
+  const currentUser = auth.user;
+  const [viewMode, setViewMode] = useState<'admin' | 'socio'>('socio');
   const [isAuthModalOpen, setIsAuthModalOpen] = useState<boolean>(false);
   const [authModalInitialMode, setAuthModalInitialMode] = useState<'login' | 'register'>('login');
 
@@ -78,26 +40,6 @@ export default function App() {
   const [expiryFilter, setExpiryFilter] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const searchInputRef = useRef<HTMLInputElement>(null);
-
-  // --- Financial & KPI States ---
-  const [cajaTotal, setCajaTotal] = useState<number>(284500);
-  const [ingresosHoy, setIngresosHoy] = useState<number>(74200);
-
-  // --- Modals State ---
-  const [isPaymentModalOpen, setIsPaymentModalOpen] = useState<boolean>(false);
-  const [isReceiptModalOpen, setIsReceiptModalOpen] = useState<boolean>(false);
-  const [selectedMember, setSelectedMember] = useState<Member | null>(null);
-
-  // Form Payment States
-  const [paymentPlanPrice, setPaymentPlanPrice] = useState<number>(24000);
-  const [paymentPlanName, setPaymentPlanName] = useState<string>('Pase Libre Mensual');
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'transfer'>('cash');
-  const [cashReceived, setCashReceived] = useState<number>(24000);
-  const [operationCode, setOperationCode] = useState<string>('');
-  const [validityStart, setValidityStart] = useState<string>('2025-02-16');
-
-  // Receipt Modal State
-  const [activeReceipt, setActiveReceipt] = useState<ReceiptData | null>(null);
 
   // Toast Notification
   const [toast, setToast] = useState<{ show: boolean; message: string; icon: string }>({
@@ -113,21 +55,41 @@ export default function App() {
     }, 3500);
   };
 
-  const handleAuthSuccess = (user: AuthUser) => {
-    setCurrentUser(user);
-    localStorage.setItem('pulse_auth_user', JSON.stringify(user));
-    if (user.rol === 'SOCIO') {
-      setViewMode('socio');
-    } else {
-      setViewMode('admin');
-    }
+  const clearSession = () => {
+    setApiSession(null);
+    setAuth({ user: null, token: null, isAuthenticated: false });
+    setViewMode('socio');
+    setIsAuthModalOpen(false);
+  };
+
+  const handleAuthSuccess = (session: AuthResponse) => {
+    setApiSession(session.token, () => {
+      clearSession();
+      showToast('La sesión venció o no es válida. Iniciá sesión nuevamente.', 'lock');
+    });
+    setAuth({ user: session.socio, token: session.token, isAuthenticated: true });
+    setViewMode(session.socio.rol === 'ADMIN' ? 'admin' : 'socio');
   };
 
   const handleLogout = () => {
-    setCurrentUser(null);
-    localStorage.removeItem('pulse_auth_user');
+    clearSession();
     showToast('Sesión finalizada.', 'logout');
   };
+
+  useEffect(() => {
+    if (!auth.token) return;
+    try {
+      const payload = JSON.parse(atob(auth.token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))) as { exp?: number };
+      if (!payload.exp) return;
+      const timer = window.setTimeout(() => {
+        clearSession();
+        showToast('La sesión venció. Iniciá sesión nuevamente.', 'lock');
+      }, Math.max(0, payload.exp * 1000 - Date.now()));
+      return () => window.clearTimeout(timer);
+    } catch {
+      clearSession();
+    }
+  }, [auth.token]);
 
   const handleOpenLogin = () => {
     setAuthModalInitialMode('login');
@@ -135,106 +97,14 @@ export default function App() {
   };
 
   const handleOpenRegister = () => {
+    if (currentUser?.rol !== 'ADMIN') return;
     setAuthModalInitialMode('register');
     setIsAuthModalOpen(true);
   };
 
-  // --- Initial Members Data ---
-  const [members, setMembers] = useState<Member[]>([
-    {
-      id: 'soc-1',
-      code: '#P-1084',
-      name: 'Agustín Pereyra',
-      initials: 'AP',
-      dni: '38.912.441',
-      phone: '+54 9 11 3914-2201',
-      planKey: 'musculacion',
-      planName: 'Pase Libre Musculación',
-      planDesc: 'Acceso Turno Completo',
-      status: 'active',
-      periodStart: '15 Ene 2025',
-      periodEnd: '15 Feb 2025',
-      validityNote: 'Vence en 3 días (Sábado)',
-      lastAmount: 24000,
-      lastMethod: 'Efectivo • 15/01',
-      lastDate: '15/01',
-    },
-    {
-      id: 'soc-2',
-      code: '#P-0934',
-      name: 'Mateo Benítez',
-      avatarUrl:
-        'https://lh3.googleusercontent.com/aida-public/AB6AXuCDQLKom_jS5r7VTVwzau0ziNRfWf_qFXtSSYy0F3EhBJ_C80htUfB3escut2bynYzAscX0Vk_lJ8eaatC8Hs1n-QTka7xNBWQ1tr0RUG1vHVXKoga1VcCpWpF83EkL18TqHhrQBWOYUZTAPkuzeSLNjrGhI_pbdxABOcL26bST9h29Ev17hj_hF7qO7LtOBYzgmt9cXYIMcFyWc6yowi1tUeU_UQ9FpImKTvF2ILkz',
-      dni: '39.402.115',
-      phone: '+54 9 11 4829-1102',
-      planKey: 'cross',
-      planName: 'Full Functional & Cardio',
-      planDesc: 'Musculación + Clases Grupales',
-      status: 'active',
-      periodStart: '12 Feb 2025',
-      periodEnd: '12 Mar 2025',
-      validityNote: 'Renovado hoy (30 días)',
-      lastAmount: 21600,
-      lastMethod: 'Efectivo (-10%) • Hoy',
-      lastDate: 'Hoy',
-    },
-    {
-      id: 'soc-3',
-      code: '#P-1011',
-      name: 'Camila Rossi',
-      avatarUrl:
-        'https://lh3.googleusercontent.com/aida-public/AB6AXuCR2HC0xkJr74KzPnztXeh4hoAMB4c11t370W37m2L-r8rcTfkwKHkyLCXuNN6cEyPPyCxJ__TYS5BLiRJqhl-8gmFB-gJWt-AJ2oCIFjckw3GdC8IIzeB84UsTB2dXTm13qh3XhccNF2RvA75K2vfQ0Vh8S3i7SdI34xSW7BvvxAe2hJAUgbyH08VHYBqK9oteWaeTK-xObOscwwhO4fcssgd9ylaJhyVsz8xSmAKr',
-      dni: '41.205.889',
-      phone: '+54 9 11 5509-8833',
-      planKey: 'estudiante',
-      planName: 'Pase Estudiante',
-      planDesc: 'Horario Reducido (13 a 17 hs)',
-      status: 'expired',
-      periodStart: '08 Ene 2025',
-      periodEnd: '08 Feb 2025',
-      validityNote: 'Vencido hace 4 días',
-      lastAmount: 16500,
-      lastMethod: 'Transferencia • 08/01',
-      lastDate: '08/01',
-    },
-    {
-      id: 'soc-4',
-      code: '#P-0855',
-      name: 'Franco Santillán',
-      initials: 'FS',
-      dni: '35.882.110',
-      phone: '+54 9 11 6021-9988',
-      planKey: 'trimestral',
-      planName: 'Plan Trimestral VIP',
-      planDesc: 'Pase Libre + Spa + Toallas',
-      status: 'warning',
-      periodStart: '01 Dic 2024',
-      periodEnd: '01 Mar 2025',
-      validityNote: 'Pausa médica hasta 20 Feb',
-      lastAmount: 62000,
-      lastMethod: 'Transferencia • 01/12',
-      lastDate: '01/12',
-    },
-    {
-      id: 'soc-5',
-      code: '#P-0720',
-      name: 'Lucía Herrera',
-      avatarUrl:
-        'https://lh3.googleusercontent.com/aida-public/AB6AXuDcsA-DUk8j_SOuvQndUj0ZoBI4c8Do0yCv-gbHdyrp4GLjwWH-d5AchDvMNE4ulUzLSyNZ7bRIBnQz6LKcO7ITDgI0O72CpzFrSoLwwUHhLHxt4_T7f-aGiabSjC9f4ys_Nr3tHULsWPosJlI3XydYcPYm2C4KdoAQcmExiRLCfpcthQV4X3Rppniw6svAY2_6wSqfkFBulMEryuHJnFxGttUK-E9X2Soczn0_6VQT',
-      dni: '36.441.902',
-      phone: '+54 9 11 4110-3329',
-      planKey: 'trimestral',
-      planName: 'Semestral Elite',
-      planDesc: 'Todas las Sedes + Nutrición',
-      status: 'active',
-      periodStart: '10 Nov 2024',
-      periodEnd: '10 May 2025',
-      validityNote: 'Vence en 87 días',
-      lastAmount: 114000,
-      lastMethod: 'Transferencia • 10/11',
-      lastDate: '10/11',
-    },
-  ]);
+  // El listado administrativo todavía no cuenta con una consulta integrada.
+  // No se muestra una nómina local como si fueran socios registrados.
+  const members: Member[] = [];
 
   // Keyboard shortcut Ctrl+K or Cmd+K
   useEffect(() => {
@@ -268,115 +138,19 @@ export default function App() {
     });
   }, [members, statusFilter, planFilter, expiryFilter, searchQuery]);
 
-  // Handlers
-  const handleOpenPayment = (member?: Member) => {
-    const target = member || members[0];
-    setSelectedMember(target);
-    setPaymentPlanPrice(24000);
-    setPaymentPlanName('Pase Libre Mensual');
-    setCashReceived(24000);
-    setPaymentMethod('cash');
-    setIsPaymentModalOpen(true);
-  };
+  const toastView = toast.show ? (
+    <div role="status" className="fixed bottom-6 right-6 z-[100] max-w-md bg-surface-container-high border border-outline-variant rounded-xl p-4 shadow-xl text-on-surface flex items-center gap-2">
+      <span className="material-symbols-outlined text-primary">{toast.icon}</span>
+      <span className="text-xs">{toast.message}</span>
+    </div>
+  ) : null;
 
-  const handleOpenReceipt = (member: Member) => {
-    const receipt: ReceiptData = {
-      receiptNumber: `#REC-2025-00${Math.floor(800 + Math.random() * 190)}`,
-      date: '12/02/2025 — 11:24 hs',
-      member,
-      planTitle: `Renovación Membresía - ${member.planName}`,
-      baseAmount: member.lastAmount || 24000,
-      discount: member.lastMethod.includes('-10%') ? 2400 : 0,
-      total: member.lastAmount || 21600,
-      paymentMethod: member.lastMethod.toLowerCase().includes('efectivo') ? 'cash' : 'transfer',
-      cashGiven: 22000,
-      cashChange: 400,
-      validityStart: member.periodStart,
-      validityEnd: member.periodEnd,
-      cashier: 'Valeria Méndez',
-    };
-    setActiveReceipt(receipt);
-    setIsReceiptModalOpen(true);
-  };
-
-  const handleReactivate = (memberId: string) => {
-    setMembers((prev) =>
-      prev.map((m) =>
-        m.id === memberId
-          ? {
-              ...m,
-              status: 'active',
-              validityNote: 'Reactivado hoy (Pase Activo)',
-            }
-          : m
-      )
-    );
-    showToast('Socio reactivado exitosamente. Ingreso habilitado en molinetes.', 'verified');
-  };
-
-  const handleConfirmPayment = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedMember) return;
-
-    const discount = paymentMethod === 'cash' ? Math.round(paymentPlanPrice * 0.1) : 0;
-    const finalTotal = paymentPlanPrice - discount;
-
-    setMembers((prev) =>
-      prev.map((m) =>
-        m.id === selectedMember.id
-          ? {
-              ...m,
-              status: 'active',
-              planName: paymentPlanName,
-              validityNote: 'Renovado hoy (30 días de vigencia)',
-              lastAmount: finalTotal,
-              lastMethod: paymentMethod === 'cash' ? 'Efectivo (-10%) • Hoy' : 'Transferencia • Hoy',
-              periodStart: '16 Feb 2025',
-              periodEnd: '16 Mar 2025',
-            }
-          : m
-      )
-    );
-
-    setCajaTotal((prev) => prev + finalTotal);
-    setIngresosHoy((prev) => prev + finalTotal);
-
-    const newReceipt: ReceiptData = {
-      receiptNumber: `#REC-2025-00${Math.floor(900 + Math.random() * 99)}`,
-      date:
-        new Date().toLocaleDateString('es-AR') +
-        ' — ' +
-        new Date().toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' }) +
-        ' hs',
-      member: { ...selectedMember, planName: paymentPlanName },
-      planTitle: `Cobro Membresía — ${paymentPlanName}`,
-      baseAmount: paymentPlanPrice,
-      discount,
-      total: finalTotal,
-      paymentMethod,
-      cashGiven: paymentMethod === 'cash' ? cashReceived : undefined,
-      cashChange: paymentMethod === 'cash' ? Math.max(0, cashReceived - finalTotal) : undefined,
-      operationCode: paymentMethod === 'transfer' ? operationCode || 'OP-8941029' : undefined,
-      validityStart: validityStart,
-      validityEnd: '16/03/2025',
-      cashier: 'Valeria Méndez',
-    };
-
-    setIsPaymentModalOpen(false);
-    setActiveReceipt(newReceipt);
-    setIsReceiptModalOpen(true);
-    showToast(`Pago de $${finalTotal.toLocaleString('es-AR')} registrado para ${selectedMember.name}.`, 'payments');
-  };
-
-  const discountAmount = paymentMethod === 'cash' ? Math.round(paymentPlanPrice * 0.1) : 0;
-  const netPlanPrice = paymentPlanPrice - discountAmount;
-  const cashChange = cashReceived - netPlanPrice;
-
-  if (viewMode === 'socio') {
+  if (viewMode === 'socio' || currentUser?.rol !== 'ADMIN') {
     return (
       <>
         {currentUser ? (
           <UserPanel
+            key={currentUser.socioId}
             user={currentUser}
             onLogout={handleLogout}
             showToast={showToast}
@@ -392,7 +166,7 @@ export default function App() {
               <div className="space-y-2">
                 <h1 className="font-['Space_Grotesk'] text-2xl font-bold text-white">PORTAL DEL SOCIO PULSE</h1>
                 <p className="text-xs text-gray-400">
-                  Accede a tu pase digital QR para molinetes, reserva clases en vivo y consulta tu membresía.
+                  Iniciá sesión para consultar tu membresía y gestionar tus reservas.
                 </p>
               </div>
               <div className="space-y-3 pt-2">
@@ -401,27 +175,15 @@ export default function App() {
                   className="w-full py-3 px-4 rounded-xl bg-[#CCFF00] hover:bg-[#b5e600] text-black font-['Space_Grotesk'] font-bold text-sm shadow-[0_0_20px_rgba(204,255,0,0.3)] transition-all flex items-center justify-center gap-2"
                 >
                   <span className="material-symbols-outlined text-lg">login</span>
-                  <span>Iniciar Sesión como Socio</span>
+                  <span>Iniciar Sesión</span>
                 </button>
-                <button
-                  onClick={handleOpenRegister}
-                  className="w-full py-3 px-4 rounded-xl bg-[#1E293B] hover:bg-[#283548] border border-[#334155] text-white font-['Space_Grotesk'] font-bold text-sm transition-all flex items-center justify-center gap-2"
-                >
-                  <span className="material-symbols-outlined text-lg">person_add</span>
-                  <span>Registrarme como Nuevo Socio</span>
-                </button>
+                <p className="text-xs text-gray-400">El administrador realiza las altas de socios.</p>
               </div>
-              <div className="pt-4 border-t border-[#222A3D] text-[11px] text-gray-500">
-                <button
-                  onClick={() => setViewMode('admin')}
-                  className="text-gray-400 hover:text-[#CCFF00] transition-colors"
-                >
-                  ← Ir a la Vista de Administrador / Caja
-                </button>
-              </div>
+
             </div>
           </div>
         )}
+        {toastView}
         <AuthModal
           isOpen={isAuthModalOpen}
           initialMode={authModalInitialMode}
@@ -457,10 +219,10 @@ export default function App() {
               <div className="flex items-center gap-1.5">
                 <span className="w-2 h-2 rounded-full bg-secondary animate-pulse"></span>
                 <span className="font-label-code text-[10.5px] text-on-surface-variant uppercase">
-                  Estado Turno
+                  Sesión
                 </span>
               </div>
-              <span className="font-label-code text-[11px] text-secondary font-bold">ONLINE</span>
+              <span className="font-label-code text-[11px] text-secondary font-bold">INICIADA</span>
             </div>
           </div>
 
@@ -479,6 +241,8 @@ export default function App() {
               return (
                 <button
                   key={item.path}
+                  disabled={item.path !== 'socios-y-membresias'}
+                  title={item.path !== 'socios-y-membresias' ? 'Sección pendiente de integración.' : undefined}
                   onClick={() => setActiveNav(item.path)}
                   className={`flex items-center gap-2.5 px-3 py-1.5 rounded-lg transition-all text-xs font-semibold w-full text-left ${
                     isActive
@@ -503,10 +267,10 @@ export default function App() {
               <span className="material-symbols-outlined text-on-surface-variant text-[16px]">fitness_center</span>
               <span className="font-label-code text-[11px] text-on-surface-variant">Aforo Sala</span>
             </div>
-            <span className="font-label-code text-xs text-on-surface font-bold">68%</span>
+            <span className="font-label-code text-xs text-on-surface font-bold">Pendiente</span>
           </div>
           <div className="text-center">
-            <span className="font-label-code text-[10px] text-on-surface-variant/70">PULSE OS v2.4</span>
+            <span className="font-label-code text-[10px] text-on-surface-variant/70">PULSE CLUB</span>
           </div>
         </div>
       </aside>
@@ -518,7 +282,7 @@ export default function App() {
           <div className="flex items-center gap-3">
             <div className="flex items-center gap-1.5 bg-surface-container-low px-2.5 py-1 rounded-lg text-on-surface cursor-pointer hover:bg-surface-container transition-colors border border-outline-variant/40 text-xs">
               <span className="material-symbols-outlined text-primary text-[18px]">location_on</span>
-              <span className="font-semibold text-on-surface">Sede Central - Palermo</span>
+              <span className="font-semibold text-on-surface">Administración</span>
               <span className="material-symbols-outlined text-on-surface-variant text-[16px]">expand_more</span>
             </div>
             <div className="relative flex items-center w-64">
@@ -550,7 +314,7 @@ export default function App() {
                 type="button"
                 onClick={() => setViewMode('socio')}
                 className="px-2.5 py-0.5 rounded-md text-xs font-medium text-on-surface-variant hover:text-on-surface transition-colors"
-                title="Probar portal del socio"
+                title="Ver mis clases, reservas y membresía"
               >
                 Ver como Socio
               </button>
@@ -558,7 +322,7 @@ export default function App() {
 
             {/* Primary Action Button (Volt Lime + Dark Text) */}
             <button
-              onClick={() => handleOpenPayment()}
+              disabled title="Los pagos están pendientes de implementación."
               className="flex items-center gap-1 bg-primary text-on-primary px-3 py-1 rounded-lg text-xs font-bold hover:bg-primary-hover shadow-sm transition-all active:scale-95"
               type="button"
             >
@@ -568,7 +332,7 @@ export default function App() {
 
             <button
               aria-label="Notificaciones de caja"
-              onClick={() => showToast('Caja sin diferencias pendientes de conciliación.', 'notifications')}
+              disabled title="La conciliación está pendiente de implementación."
               className="relative p-1 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors"
               type="button"
             >
@@ -624,15 +388,7 @@ export default function App() {
         {/* --- MAIN BODY VIEWPORT --- */}
         <main className="w-full pt-14 bg-background px-4 sm:px-6 min-h-screen">
           <div className="flex flex-col w-full pb-6">
-            {/* Live Interactive Toast */}
-            <div
-              className={`fixed bottom-5 right-5 z-50 transform transition-all duration-300 pointer-events-none bg-surface-container-high text-on-surface px-3 py-2 rounded-lg shadow-xl flex items-center gap-2 border border-outline-variant ${
-                toast.show ? 'translate-y-0 opacity-100' : 'translate-y-24 opacity-0'
-              }`}
-            >
-              <span className="material-symbols-outlined text-primary text-base">{toast.icon}</span>
-              <span className="text-xs font-medium">{toast.message}</span>
-            </div>
+            {toastView}
 
             {/* Top Banner / View Header */}
             <section className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-4 pt-3">
@@ -640,16 +396,16 @@ export default function App() {
                 <div className="flex items-center gap-1.5 mb-1">
                   <span className="text-[10px] font-label-code text-primary uppercase tracking-wider flex items-center gap-1 font-bold">
                     <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
-                    Terminal de Control en Vivo
+                    Panel Administrativo
                   </span>
                   <span className="text-on-surface-variant font-label-code text-[10px]">•</span>
-                  <span className="font-label-code text-[10.5px] text-on-surface-variant">Sede Palermo Centro</span>
+                  <span className="font-label-code text-[10.5px] text-on-surface-variant">Servicios del gimnasio</span>
                 </div>
                 <h1 className="font-headline text-headline-lg text-on-surface tracking-tight font-bold">
                   Gestión de Membresías y Caja
                 </h1>
                 <p className="font-body-sm text-body-sm text-on-surface-variant mt-0.5">
-                  Control de socios, estados de membresía y facturación diaria en Sede Central.
+                  Altas de socios disponibles. Listado, pagos, reactivación y comprobantes pendientes de integración.
                 </p>
               </div>
 
@@ -664,24 +420,24 @@ export default function App() {
                       Cierre de Caja del Día
                     </span>
                     <span className="font-data-metric text-sm text-on-surface font-bold tracking-tight">
-                      ${cajaTotal.toLocaleString('es-AR')}{' '}
+                      Pendiente{' '}
                       <span className="font-label-code text-[10px] font-normal text-on-surface-variant">ARS</span>
                     </span>
                   </div>
                 </div>
 
                 <button
-                  onClick={() => showToast('Exportación a formato Excel (.xlsx) generada con éxito.', 'file_download')}
+                  onClick={handleOpenRegister}
                   className="flex items-center gap-1.5 bg-surface-container hover:bg-surface-container-high text-on-surface px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors border border-outline-variant/40"
                   type="button"
                 >
-                  <span className="material-symbols-outlined text-[16px]">file_download</span>
-                  <span>Exportar Excel</span>
+                  <span className="material-symbols-outlined text-[16px]">person_add</span>
+                  <span>Alta de Socio</span>
                 </button>
 
                 {/* Primary Button (+ Registrar Cobro / Pago) */}
                 <button
-                  onClick={() => handleOpenPayment()}
+                  disabled title="Los pagos están pendientes de implementación."
                   className="flex items-center gap-1.5 bg-primary text-on-primary px-3 py-1.5 rounded-xl text-xs font-bold shadow-sm hover:bg-primary-hover active:scale-95 transition-all"
                   type="button"
                 >
@@ -704,17 +460,17 @@ export default function App() {
                   </span>
                 </div>
                 <div className="flex items-baseline justify-between mt-1">
-                  <span className="font-data-metric text-data-metric text-on-surface font-bold">418</span>
+                  <span className="font-data-metric text-data-metric text-on-surface font-bold">—</span>
                   <div className="flex items-center gap-0.5 bg-secondary-container text-secondary px-1.5 py-0.2 rounded-full font-label-code text-[10.5px] font-bold">
                     <span className="material-symbols-outlined text-[13px]">arrow_upward</span>
-                    <span>+12%</span>
+                    <span>Sin datos</span>
                   </div>
                 </div>
                 <div className="w-full bg-surface-container h-1 rounded-full mt-2.5 overflow-hidden">
-                  <div className="bg-secondary h-full rounded-full" style={{ width: '86%' }}></div>
+                  <div className="bg-secondary h-full rounded-full" style={{ width: '0%' }}></div>
                 </div>
                 <span className="font-body-sm text-[11px] text-on-surface-variant mt-1.5">
-                  86% de aforo objetivo cubierto
+                  Consulta de métricas pendiente
                 </span>
               </div>
 
@@ -729,16 +485,16 @@ export default function App() {
                   </span>
                 </div>
                 <div className="flex items-baseline justify-between mt-1">
-                  <span className="font-data-metric text-data-metric text-on-surface font-bold">29</span>
+                  <span className="font-data-metric text-data-metric text-on-surface font-bold">—</span>
                   <span className="font-label-code text-[10.5px] text-warning bg-warning-container px-1.5 py-0.2 rounded-full font-semibold">
-                    Alerta Preventiva
+                    Datos pendientes
                   </span>
                 </div>
                 <div className="w-full bg-surface-container h-1 rounded-full mt-2.5 overflow-hidden">
-                  <div className="bg-warning h-full rounded-full" style={{ width: '44%' }}></div>
+                  <div className="bg-warning h-full rounded-full" style={{ width: '0%' }}></div>
                 </div>
                 <span className="font-body-sm text-[11px] text-on-surface-variant mt-1.5">
-                  Campaña de WhatsApp activa
+                  Consulta de vencimientos pendiente
                 </span>
               </div>
 
@@ -753,16 +509,16 @@ export default function App() {
                   </span>
                 </div>
                 <div className="flex items-baseline justify-between mt-1">
-                  <span className="font-data-metric text-data-metric text-on-surface font-bold">18</span>
+                  <span className="font-data-metric text-data-metric text-on-surface font-bold">—</span>
                   <span className="font-label-code text-[10.5px] text-error bg-error-container px-1.5 py-0.2 rounded-full font-semibold">
-                    Acceso Bloqueado
+                    Datos pendientes
                   </span>
                 </div>
                 <div className="w-full bg-surface-container h-1 rounded-full mt-2.5 overflow-hidden">
-                  <div className="bg-error h-full rounded-full" style={{ width: '28%' }}></div>
+                  <div className="bg-error h-full rounded-full" style={{ width: '0%' }}></div>
                 </div>
                 <span className="font-body-sm text-[11px] text-on-surface-variant mt-1.5">
-                  3.8% de tasa de mora mensual
+                  Consulta de vencimientos pendiente
                 </span>
               </div>
 
@@ -778,15 +534,15 @@ export default function App() {
                 </div>
                 <div className="flex items-baseline justify-between mt-1">
                   <span className="font-data-metric text-data-metric text-primary font-bold tracking-tight">
-                    ${ingresosHoy.toLocaleString('es-AR')}
+                    Pendiente
                   </span>
                   <span className="font-label-code text-[10px] text-on-surface-variant">ARS</span>
                 </div>
                 <div className="w-full bg-surface-container h-1 rounded-full mt-2.5 overflow-hidden">
-                  <div className="bg-primary h-full rounded-full" style={{ width: '62%' }}></div>
+                  <div className="bg-primary h-full rounded-full" style={{ width: '0%' }}></div>
                 </div>
                 <span className="font-body-sm text-[11px] text-on-surface-variant mt-1.5">
-                  8 cobranzas registradas en turno
+                  Registro de pagos pendiente
                 </span>
               </div>
             </section>
@@ -807,7 +563,7 @@ export default function App() {
                   >
                     <span>Todos</span>
                     <span className="font-label-code text-[11px] px-1.5 py-0.2 rounded-md bg-surface-container text-white font-bold">
-                      465
+                      —
                     </span>
                   </button>
 
@@ -822,7 +578,7 @@ export default function App() {
                   >
                     <span>Activos</span>
                     <span className="font-label-code text-[11px] px-1.5 py-0.2 rounded-md bg-secondary-container text-secondary font-bold">
-                      418
+                      —
                     </span>
                   </button>
 
@@ -837,7 +593,7 @@ export default function App() {
                   >
                     <span>Suspendidos</span>
                     <span className="font-label-code text-[11px] px-1.5 py-0.2 rounded-md bg-warning-container text-warning font-bold">
-                      18
+                      —
                     </span>
                   </button>
 
@@ -852,7 +608,7 @@ export default function App() {
                   >
                     <span>Vencidos</span>
                     <span className="font-label-code text-[11px] px-1.5 py-0.2 rounded-md bg-error-container text-error font-bold">
-                      29
+                      —
                     </span>
                   </button>
                 </div>
@@ -863,14 +619,12 @@ export default function App() {
                   <div className="relative">
                     <select
                       value={planFilter}
+                      disabled
+                      title="La consulta de planes está pendiente de integración."
                       onChange={(e) => setPlanFilter(e.target.value)}
                       className="appearance-none bg-surface-container-lowest text-on-surface text-xs pl-3 pr-7 py-2 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary border border-outline-variant/40"
                     >
-                      <option value="">Todos los planes</option>
-                      <option value="musculacion">Pase Libre Musculación</option>
-                      <option value="cross">Full Cross & Fitness</option>
-                      <option value="trimestral">Plan Trimestral VIP</option>
-                      <option value="estudiante">Pase Estudiante</option>
+                      <option value="">Planes pendientes de consulta</option>
                     </select>
                     <span className="material-symbols-outlined pointer-events-none absolute right-2 top-2 text-on-surface-variant text-[16px]">
                       expand_more
@@ -1045,7 +799,7 @@ export default function App() {
                             {/* Primary Cobrar Button (Volt Lime + Dark Text) */}
                             {m.status === 'active' && (
                               <button
-                                onClick={() => handleOpenPayment(m)}
+                                disabled title="Los pagos están pendientes de implementación."
                                 className="px-2.5 py-1 bg-primary text-on-primary hover:bg-primary-hover rounded-lg font-bold text-xs transition-all flex items-center gap-1 shadow-sm active:scale-95"
                                 type="button"
                               >
@@ -1055,7 +809,7 @@ export default function App() {
                             )}
                             {m.status === 'expired' && (
                               <button
-                                onClick={() => handleOpenPayment(m)}
+                                disabled title="Los pagos están pendientes de implementación."
                                 className="px-2.5 py-1 bg-error text-white hover:opacity-90 rounded-lg font-bold text-xs transition-all flex items-center gap-1 shadow-md shadow-error/20 active:scale-95"
                                 type="button"
                               >
@@ -1065,7 +819,7 @@ export default function App() {
                             )}
                             {m.status === 'warning' && (
                               <button
-                                onClick={() => handleReactivate(m.id)}
+                                disabled title="La reactivación está pendiente de implementación."
                                 className="px-2.5 py-1 bg-surface-container hover:bg-surface-container-high text-white rounded-lg text-xs font-medium transition-colors border border-outline-variant/40"
                                 type="button"
                               >
@@ -1074,20 +828,16 @@ export default function App() {
                             )}
 
                             <button
-                              onClick={() => handleOpenReceipt(m)}
+                              disabled title="Los comprobantes internos están pendientes de implementación."
                               className="p-1 bg-surface-container hover:bg-surface-container-highest text-white rounded-lg transition-colors border border-outline-variant/40"
-                              title="Ver Comprobante"
                               type="button"
                             >
                               <span className="material-symbols-outlined text-[16px]">receipt_long</span>
                             </button>
 
                             <button
-                              onClick={() =>
-                                showToast(`Ficha técnica y biométrica de ${m.name} abierta en terminal.`, 'badge')
-                              }
+                              disabled title="La ficha no está implementada."
                               className="p-1 bg-surface-container hover:bg-surface-container-highest text-on-surface-variant hover:text-white rounded-lg transition-colors border border-outline-variant/40"
-                              title="Ficha Socio"
                               type="button"
                             >
                               <span className="material-symbols-outlined text-[16px]">badge</span>
@@ -1100,465 +850,13 @@ export default function App() {
                 </table>
               </div>
 
-              {/* Table Footer / Pagination */}
-              <div className="flex flex-col sm:flex-row items-center justify-between px-3.5 py-2 bg-surface-container-lowest gap-2 border-t border-outline-variant/40">
-                <span className="font-label-code text-[11px] text-on-surface-variant">
-                  Mostrando {filteredMembers.length} de 465 socios registrados
-                </span>
-                <div className="flex items-center gap-1">
-                  <button
-                    className="p-1 rounded bg-surface-container text-on-surface-variant hover:text-white disabled:opacity-30"
-                    disabled
-                    type="button"
-                  >
-                    <span className="material-symbols-outlined text-[16px]">chevron_left</span>
-                  </button>
-                  <button
-                    className="w-6 h-6 rounded bg-primary text-on-primary font-label-code text-xs font-bold flex items-center justify-center shadow-sm"
-                    type="button"
-                  >
-                    1
-                  </button>
-                  <button
-                    className="w-6 h-6 rounded bg-surface-container hover:bg-surface-container-high text-on-surface font-label-code text-xs flex items-center justify-center"
-                    type="button"
-                  >
-                    2
-                  </button>
-                  <button
-                    className="w-6 h-6 rounded bg-surface-container hover:bg-surface-container-high text-on-surface font-label-code text-xs flex items-center justify-center"
-                    type="button"
-                  >
-                    3
-                  </button>
-                  <span className="font-label-code text-xs text-on-surface-variant px-1">...</span>
-                  <button
-                    className="w-6 h-6 rounded bg-surface-container hover:bg-surface-container-high text-on-surface font-label-code text-xs flex items-center justify-center"
-                    type="button"
-                  >
-                    47
-                  </button>
-                  <button
-                    className="p-1 rounded bg-surface-container text-on-surface-variant hover:text-white"
-                    type="button"
-                  >
-                    <span className="material-symbols-outlined text-[16px]">chevron_right</span>
-                  </button>
-                </div>
+              <div className="px-3.5 py-3 bg-surface-container-lowest border-t border-outline-variant/40 text-xs text-on-surface-variant">
+                El listado administrativo está pendiente de integración. Podés crear un socio desde «Alta de Socio», sin asignarle una membresía ni registrar pagos.
               </div>
             </section>
           </div>
         </main>
       </div>
-
-      {/* --- MODAL 1: REGISTRAR COBRO / PAGO DE MEMBRESÍA --- */}
-      {isPaymentModalOpen && selectedMember && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-md p-4 transition-opacity duration-200">
-          <div className="bg-surface-container-low rounded-2xl w-full max-w-lg shadow-2xl overflow-hidden flex flex-col border border-outline-variant/60">
-            {/* Modal Header */}
-            <div className="px-4 py-3 bg-surface-container-lowest flex items-center justify-between border-b border-outline-variant/40">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-primary/20 text-primary flex items-center justify-center font-bold">
-                  <span className="material-symbols-outlined text-[18px]">point_of_sale</span>
-                </div>
-                <div>
-                  <h2 className="font-bold text-sm text-on-surface">Registrar Pago de Membresía</h2>
-                  <span className="font-label-code text-[10.5px] text-on-surface-variant">
-                    Caja Operativa • Sede Palermo
-                  </span>
-                </div>
-              </div>
-              <button
-                onClick={() => setIsPaymentModalOpen(false)}
-                className="w-7 h-7 rounded-lg bg-surface-container hover:bg-surface-container-high text-on-surface-variant hover:text-white flex items-center justify-center transition-colors"
-                type="button"
-              >
-                <span className="material-symbols-outlined text-[16px]">close</span>
-              </button>
-            </div>
-
-            {/* Modal Body Form */}
-            <form onSubmit={handleConfirmPayment} className="p-4 flex flex-col gap-3 overflow-y-auto max-h-[85vh]">
-              {/* Socio Selector */}
-              <div className="flex flex-col gap-1">
-                <label className="font-label-md text-[11px] text-on-surface-variant uppercase tracking-wider font-semibold">
-                  Socio Seleccionado
-                </label>
-                <div className="bg-surface-container-lowest rounded-xl p-2.5 flex items-center justify-between border border-outline-variant/40">
-                  <div className="flex items-center gap-2.5">
-                    {selectedMember.avatarUrl ? (
-                      <img
-                        alt={selectedMember.name}
-                        className="w-8 h-8 rounded-full object-cover ring-1 ring-surface-variant"
-                        src={selectedMember.avatarUrl}
-                      />
-                    ) : (
-                      <div className="w-8 h-8 rounded-full bg-surface-container text-primary font-bold text-xs flex items-center justify-center border border-primary/20">
-                        {selectedMember.initials || 'AP'}
-                      </div>
-                    )}
-                    <div className="flex flex-col">
-                      <span className="text-xs font-bold text-on-surface">
-                        {selectedMember.name}
-                      </span>
-                      <span className="font-label-code text-[10.5px] text-on-surface-variant">
-                        DNI {selectedMember.dni} • Socio {selectedMember.code}
-                      </span>
-                    </div>
-                  </div>
-                  <button
-                    onClick={() => {
-                      const next = members[(members.findIndex((m) => m.id === selectedMember.id) + 1) % members.length];
-                      setSelectedMember(next);
-                    }}
-                    className="text-primary font-label-code text-xs hover:underline font-semibold"
-                    type="button"
-                  >
-                    Cambiar
-                  </button>
-                </div>
-              </div>
-
-              {/* Plan Selection */}
-              <div className="flex flex-col gap-1">
-                <label className="font-label-md text-[11px] text-on-surface-variant uppercase tracking-wider font-semibold">
-                  Plan a Renovar / Activar
-                </label>
-                <div className="relative">
-                  <select
-                    value={paymentPlanPrice}
-                    onChange={(e) => {
-                      const val = parseInt(e.target.value, 10);
-                      setPaymentPlanPrice(val);
-                      setCashReceived(val);
-                      if (val === 24000) setPaymentPlanName('Pase Libre Mensual');
-                      else if (val === 62000) setPaymentPlanName('Plan Trimestral VIP');
-                      else if (val === 18000) setPaymentPlanName('Pase 10 Clases Grupales');
-                      else if (val === 114000) setPaymentPlanName('Semestral Elite Total');
-                    }}
-                    className="w-full appearance-none bg-surface-container-lowest text-on-surface text-xs px-3 py-2 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary border border-outline-variant/40"
-                  >
-                    <option value={24000}>Pase Libre Mensual — $24.000 ARS</option>
-                    <option value={62000}>Plan Trimestral VIP — $62.000 ARS (15% OFF)</option>
-                    <option value={18000}>Pase 10 Clases Grupales — $18.000 ARS</option>
-                    <option value={114000}>Semestral Elite Total — $114.000 ARS</option>
-                  </select>
-                  <span className="material-symbols-outlined pointer-events-none absolute right-2.5 top-2 text-on-surface-variant text-[16px]">
-                    expand_more
-                  </span>
-                </div>
-              </div>
-
-              {/* Payment Method Tabs */}
-              <div className="flex flex-col gap-1">
-                <label className="font-label-md text-[11px] text-on-surface-variant uppercase tracking-wider font-semibold">
-                  Método de Pago
-                </label>
-                <div className="grid grid-cols-2 gap-1 p-1 bg-surface-container-lowest rounded-lg border border-outline-variant/40">
-                  <button
-                    onClick={() => setPaymentMethod('cash')}
-                    className={`py-1.5 rounded-md text-xs font-bold flex items-center justify-center gap-1.5 transition-colors ${
-                      paymentMethod === 'cash'
-                        ? 'bg-surface-container text-white border border-outline-variant'
-                        : 'text-on-surface-variant hover:text-white'
-                    }`}
-                    type="button"
-                  >
-                    <span className="material-symbols-outlined text-[16px] text-secondary">payments</span>
-                    <span>Efectivo (10% OFF)</span>
-                  </button>
-                  <button
-                    onClick={() => setPaymentMethod('transfer')}
-                    className={`py-1.5 rounded-md text-xs font-bold flex items-center justify-center gap-1.5 transition-colors ${
-                      paymentMethod === 'transfer'
-                        ? 'bg-surface-container text-white border border-outline-variant'
-                        : 'text-on-surface-variant hover:text-white'
-                    }`}
-                    type="button"
-                  >
-                    <span className="material-symbols-outlined text-[16px] text-primary">qr_code_2</span>
-                    <span>Transferencia / QR</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Cash Computation Grid */}
-              {paymentMethod === 'cash' && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 bg-surface-container-lowest p-3 rounded-lg border border-outline-variant/40">
-                  <div className="flex flex-col gap-1">
-                    <label className="font-label-code text-[11px] text-on-surface-variant">Monto Recibido</label>
-                    <div className="relative">
-                      <span className="absolute left-2.5 top-1.5 font-label-code text-on-surface-variant text-xs">$</span>
-                      <input
-                        value={cashReceived}
-                        onChange={(e) => setCashReceived(parseFloat(e.target.value) || 0)}
-                        className="w-full bg-surface-container pl-6 pr-2.5 py-1.5 rounded-md font-label-code text-xs font-bold text-on-surface focus:outline-none focus:ring-1 focus:ring-primary border border-outline-variant/40"
-                        type="number"
-                      />
-                    </div>
-                  </div>
-                  <div className="flex flex-col gap-1">
-                    <label className="font-label-code text-[11px] text-on-surface-variant">Vuelto a Entregar</label>
-                    <div className="bg-surface-container px-2.5 py-1.5 rounded-md flex items-center justify-between border border-outline-variant/40">
-                      <span
-                        className={`font-label-code text-sm font-bold ${
-                          cashChange >= 0 ? 'text-secondary' : 'text-error'
-                        }`}
-                      >
-                        {cashChange >= 0
-                          ? `$${cashChange.toLocaleString('es-AR')}`
-                          : `-$${Math.abs(cashChange).toLocaleString('es-AR')}`}
-                      </span>
-                      <span className="font-label-code text-[10px] text-on-surface-variant">ARS</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Operation Number for Transfer */}
-              {paymentMethod === 'transfer' && (
-                <div className="flex flex-col gap-1">
-                  <label className="font-label-md text-[11px] text-on-surface-variant uppercase tracking-wider font-semibold">
-                    N° de Operación / Comprobante MP
-                  </label>
-                  <input
-                    value={operationCode}
-                    onChange={(e) => setOperationCode(e.target.value)}
-                    className="w-full bg-surface-container-lowest px-3 py-2 rounded-lg text-xs text-on-surface placeholder:text-on-surface-variant/70 focus:outline-none focus:ring-1 focus:ring-primary border border-outline-variant/40"
-                    placeholder="Ej: OP-8941029482 o Alias 'PULSE.GYM.CENTRAL'"
-                    type="text"
-                  />
-                </div>
-              )}
-
-              {/* Start Date & Cashier */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                <div className="flex flex-col gap-1">
-                  <label className="font-label-md text-[11px] text-on-surface-variant uppercase tracking-wider font-semibold">
-                    Inicio Nueva Vigencia
-                  </label>
-                  <input
-                    value={validityStart}
-                    onChange={(e) => setValidityStart(e.target.value)}
-                    className="w-full bg-surface-container-lowest text-on-surface text-xs px-3 py-1.5 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary border border-outline-variant/40"
-                    type="date"
-                  />
-                </div>
-                <div className="flex flex-col gap-1">
-                  <label className="font-label-md text-[11px] text-on-surface-variant uppercase tracking-wider font-semibold">
-                    Operador de Turno
-                  </label>
-                  <div className="bg-surface-container-lowest px-3 py-1.5 rounded-lg flex items-center gap-1.5 text-on-surface-variant border border-outline-variant/40">
-                    <span className="material-symbols-outlined text-[16px] text-primary">person_pin</span>
-                    <span className="font-label-code text-xs text-on-surface">Valeria Méndez (Caja #1)</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Modal Actions */}
-              <div className="flex items-center justify-end gap-2 pt-2 border-t border-outline-variant/40">
-                <button
-                  onClick={() => setIsPaymentModalOpen(false)}
-                  className="px-3 py-1.5 rounded-lg bg-surface-container hover:bg-surface-container-high text-xs text-white transition-colors border border-outline-variant/40"
-                  type="button"
-                >
-                  Cancelar
-                </button>
-                <button
-                  type="submit"
-                  className="px-4 py-1.5 rounded-lg bg-primary text-on-primary text-xs font-bold hover:bg-primary-hover shadow-md transition-all flex items-center gap-1.5 active:scale-95"
-                >
-                  <span className="material-symbols-outlined text-[16px]">check_circle</span>
-                  <span>Confirmar y Emitir Comprobante</span>
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* --- MODAL 2: VISTA PREVIA DETALLADA DE COMPROBANTE INTERNO --- */}
-      {isReceiptModalOpen && activeReceipt && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/85 backdrop-blur-md p-4 transition-opacity duration-200">
-          <div className="bg-surface-container-low rounded-2xl w-full max-w-md shadow-2xl overflow-hidden flex flex-col border border-outline-variant/60">
-            {/* Receipt Top Bar */}
-            <div className="px-4 py-2.5 bg-surface-container-lowest flex items-center justify-between border-b border-outline-variant/40">
-              <div className="flex items-center gap-1.5">
-                <span className="material-symbols-outlined text-secondary text-[18px]">verified</span>
-                <span className="font-bold text-xs text-on-surface">
-                  Comprobante Interno Digital
-                </span>
-              </div>
-              <button
-                onClick={() => setIsReceiptModalOpen(false)}
-                className="w-6 h-6 rounded bg-surface-container hover:bg-surface-container-high text-on-surface-variant hover:text-white flex items-center justify-center"
-                type="button"
-              >
-                <span className="material-symbols-outlined text-[16px]">close</span>
-              </button>
-            </div>
-
-            {/* Voucher Paper Styling */}
-            <div className="p-4 bg-surface-container-lowest m-3 rounded-xl flex flex-col gap-2.5 text-xs relative shadow-inner border border-outline-variant/40">
-              {/* Gym Branding */}
-              <div className="flex items-center justify-between pb-2 border-b border-outline-variant/30">
-                <div className="flex items-center gap-1.5">
-                  <span className="material-symbols-outlined text-primary text-[22px]">bolt</span>
-                  <div className="flex flex-col">
-                    <span className="font-bold text-xs text-on-surface tracking-wide leading-none">
-                      PULSE GYM & FITNESS
-                    </span>
-                    <span className="font-label-code text-[10px] text-on-surface-variant tracking-tight mt-0.5">
-                      Sede Palermo • Av. Santa Fe 3420, CABA
-                    </span>
-                  </div>
-                </div>
-                <span className="font-label-code text-[10px] px-1.5 py-0.5 rounded bg-surface-container text-primary font-bold border border-primary/20">
-                  RECIBO OK
-                </span>
-              </div>
-
-              <div className="bg-surface-container/60 p-1.5 rounded text-center border border-outline-variant/30">
-                <span className="font-label-code text-[10px] text-on-surface-variant block uppercase tracking-wider">
-                  Comprobante de Pago Interno (No fiscal)
-                </span>
-              </div>
-
-              {/* Metadata */}
-              <div className="flex items-center justify-between font-label-code text-[11px] py-1 border-b border-outline-variant/30">
-                <div>
-                  <span className="text-on-surface-variant block text-[10px]">N° Comprobante:</span>
-                  <span className="text-on-surface font-bold">{activeReceipt.receiptNumber}</span>
-                </div>
-                <div className="text-right">
-                  <span className="text-on-surface-variant block text-[10px]">Fecha y Hora:</span>
-                  <span className="text-on-surface">{activeReceipt.date}</span>
-                </div>
-              </div>
-
-              {/* Member Info */}
-              <div className="bg-surface-container-low p-2 rounded-lg flex flex-col gap-1 border border-outline-variant/30">
-                <span className="font-label-code text-[10px] text-on-surface-variant uppercase font-semibold">
-                  Datos del Socio
-                </span>
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-xs text-on-surface">
-                    {activeReceipt.member.name}
-                  </span>
-                  <span className="font-label-code text-[11px] text-secondary font-bold">
-                    {activeReceipt.member.code}
-                  </span>
-                </div>
-                <div className="flex items-center justify-between font-label-code text-[10.5px] text-on-surface-variant">
-                  <span>DNI: {activeReceipt.member.dni}</span>
-                  <span>Tel: {activeReceipt.member.phone}</span>
-                </div>
-              </div>
-
-              {/* Breakdown */}
-              <div className="flex flex-col gap-1 py-1">
-                <div className="flex items-center justify-between">
-                  <span className="font-semibold text-xs text-on-surface">
-                    {activeReceipt.planTitle}
-                  </span>
-                  <span className="font-label-code text-xs text-on-surface font-bold">
-                    ${activeReceipt.baseAmount.toLocaleString('es-AR')}
-                  </span>
-                </div>
-                <span className="font-label-code text-[10.5px] text-on-surface-variant">
-                  Período: {activeReceipt.validityStart} al {activeReceipt.validityEnd} (30 días de acceso)
-                </span>
-                <span className="font-label-code text-[10px] text-secondary">
-                  Acceso incluido: Musculación, Clases guiadas y Lockers Sede Palermo
-                </span>
-
-                {activeReceipt.discount > 0 && (
-                  <div className="flex items-center justify-between pt-1 text-secondary font-label-code text-xs font-bold">
-                    <span>Descuento Promoción Efectivo (10%)</span>
-                    <span>-${activeReceipt.discount.toLocaleString('es-AR')}</span>
-                  </div>
-                )}
-              </div>
-
-              {/* Highlighted Total (Volt Lime Container) */}
-              <div className="bg-primary text-on-primary p-3 rounded-xl flex items-center justify-between shadow-md">
-                <div className="flex flex-col">
-                  <span className="font-label-code text-[10px] font-bold uppercase tracking-wider">
-                    TOTAL ABONADO
-                  </span>
-                  <span className="font-label-code text-[10.5px] opacity-90 font-medium">
-                    {activeReceipt.paymentMethod === 'cash'
-                      ? `Efectivo (Entregado: $${(activeReceipt.cashGiven || activeReceipt.total).toLocaleString('es-AR')} | Vuelto: $${(activeReceipt.cashChange || 0).toLocaleString('es-AR')})`
-                      : `Transferencia / QR (${activeReceipt.operationCode || 'Aprobada'})`}
-                  </span>
-                </div>
-                <div className="text-right">
-                  <span className="text-lg font-bold leading-none">
-                    ${activeReceipt.total.toLocaleString('es-AR')}
-                  </span>
-                  <span className="font-label-code text-[10px] block text-right font-bold">ARS</span>
-                </div>
-              </div>
-
-              {/* Cashier & QR */}
-              <div className="flex items-center justify-between pt-1 gap-2">
-                <div className="flex flex-col">
-                  <span className="font-label-code text-[10px] text-on-surface-variant">Atendido por:</span>
-                  <span className="text-xs text-on-surface font-semibold">
-                    {activeReceipt.cashier}
-                  </span>
-                  <span className="font-label-code text-[9.5px] text-on-surface-variant">
-                    Operador #04 • Caja Matutina
-                  </span>
-                </div>
-
-                <div className="flex flex-col items-center gap-0.5">
-                  <div className="w-12 h-12 bg-white p-1 rounded-md flex items-center justify-center">
-                    <svg className="w-full h-full text-black" fill="currentColor" viewBox="0 0 24 24">
-                      <path d="M2 2h8v8H2V2zm2 2v4h4V4H4zm10-2h8v8h-8V2zm2 2v4h4V4h-4zM2 14h8v8H2v-8zm2 2v4h4v-4H4zm10-2h3v3h-3v-3zm5 0h3v3h-3v-3zm-5 5h3v3h-3v-3zm5 0h3v3h-3v-3zm-2.5-2.5h3v3h-3v-3z"></path>
-                    </svg>
-                  </div>
-                  <span className="font-label-code text-[8.5px] text-on-surface-variant">Molinete Habilitado</span>
-                </div>
-              </div>
-            </div>
-
-            {/* Modal Footer */}
-            <div className="px-4 py-2.5 bg-surface-container flex flex-wrap items-center justify-between gap-1.5 border-t border-outline-variant/40">
-              <button
-                onClick={() => window.print()}
-                className="flex items-center gap-1 px-3 py-1.5 bg-surface-container-high hover:bg-surface-bright text-white rounded-lg text-xs font-semibold transition-colors border border-outline-variant/40"
-                type="button"
-              >
-                <span className="material-symbols-outlined text-[16px]">print</span>
-                <span>Imprimir Térmico</span>
-              </button>
-
-              <div className="flex items-center gap-1.5">
-                <button
-                  onClick={() =>
-                    alert(`Comprobante enviado exitosamente por WhatsApp a ${activeReceipt.member.phone}`)
-                  }
-                  className="flex items-center gap-1 px-3 py-1.5 bg-secondary text-on-secondary rounded-lg text-xs font-bold hover:bg-secondary-hover transition-colors shadow-sm"
-                  type="button"
-                >
-                  <span className="material-symbols-outlined text-[16px]">send</span>
-                  <span>WhatsApp</span>
-                </button>
-
-                <button
-                  onClick={() => showToast('Descargando archivo PDF del comprobante...', 'download')}
-                  className="flex items-center gap-1 p-1.5 bg-surface-container-high hover:bg-surface-bright text-on-surface rounded-lg transition-colors border border-outline-variant/40"
-                  title="Descargar PDF"
-                  type="button"
-                >
-                  <span className="material-symbols-outlined text-[16px]">download</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* Auth Modal (Login / Register) */}
       <AuthModal
@@ -1567,6 +865,7 @@ export default function App() {
         onClose={() => setIsAuthModalOpen(false)}
         onSuccess={handleAuthSuccess}
         showToast={showToast}
+        allowRegistration={currentUser?.rol === 'ADMIN'}
       />
     </div>
   );

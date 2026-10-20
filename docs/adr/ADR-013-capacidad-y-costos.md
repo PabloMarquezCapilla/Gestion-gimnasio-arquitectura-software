@@ -1,78 +1,56 @@
 # D13 - Capacidad y costos
 
-**Estado:** decidida para la Entrega 2.  
-**Fecha:** 12/10/2026.
+**Estado:** línea base local reproducible y estimación ilustrativa; capacidad máxima y despliegue pendientes de dimensionar.
+**Fecha original:** 12/10/2026. **Revisión factual:** 19/10/2026.
+**Enunciado:** §5, D13, página 7; decisión requerida en §6.3, página 8.
 
-## Contexto
+## Rectificación de la evidencia anterior
 
-El enunciado solicita analizar el comportamiento del sistema bajo demanda, identificar los principales cuellos de botella de la arquitectura, proponer alternativas concretas de escalado y elaborar una estimación fundamentada de costos de infraestructura para operar la plataforma en la nube.
+No se encontraron scripts ni resultados que respalden 482 RPS, p95 28,1 ms, un límite de 350–450 reservas/s o el presupuesto de USD 208 de la versión original. Esos números se retiran como evidencia. Se conserva en Git la historia del documento; esta revisión no aprueba una contratación ni un proveedor de nube.
 
-## Decisión
+## Prueba de carga reproducible
 
-### 1. Resultados de las pruebas de carga y rendimiento
+`npm run test:postgres` usa PostgreSQL 17 temporal en Docker, dos instancias HTTP de Clases con pools independientes y JWT real. Después de sus verificaciones funcionales realiza 20 lecturas de calentamiento y 300 consultas `GET /api/v1/reservas/clases`, con 10 trabajadores concurrentes, alternando las instancias. Cada medición abarca envío y lectura completa del JSON, con conexión cerrada entre solicitudes. Si alguna respuesta no es 200, el ensayo falla.
 
-Se realizaron pruebas de carga y estrés sobre el flujo principal y sobre la capacidad compartida utilizando herramientas de benchmarking HTTP (`autocannon` / `k6`):
+Resultado del 19/10/2026, 23:09 Argentina (20/10 02:09 UTC):
 
-#### Escenario A: Consulta masiva de clases y cupos disponibles (`GET /api/v1/clases`)
-- **Carga:** 500 solicitudes por segundo (RPS) concurrentes durante 60 segundos.
-- **Rendimiento obtenido:**
-  - Throughput medio: **482 req/seg** en una única instancia Node.js.
-  - Latencia media: **12.4 ms**.
-  - Percentil p95: **28.1 ms**.
-  - Percentil p99: **46.8 ms**.
-  - Tasa de error: **0.00%**.
-- **Observación:** El uso de índices B-Tree sobre `(publicada, sede_id, inicio)` en PostgreSQL permite servir el catálogo con latencias sumamente bajas.
+| Dato | Medición |
+|---|---:|
+| Solicitudes / concurrencia | 300 / 10 |
+| Duración de la muestra | 904,94 ms |
+| Throughput de la muestra | 331,51 solicitudes/s |
+| Latencia media / p50 | 30,04 / 28,43 ms |
+| p95 / p99 | 38,84 / 78,56 ms |
+| Errores | 0 |
+| Datos / réplicas | 6 clases ficticias / 2 instancias |
 
-#### Escenario B: Concurrencia extrema en reserva del último cupo (`POST /api/v1/reservas`)
-- **Carga:** 50 clientes simultáneos intentando reservar exactamente el último cupo libre de una clase.
-- **Rendimiento obtenido:**
-  - 1 cliente obtuvo la reserva confirmada (`HTTP 201 Created`).
-  - 49 clientes recibieron `HTTP 409 Conflict` (`CLASE_SIN_CUPOS` con oferta de lista de espera).
-  - Latencia media de la ráfaga: **82.3 ms**.
-  - Latencia máxima observada: **194 ms**.
-  - Tasa de inconsistencias (sobreventa o duplicados): **0.00%** (aforo estrictamente respetado).
-  - **Verificación automatizada:** Este escenario está implementado y validado en la suite de pruebas mediante `test/concurrencia.test.mjs`.
+Entorno: Node 22.18.0 sobre Windows, Intel i7-1355U, 12 CPU lógicas y 15,7 GiB de memoria del host. Las aplicaciones y el generador comparten máquina; PostgreSQL corre en Docker Desktop. No incluye gateway, navegador, proveedor, TLS o latencia de nube. Es una muestra breve sobre pocos datos, no un ensayo sostenido, saturación, capacidad garantizada ni validación de SLO.
 
-### 2. Principal límite identificado (Cuello de botella)
+El mismo ensayo verifica 12 intentos concurrentes sobre un último cupo y una sola reserva persistida. El ensayo de balanceo agrega 12 escrituras por NGINX: una 201 y once 409; distribución y caída en D12. No se atribuyen a esos casos percentiles de escritura que no se midieron.
 
-El principal límite de capacidad identificado no reside en la CPU o la memoria de los microservicios Node.js/Fastify, sino en la **contención de bloqueos a nivel de fila (`Row-Level Lock Contention`) en PostgreSQL**:
-- Para asegurar que el aforo no se sobrepase jamás bajo concurrencia, la transacción de reserva ejecuta `SELECT ... FROM clases WHERE clase_id = $1 FOR UPDATE`.
-- Esto serializa forzosamente todas las reservas que compiten por la **misma clase**. Si 500 socios intentan reservar la misma clase en el mismo segundo exacto (ej. apertura de inscripciones para una actividad de alta demanda), las transacciones se ejecutan en fila india.
-- El límite físico del motor PostgreSQL para transacciones serializadas sobre la misma fila se sitúa en torno a **350 - 450 reservas/segundo por clase individual** antes de que el tiempo de espera por bloqueo (`lock_timeout`) comience a rechazar peticiones por timeout.
+## Límite identificado y alternativa de escalado
 
-### 3. Alternativas de escalado
+El límite estructural del flujo de escritura es la serialización por fila de clase (`FOR UPDATE`): más réplicas HTTP no permiten asignar simultáneamente el último cupo de la misma clase. El presupuesto de llamada a Socios y los pools también condicionan la capacidad. Es un riesgo identificado por el diseño, sin umbral de saturación medido; no se afirma que PostgreSQL sea el primer recurso saturado en todas las cargas.
 
-Para superar los límites identificados a medida que el negocio crezca:
+Primera alternativa: mantener transacciones cortas sin red bajo bloqueo, medir espera de locks/CPU/pools con datos representativos y aumentar réplicas HTTP solo cuando la aplicación sea el límite. Las lecturas de metadatos podrían escalar con caché o réplicas si las mediciones lo justifican; cupos y escrituras conservarán validación transaccional. Cambiar reservas a 202 asíncrono o particionar por sede requeriría revisar contrato y consistencia; no se implementa ni se presenta como una solución ya probada.
 
-1. **Escalado de Lectura (Read Replicas de PostgreSQL):**
-   - Separar el tráfico de lectura masiva del catálogo (`GET /api/v1/clases`) hacia **réplicas de lectura de PostgreSQL** o servirlo desde la capa de caché Redis (D7).
-   - Esto libera a la instancia primaria (Primary DB) para procesar exclusivamente transacciones de escritura (`POST /api/v1/reservas`, pagos e ingresos).
-2. **Amortiguación de Picos de Escritura (Buffer Asíncrono con RabbitMQ):**
-   - Para clases de demanda masiva, transformar la reserva en un patrón de encolamiento: la API responde `202 Accepted` y encola la solicitud en RabbitMQ.
-   - Un worker dedicado consume las solicitudes en orden estricto y las procesa contra PostgreSQL a una tasa controlada sin saturar la base.
-3. **Particionamiento Horizontal (Sharding) por Sede:**
-   - Dado que una clase y sus reservas pertenecen exclusivamente a una sede física (`sede_id`), la base de datos de Clases y Reservas puede particionarse lógicamente o físicamente por sede, eliminando toda interferencia de contención entre distintas sucursales del gimnasio.
+## Estimación ilustrativa de infraestructura
 
-### 4. Estimación de costos de infraestructura en la nube
+Para poder discutir costos sin elegir aún el despliegue, se calcula un escenario educativo alternativo al anterior: una VM Linux con Docker Compose, gateway NGINX, los servicios del repositorio (Clases x2), PostgreSQL, MongoDB y RabbitMQ en el mismo host. No es alta disponibilidad entre máquinas ni una capacidad validada para producción.
 
-Se proyecta el despliegue del sistema completo en **Amazon Web Services (AWS)** en la región `us-east-1` (o equivalente en Google Cloud / GCP), dimensionado para un gimnasio mediano con 5 sedes y hasta 10.000 socios activos:
+Precios públicos consultados el 19/10/2026; USD sin impuestos, 730 horas/mes. Supuestos explícitos de cálculo, no necesidades del negocio confirmadas:
 
-| Componente | Servicio AWS seleccionado | Especificación y Dimensionamiento | Costo mensual est. (USD) |
-|---|---|---|---|
-| **Balanceo y Entrada** | AWS Application Load Balancer (ALB) | 1 ALB Multi-AZ con reglas de path routing | **$22.50** |
-| **Cómputo Backend** | AWS ECS Fargate (Microservicios) | 3 servicios x 2 réplicas mínimas (0.5 vCPU, 1 GB RAM cada una) | **$43.80** |
-| **Persistencia Relacional** | Amazon RDS PostgreSQL Multi-AZ | `db.t4g.small` (2 vCPU, 2 GB RAM, 50 GB gp3 SSD con backups automáticos) | **$58.20** |
-| **Persistencia Documental** | MongoDB Atlas / AWS DocumentDB | M10 Cluster (General purpose, réplica de 3 nodos) | **$35.00** |
-| **Caché en Memoria** | Amazon ElastiCache Redis | `cache.t4g.micro` (1 nodo, 0.5 GB RAM) | **$12.40** |
-| **Mensajería Asíncrona** | Amazon MQ (RabbitMQ) | Instancia `mq.t3.micro` en modo Single-Instance | **$21.60** |
-| **Observabilidad y Tráfico** | Amazon CloudWatch / Data Transfer | Ingesta de métricas, retención de logs de 30 días y 50 GB egress | **$14.50** |
-| **Total Estimado Mensual** | | | **~$208.00 USD** |
+| Concepto | Supuesto y fórmula | USD/mes |
+|---|---|---:|
+| Cómputo | EC2 t3.large, Linux, US East N. Virginia, 2 vCPU/8 GiB; 730 × 0,0835 | 60,96 |
+| Disco | 30 GB gp3; ejemplo de tarifa 0,08 USD/GB-mes, sin IOPS/throughput extra | 2,40 |
+| IPv4 pública | 1 dirección; 730 × 0,005 | 3,65 |
+| **Subtotal ilustrativo** | Suma antes de red, backups y otros servicios | **67,01** |
 
-#### Optimización de costos para etapa inicial (Startup / Tier Educativo):
-- Utilizando instancias compartidas o servicios serverless de pago por uso (Render / Fly.io / Supabase + Upstash Redis), el costo operativo inicial se reduce a **~$35 - $50 USD / mes**, escalando al modelo completo de AWS únicamente cuando la concurrencia supere los 1.000 usuarios simultáneos.
+Fuentes: [EC2 T3, tabla Linux/US East](https://aws.amazon.com/ec2/instance-types/t3/), [EBS, ejemplo gp3](https://aws.amazon.com/ebs/pricing/), [VPC, IPv4 pública](https://aws.amazon.com/vpc/pricing/). El ejemplo de EBS debe confirmarse para la región elegida en la calculadora al presupuestar.
+
+El subtotal excluye transferencia, snapshots/backups, dominio, almacenamiento de logs, soporte, impuestos y créditos de CPU T3 Unlimited. No se descuentan promociones o créditos educativos. La memoria/disco de la VM deben verificarse con todos los flujos y datos antes de adoptarla. Faltan volumen y retención reales, tráfico, objetivo de disponibilidad y presupuesto del grupo para cotizar un despliegue definitivo; con servicios administrados o varias máquinas el costo cambia.
 
 ## Consecuencias
 
-- Se dispone de una radiografía cuantitativa clara del comportamiento del sistema bajo estrés.
-- El cuello de botella está claramente identificado y acotado a la fila transaccional de una clase individual, con planes de mitigación de ingeniería probados.
-- La viabilidad económica de la plataforma está fundamentada con un presupuesto realista y optimizable.
+E2 dispone de resultados reproducibles, un límite estructural explicado, una alternativa de escalado condicionada a mediciones y una estimación trazable. El despliegue y su presupuesto definitivo siguen sujetos a elección del equipo; no se han creado recursos ni generado gastos en la nube.

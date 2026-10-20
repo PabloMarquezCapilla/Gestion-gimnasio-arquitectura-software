@@ -58,10 +58,11 @@ export function getOutgoingTraceHeaders(context?: TraceContext): Record<string, 
       'x-correlation-id': traceId,
     };
   }
-  const child = createChildSpan(context);
+  // No se instrumenta un span cliente HTTP: Socios creará su span servidor
+  // como hijo de este span registrado, sin introducir un padre sin evidencia.
   return {
-    traceparent: formatTraceparent(child),
-    'x-correlation-id': child.traceId,
+    traceparent: formatTraceparent(context),
+    'x-correlation-id': context.traceId,
   };
 }
 

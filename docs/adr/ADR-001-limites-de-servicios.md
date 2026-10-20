@@ -1,7 +1,22 @@
 # D1 - Límites de servicios y propiedad de los datos
 
-**Estado:** validada en la Entrega 2.  
+**Estado actual:** reemplazado el 19/10/2026 por [ADR-015 - Límites de servicios con Tienda](ADR-015-limites-con-tienda.md). El contenido siguiente conserva el diseño y sus aclaraciones anteriores.
+
 **Fecha:** 07/10/2026 (propuesta inicial) | 12/10/2026 (validación con implementación punta a punta).
+
+## Aclaración de alcance - 19/10/2026
+
+Se conserva la división de tres servicios y la propiedad de datos de la decisión inicial. Esta anotación incorpora el alcance confirmado de la integración sin reemplazar esos límites:
+
+- **Socios y Membresías** será responsable de `POST /api/v1/integraciones/empleados` y de los socios, solicitudes pendientes y controles de idempotencia que produzca esa operación. El origen se identifica mediante la credencial autorizada `X-API-Key`.
+- El envío crea un socio y una **solicitud de membresía `PENDIENTE`**. No crea una membresía ni elige su plan; el administrador selecciona el plan y confirma el pago antes de habilitarla. El estado pendiente pertenece a la solicitud.
+- Para altas nuevas, un DNI o email existente produce conflicto sin modificar registros. El contrato contempla repetición idempotente por origen/clave/cuerpo y conflicto si el mismo empleado externo se asocia a otro DNI.
+- **Clases y Reservas** conserva sus funciones internas. La capacidad ofrecida al otro grupo pasa del GET de clases al POST de empleados, según [ADR-014](ADR-014-contrato-empleados.md), sucesor de [ADR-008](ADR-008-contrato-propio.md).
+- **Tienda** solo consultará productos y stock de una distribuidora. Su microservicio responsable está pendiente de definición; esta revisión no asigna esa responsabilidad ni crea otro servicio.
+
+El nuevo contrato y su mock separado en memoria pertenecen al diseño de esta etapa. Su incorporación al servicio operativo y a la persistencia queda pendiente. Se conservan debajo la decisión y el registro del 12/10/2026 como antecedentes.
+
+**Referencias:** sección 3, página 4 (documentación); sección 4.1, página 5 (integración entre grupos); sección 5, páginas 6–7 (decisiones e historia). No se sustituye D1 porque se mantienen sus límites; un cambio posterior de esos límites deberá registrarse según la regla de sucesión del enunciado.
 
 ## Contexto
 

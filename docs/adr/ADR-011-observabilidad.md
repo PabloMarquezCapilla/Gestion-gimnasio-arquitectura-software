@@ -1,91 +1,34 @@
 # D11 - Observabilidad
 
-**Estado:** primera versión decidida e implementada para la Entrega 2.  
-**Fecha:** 12/10/2026.
+**Estado:** primera versión implementada para E2: logs JSON, correlación W3C, métricas básicas y primera traza HTTP verificada. Tableros y alertas pendientes.
+**Fecha original:** 12/10/2026. **Revisión factual:** 19/10/2026.
+**Enunciado:** §6.3, página 8, exige logs correlacionados y primera traza; §5, D11, página 7, pide estrategia, objetivos y alertas.
 
-## Contexto
+## Logs y traza implementados
 
-En una arquitectura distribuida orientada a microservicios, depurar incidentes o auditar el flujo de negocio mediante logs planos no estructurados e independientes en cada contenedor resulta ineficiente e ineficaz. Para entender el estado interno del sistema a partir de sus salidas externas, se requiere una estrategia integral de observabilidad estructurada sobre los tres pilares fundamentales: **Logs estructurados**, **Métricas cuantitativas** y **Trazas distribuidas correlacionadas**, acompañados de objetivos de nivel de servicio (SLO) y reglas de alerta proactivas.
+- Socios y Clases usan Pino/Fastify. Los logs de negocio agregan `service`, `trace_id`, `span_id` y `parent_span_id`, además de tiempo, nivel y mensaje. Los logs automáticos de Fastify incluyen `reqId`; no se afirma que todos los logs de todos los procesos tengan contexto distribuido.
+- Se recibe `traceparent`, se crea un span servidor por solicitud y se devuelve `traceparent`/`X-Correlation-ID`. Clases propaga su span registrado; cada evaluación de Socios crea un span hijo. No se simula un span cliente sin registro.
+- No se registran contraseñas, JWT ni claves técnicas como evidencia. La traza de prueba usa únicamente identidades ficticias.
+- NGINX registra JSON con correlación, estado y `upstream_addr`, `upstream_status`, `upstream_response_time`. `X-Instance-ID` permite identificar la réplica de Clases. Esto no convierte NGINX en un servidor de trazas.
 
-## Decisión
+### Evidencia reproducible
 
-Se adopta una arquitectura de observabilidad estandarizada, basada en **Pino (Logs JSON estructurados)**, **W3C Trace Context (Trazabilidad distribuida)**, y el modelo de métricas **RED / USE (Prometheus + Grafana)**.
+`npm run test:postgres` levanta PostgreSQL efímero y aplicaciones con puertos HTTP distintos. Envía una reserva con `traceparent` y exige logs correlacionados de Clases y de las dos comprobaciones de Socios (ahora/fecha de clase), relaciones padre/hijo y reserva persistida consultable por la otra instancia.
 
-### 1. Estrategia de Logs Estructurados y Correlacionados
+Ejecución del 19/10/2026 (Argentina): trace ID `c7cab1c968ccd7baa1d58a49564f5e12`; span Clases `f25307e916fabadd`, hijos Socios `99bf85315e5c82ff` y `a7fe699d2555a287`. La salida del ensayo imprime identificadores nuevos en cada ejecución.
 
-Todos los microservicios emiten logs exclusivamente a `stdout` en formato **JSON estructurado** utilizando el motor de logging de Fastify / Pino:
+`scripts/demostrar-traza-distribuida.mjs` conserva una explicación con memoria e `inject`; es complementaria, no la evidencia de red/almacenamiento real. `npm run test:balanceo` verifica logs de proxy, distribución y recuperación; límites en D12.
 
-- **Campos estándar obligatorios en cada entrada de log:**
-  - `time`: timestamp epoch en milisegundos.
-  - `level`: severidad numérica estándar (10: trace, 20: debug, 30: info, 40: warn, 50: error, 60: fatal).
-  - `service`: identificador unívoco del microservicio (`clases-reservas`, `socios-membresias`, `accesos-ocupacion`).
-  - `trace_id`: identificador global de 32 caracteres hexadecimales de la transacción distribuida.
-  - `span_id`: identificador de 16 caracteres hexadecimales de la operación actual dentro del servicio.
-  - `parent_span_id`: identificador del span padre que originó la llamada (si aplica).
-  - `msg`: mensaje descriptivo de la acción o evento.
-  - `err`: objeto estructurado de error con stack trace y código (en niveles warn/error).
+## Métricas y estrategia pendiente
 
-Ejemplo real emitido por el sistema en el flujo principal:
-```json
-{
-  "level": 30,
-  "time": 1791852487665,
-  "service": "clases-reservas",
-  "trace_id": "4bf92f3577b34da6a3ce929d0e0e4736",
-  "span_id": "ec9c21c06067600c",
-  "parent_span_id": "00f067aa0ba902b7",
-  "claseId": "clase-demo-001",
-  "socioId": "socio-demo-01",
-  "msg": "Iniciando solicitud de reserva para clase"
-}
-```
+Socios y Clases exponen `/metrics` en formato compatible con Prometheus: `http_requests_total`, `http_errors_total`, `process_uptime_seconds` y `pg_pool_active_connections`. Son contadores por proceso que se reinician con él. Las conexiones ocupadas provienen de `totalCount - idleCount` del pool; se corrigió el valor fijo que publicaba Clases.
 
-### 2. Trazabilidad Distribuida (W3C Trace Context)
+No existen todavía histogramas de duración, métricas de caché/cola/event loop, recolector Prometheus, Grafana, alertas ni exportador OpenTelemetry. Un identificador W3C permite correlacionar logs, pero enviar spans completos a un backend requiere instrumentación/exportación adicional.
 
-Para reconstruir el camino exacto de una petición a través del API Gateway, `Clases y Reservas` y `Socios y Membresías`:
+Se conserva como diseño el tablero RED (tasa, errores, duración) y USE (utilización, saturación, errores). Objetivos iniciales propuestos: disponibilidad mensual 99,5%, 95% de reservas bajo 500 ms y 99% de lecturas de clases bajo 150 ms. No están acreditados por una prueba local breve ni confirmados como compromiso del negocio.
 
-1. **Recepción e Inyección:**
-   - La cabecera estándar W3C `traceparent` (`00-<trace_id>-<span_id>-<flags>`) y la cabecera `X-Correlation-ID` son aceptadas en el Gateway y leídas en cada microservicio por el plugin transversal `tracing.ts`.
-   - Si una solicitud externa carece de traza, el primer punto de contacto genera un nuevo `trace_id` criptográfico de 16 bytes (32 caracteres hexadecimales).
-2. **Propagación Inter-Servicios:**
-   - Al invocar a `Socios y Membresías`, el cliente HTTP genera un nuevo `span_id` hijo y reenvía `traceparent` y `X-Correlation-ID`.
-   - Ambos servicios registran el mismo `trace_id` en sus logs, permitiendo correlacionar la llamada síncrona en milisegundos.
-3. **Respuesta al Cliente:**
-   - Todo endpoint HTTP inyecta `traceparent` y `X-Correlation-ID` en las cabeceras de respuesta, facilitando que el usuario o el equipo de soporte reporte incidentes referenciando dicho identificador.
+Criterios propuestos: alertar ante >1% de 5xx durante 5 min, p99 de reservas >1500 ms durante 3 min, o conexiones ocupadas >85% del máximo por 2 min. Falta implementar ventanas, clasificación de errores, canal y tablero antes de habilitar alertas. Deben contemplar los 504 transitorios observados en D12.
 
-La reconstrucción visual de esta primera traza distribuida fue demostrada exitosamente en `scripts/demostrar-traza-distribuida.mjs`.
+## Consecuencias y rectificación
 
-### 3. Métricas RED y USE
-
-Cada microservicio expone un endpoint `/metrics` en formato texto compatible con Prometheus:
-
-- **Métricas de Servicios HTTP (Modelo RED):**
-  - **Rate (Tasa):** `http_requests_total{service, method, route, status}` — peticiones por segundo.
-  - **Errors (Errores):** `http_requests_total{status=~"5.."}` — tasa de respuestas fallidas.
-  - **Duration (Duración):** `http_request_duration_seconds_bucket` — histograma de latencia para percentiles p50, p95 y p99.
-- **Métricas de Infraestructura y Recursos (Modelo USE):**
-  - **Utilization (Utilización):** `pg_pool_active_connections`, `node_eventloop_lag_seconds`.
-  - **Saturation (Saturación):** `pg_pool_waiting_clients`, `node_memory_heap_used_bytes`.
-  - **Errors (Errores):** `pg_pool_connection_errors_total`.
-
-### 4. Tableros y Criterios de Alerta (SLO / SLI)
-
-#### Objetivos de Nivel de Servicio (SLOs)
-- **Disponibilidad general:** $\ge 99.5\%$ de solicitudes exitosas (códigos $< 500$) en ventanas mensuales.
-- **Latencia de Reservas:** $\ge 95\%$ de solicitudes a `POST /api/v1/reservas` completadas en menos de **500 ms**.
-- **Latencia de Consulta de Clases (Capacidad Compartida):** $\ge 99\%$ de solicitudes a `GET /api/v1/clases` completadas en menos de **150 ms**.
-
-#### Reglas de Alerta Proactivas
-1. **Alerta Crítica: Tasa de Errores Elevada (Error Budget Burn):**
-   - *Condición:* Tasa de respuestas 5xx $> 1\%$ durante 5 minutos continuos.
-   - *Canal:* Notificación inmediata al equipo de guardia.
-2. **Alerta de Degradación: Latencia Anómala:**
-   - *Condición:* Percentil p99 de latencia en reservas $> 1500\text{ ms}$ durante 3 minutos.
-3. **Alerta de Saturación de Base de Datos:**
-   - *Condición:* Conexiones activas del pool de PostgreSQL $> 85\%$ de la capacidad máxima por más de 2 minutos.
-
-## Consecuencias
-
-- **Diagnóstico inmediato:** La correlación por `trace_id` permite rastrear cualquier error desde el log del Gateway hasta la consulta SQL en cuestión de segundos.
-- **Transparencia técnica:** Los consumidores de la capacidad compartida pueden citar su `x-correlation-id` ante cualquier discrepancia.
-- **Preparado para OpenTelemetry:** La arquitectura basada en W3C Trace Context y campos estándar permite enviar las trazas a Jaeger o Grafana Tempo sin cambios en el código.
+Ya se puede seguir una reserva real entre servicios sin incorporar una plataforma de monitoreo completa para este hito. La revisión conserva la estrategia y corrige afirmaciones anteriores de histogramas/tableros/exportación ya disponibles. No se presentan esos componentes como parte terminada de E2.

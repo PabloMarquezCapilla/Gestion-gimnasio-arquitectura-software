@@ -37,7 +37,7 @@ function verifyResponse(response, path) {
 }
 
 async function withApp(run, options = {}) {
-  const app = buildApp({ apiKey, clock: () => new Date(instant), ...options });
+  const app = buildApp({ apiKey, jwtSecret: 'secreto-ficticio-compartido-pruebas-mas-de-32-caracteres', internalApiKey: 'clave-interna-ficticia-pruebas', clock: () => new Date(instant), ...options });
   try {
     await run(app);
   } finally {
@@ -169,14 +169,19 @@ test('no publica clases ocultas y desempata el orden por claseId', async () => {
 
 test('los errores internos o temporales respetan el contrato sin inventar disponibilidad', async () => {
   for (const status of [500, 503]) {
+    let injectFailure = false;
     await withApp(async (app) => {
+      injectFailure = true;
       const response = await get(app, '/api/v1/clases/clase-demo-001');
       assert.equal(response.statusCode, status);
       const body = verifyResponse(response, '/api/v1/clases/{claseId}');
       assert.equal(body.codigo, status === 503 ? 'SERVICIO_NO_DISPONIBLE' : 'ERROR_INTERNO');
       assert.equal(body.cuposDisponibles, undefined);
     }, {
-      clock: () => { throw Object.assign(new Error('Falla simulada en prueba'), { statusCode: status }); },
+      clock: () => {
+        if (!injectFailure) return new Date(instant);
+        throw Object.assign(new Error('Falla simulada en prueba'), { statusCode: status });
+      },
     });
   }
 });

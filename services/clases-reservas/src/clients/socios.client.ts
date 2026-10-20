@@ -1,126 +1,69 @@
 import { TraceContext, getOutgoingTraceHeaders } from '../tracing';
-
-export interface EvaluacionHabilitacion {
-  socioId: string;
-  habilitado: boolean;
-  motivo?: string;
-  membresia?: {
-    membresiaId: string;
-    tipoPlan: string;
-    estado: string;
-    fechaInicio: string;
-    fechaFin: string;
-  };
-}
-
-export interface ISociosClient {
-  verificarHabilitacion(
-    socioId: string,
-    fecha?: string,
-    traceContext?: TraceContext
-  ): Promise<EvaluacionHabilitacion>;
-}
+import { EvaluacionHabilitacion, ISociosClient } from '../ports';
+export { EvaluacionHabilitacion, ISociosClient } from '../ports';
 
 export class HttpSociosClient implements ISociosClient {
   constructor(
     private baseUrl: string,
-    private timeoutMs: number = 3000
-  ) {}
+    private timeoutMs = 3000,
+    private internalApiKey = process.env.SERVICIOS_API_KEY ?? '',
+  ) {
+    if (!internalApiKey.trim()) throw new Error('Se requiere SERVICIOS_API_KEY para consultar Socios.');
+  }
 
-  async verificarHabilitacion(
-    socioId: string,
-    fecha?: string,
-    traceContext?: TraceContext
-  ): Promise<EvaluacionHabilitacion> {
-    const url = new URL(`/api/v1/socios/${encodeURIComponent(socioId)}/habilitacion`, this.baseUrl);
-    if (fecha) {
-      url.searchParams.set('fecha', fecha);
-    }
-
-    const headers: Record<string, string> = {
-      Accept: 'application/json',
-      ...getOutgoingTraceHeaders(traceContext),
-    };
-
-    // Resiliencia (D5 / D10): 1 intento inicial + hasta 1 reintento con jitter (100ms ± 25ms)
+  async verificarHabilitacion(socioId: string, fecha?: string, contexto?: TraceContext): Promise<EvaluacionHabilitacion> {
+    const url = new URL('/api/v1/socios/' + encodeURIComponent(socioId) + '/habilitacion', this.baseUrl);
+    if (fecha) url.searchParams.set('fecha', fecha);
     let lastError: unknown;
+    const deadline = Date.now() + this.timeoutMs;
     for (let intento = 0; intento < 2; intento++) {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) break;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), remaining);
+      let retry = true;
       try {
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), this.timeoutMs);
-
-        const response = await fetch(url.toString(), {
-          method: 'GET',
-          headers,
+        const response = await fetch(url, {
+          headers: { Accept: 'application/json', 'X-Service-Key': this.internalApiKey, ...getOutgoingTraceHeaders(contexto) },
           signal: controller.signal,
         });
-
-        clearTimeout(timeoutId);
-
         if (response.ok) {
-          return (await response.json()) as EvaluacionHabilitacion;
-        }
-
-        if (response.status === 404) {
-          return {
-            socioId,
-            habilitado: false,
-            motivo: 'SOCIO_NO_ENCONTRADO',
-          };
-        }
-
-        // Errores 5xx pueden reintentarse con jitter; si persisten, fallar hacia 503
-        if (response.status >= 500) {
-          lastError = new Error(`HTTP ${response.status} desde servicio de socios`);
-          if (intento === 0) {
-            const jitter = 75 + Math.floor(Math.random() * 50);
-            await new Promise((resolve) => setTimeout(resolve, jitter));
-            continue;
+          // El timeout protege también la lectura completa del cuerpo.
+          const body = await response.json() as EvaluacionHabilitacion;
+          if (body?.socioId !== socioId || typeof body.habilitado !== 'boolean') {
+            throw new Error('Respuesta inválida del servicio de Socios.');
           }
-          break;
+          return body;
         }
-
-        return {
-          socioId,
-          habilitado: false,
-          motivo: `ERROR_SERVICIO_SOCIOS_${response.status}`,
-        };
-      } catch (err) {
-        lastError = err;
-        if (intento === 0) {
-          const jitter = 75 + Math.floor(Math.random() * 50);
-          await new Promise((resolve) => setTimeout(resolve, jitter));
-          continue;
-        }
+        if (response.status === 404) return { socioId, habilitado: false, motivo: 'SOCIO_NO_ENCONTRADO' };
+        retry = [502, 503, 504].includes(response.status);
+        throw new Error('HTTP ' + response.status + ' desde Socios.');
+      } catch (error) {
+        lastError = error;
+      } finally {
+        clearTimeout(timeout);
       }
+      if (!retry || intento === 1) break;
+      const pause = Math.min(75 + Math.floor(Math.random() * 50), deadline - Date.now());
+      if (pause <= 0) break;
+      await new Promise((resolve) => setTimeout(resolve, pause));
     }
-
-    throw new Error(
-      `No se pudo consultar habilitacion de socio en ${this.baseUrl}: ${
-        lastError instanceof Error ? lastError.message : String(lastError)
-      }`
-    );
+    throw Object.assign(new Error('No se pudo verificar la membresía con Socios.', { cause: lastError }), { statusCode: 503 });
   }
 }
 
 export class MockSociosClient implements ISociosClient {
   constructor(private habilitados = new Set(['socio-demo-01', 'socio-demo-02', 'socio-demo-03'])) {}
-
-  async verificarHabilitacion(socioId: string): Promise<EvaluacionHabilitacion> {
-    const habilitado = this.habilitados.has(socioId);
+  async verificarHabilitacion(socioId: string, fecha?: string): Promise<EvaluacionHabilitacion> {
+    const instante = fecha ? Date.parse(fecha) : Date.now();
+    const habilitado = this.habilitados.has(socioId)
+      && instante >= Date.parse('2026-01-01T00:00:00Z') && instante <= Date.parse('2027-12-31T23:59:59Z');
     return {
-      socioId,
-      habilitado,
-      motivo: habilitado ? undefined : 'SOCIO_NO_HABILITADO',
-      membresia: habilitado
-        ? {
-            membresiaId: `mem-${socioId}`,
-            tipoPlan: 'FULL',
-            estado: 'HABILITADA',
-            fechaInicio: '2026-01-01T00:00:00.000Z',
-            fechaFin: '2027-12-31T23:59:59.000Z',
-          }
-        : undefined,
+      socioId, habilitado, motivo: habilitado ? undefined : 'SOCIO_NO_HABILITADO',
+      membresia: habilitado ? {
+        membresiaId: 'mem-' + socioId, tipoPlan: 'FULL', estado: 'HABILITADA',
+        fechaInicio: '2026-01-01T00:00:00.000Z', fechaFin: '2027-12-31T23:59:59.000Z',
+      } : undefined,
     };
   }
 }

@@ -1,6 +1,6 @@
 # D4 - Consistencia y concurrencia
 
-**Estado:** decidida para la Entrega 2.  
+**Estado:** reemplazada por [ADR-017](ADR-017-consistencia-y-recuperacion-de-espera.md) el 19/10/2026. Se conserva el texto como antecedente; la validación remota durante la transacción de cancelación y las garantías temporales indicadas debajo ya no describen la implementación vigente.
 **Fecha:** 12/10/2026.
 
 ## Contexto

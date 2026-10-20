@@ -1,7 +1,23 @@
 # D10 - Resiliencia
 
-**Estado:** decidida para la Entrega 2.  
+**Estado:** diseño inicial conservado; implementación parcial comprobada en el paso 4, como se precisa debajo.
 **Fecha:** 12/10/2026.
+
+## Estado verificado - 19/10/2026
+
+**Referencia:** sección 2.5, página 2, y D10 en sección 5 del enunciado. El apartado Decisión conserva la propuesta inicial; no todos sus patrones están implementados.
+
+| Mecanismo | Estado actual |
+|---|---|
+| Consulta interna a Socios | Presupuesto total de 3000 ms por verificación, incluida lectura del cuerpo, y máximo un reintento de lecturas por conexión/502/503/504 dentro del presupuesto. No se habilita ante una respuesta desconocida. |
+| Cancelación ante caída de Socios | Se acepta localmente. La espera conserva prioridad y el trabajador reevalúa al primero tras la recuperación, según ADR-017. Comprobado con HTTP real y PostgreSQL. |
+| Pools PostgreSQL | Separados por servicio; servidores configuran máximo 20, conexión 5000 ms, statement 4000 ms y lock 2500 ms. Estas opciones no son un límite de extremo a extremo para una transacción completa. |
+| Gateway | Conexión 3 s, lectura 10 s; intentos siguientes acotados y sin habilitar non_idempotent. El paso 7 registra detección transitoria, servicio estable con una réplica y reincorporación; detalle y límites en ADR-012. |
+| Inicio con dependencias | Los servicios operativos exigen su configuración; una falla de producción no se convierte en una habilitación ficticia mediante un mock. Los adaptadores en memoria son para pruebas/desarrollo explícitos. |
+| Circuit breaker y límites de concurrencia por dependencia | Pendientes; no se acreditan por usar pools separados ni por el límite de cuerpo de Fastify. |
+| Redis y proveedor externo | No implementados. No se comprobó fallback de Redis ni se acuerdan tiempos o degradación de la distribuidora sin su contrato. |
+
+Las garantías absolutas y tiempos del texto histórico siguiente no son resultados de pruebas. El paso 4 verifica únicamente los mecanismos identificados arriba; `npm run test:postgres` reproduce la caída/recuperación y README registra el cierre.
 
 ## Contexto
 

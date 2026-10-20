@@ -1,31 +1,22 @@
 import { Pool } from 'pg';
-import { Socio, Membresia, ResultadoHabilitacion } from './types';
+import { Socio, Membresia } from './types';
+import { IdentidadDuplicadaError, SociosError } from './errors';
+import type { AltaEmpleado, EmpleadosRepository, RegistroEmpleado } from './empleados.service';
 import { hashPassword } from './security';
 
-export interface ISociosRepository {
+export interface ISociosRepository extends EmpleadosRepository {
   obtenerSocio(socioId: string): Promise<Socio | null>;
   buscarPorEmailODni(identificador: string): Promise<Socio | null>;
-  obtenerMembresia(socioId: string): Promise<Membresia | null>;
+  obtenerMembresias(socioId: string): Promise<Membresia[]>;
   crearSocio(socio: Socio): Promise<Socio>;
   crearMembresia(membresia: Membresia): Promise<Membresia>;
   actualizarEstadoMembresia(membresiaId: string, nuevoEstado: Membresia['estado']): Promise<void>;
-  evaluarHabilitacion(socioId: string, fechaReferencia: Date): Promise<ResultadoHabilitacion>;
   inicializarEsquema(): Promise<void>;
   verificarSalud(): Promise<{ ok: boolean; detalle?: string }>;
+  conexionesActivas(): number;
 }
 
 export const SEED_SOCIOS: Socio[] = [
-  {
-    socioId: 'admin-01',
-    dni: '99999999',
-    nombre: 'Valeria Méndez',
-    email: 'admin@pulse.com',
-    passwordHash: hashPassword('admin123'),
-    rol: 'ADMIN',
-    telefono: '+54 9 11 9999-0000',
-    estado: 'ACTIVO',
-    createdAt: '2026-01-01T00:00:00.000Z',
-  },
   {
     socioId: 'socio-demo-01',
     dni: '11111111',
@@ -139,13 +130,16 @@ export const SEED_MEMBRESIAS: Membresia[] = [
 export class MemorySociosRepository implements ISociosRepository {
   private socios: Map<string, Socio> = new Map();
   private membresias: Map<string, Membresia> = new Map();
+  private altasEmpleados = new Map<string, { contenido: string; respuesta: AltaEmpleado }>();
+  private empleadosExternos = new Map<string, string>();
+  private solicitudes = new Map<string, { socioId: string; estado: 'PENDIENTE'; createdAt: string }>();
 
-  constructor() {
-    for (const s of SEED_SOCIOS) {
+  constructor(socios: readonly Socio[] = SEED_SOCIOS, membresias: readonly Membresia[] = SEED_MEMBRESIAS) {
+    for (const s of socios) {
       this.socios.set(s.socioId, { ...s });
     }
-    for (const m of SEED_MEMBRESIAS) {
-      this.membresias.set(m.socioId, { ...m });
+    for (const m of membresias) {
+      this.membresias.set(m.membresiaId, { ...m });
     }
   }
 
@@ -155,6 +149,10 @@ export class MemorySociosRepository implements ISociosRepository {
 
   async verificarSalud(): Promise<{ ok: boolean; detalle?: string }> {
     return { ok: true };
+  }
+
+  conexionesActivas(): number {
+    return 0;
   }
 
   async obtenerSocio(socioId: string): Promise<Socio | null> {
@@ -172,17 +170,49 @@ export class MemorySociosRepository implements ISociosRepository {
     return null;
   }
 
-  async obtenerMembresia(socioId: string): Promise<Membresia | null> {
-    return this.membresias.get(socioId) ?? null;
+  async obtenerMembresias(socioId: string): Promise<Membresia[]> {
+    return [...this.membresias.values()].filter((m) => m.socioId === socioId).map((m) => ({ ...m }));
   }
 
   async crearSocio(socio: Socio): Promise<Socio> {
-    this.socios.set(socio.socioId, { ...socio });
-    return socio;
+    return this.guardarSocio(socio);
+  }
+
+  private guardarSocio(socio: Socio): Socio {
+    if (this.socios.has(socio.socioId)) throw new IdentidadDuplicadaError('socioId');
+    const normalizado = { ...socio, dni: socio.dni.trim(), email: socio.email.trim().toLowerCase() };
+    for (const anterior of this.socios.values()) {
+      if (anterior.dni.trim() === normalizado.dni) throw new IdentidadDuplicadaError('dni');
+      if (anterior.email.trim().toLowerCase() === normalizado.email) throw new IdentidadDuplicadaError('email');
+    }
+    this.socios.set(socio.socioId, normalizado);
+    return { ...normalizado };
+  }
+
+  async registrarEmpleado(registro: RegistroEmpleado): Promise<AltaEmpleado> {
+    const { origen, clave, contenido, empleado, socio, respuesta } = registro;
+    const idempotencia = JSON.stringify([origen, clave]);
+    const anterior = this.altasEmpleados.get(idempotencia);
+    if (anterior) {
+      if (anterior.contenido !== contenido) throw conflictoEmpleado('IDEMPOTENCIA_EN_CONFLICTO');
+      return { ...anterior.respuesta };
+    }
+    const externo = JSON.stringify([origen, empleado.empleadoExternoId]);
+    const dniAnterior = this.empleadosExternos.get(externo);
+    if (dniAnterior !== undefined && dniAnterior !== empleado.dni) throw conflictoEmpleado('EMPLEADO_EXTERNO_EN_CONFLICTO');
+    const existentes = [...this.socios.values()];
+    if (existentes.some((s) => s.dni.trim() === empleado.dni)) throw conflictoEmpleado('DNI_EXISTENTE');
+    if (existentes.some((s) => s.email.trim().toLowerCase() === empleado.email)) throw conflictoEmpleado('EMAIL_EXISTENTE');
+    // Sin await entre comprobación y escritura: exclusión de un solo proceso.
+    this.guardarSocio(socio);
+    this.solicitudes.set(respuesta.solicitudId, { socioId: socio.socioId, estado: 'PENDIENTE', createdAt: socio.createdAt });
+    this.empleadosExternos.set(externo, empleado.dni);
+    this.altasEmpleados.set(idempotencia, { contenido, respuesta: { ...respuesta } });
+    return { ...respuesta };
   }
 
   async crearMembresia(membresia: Membresia): Promise<Membresia> {
-    this.membresias.set(membresia.socioId, { ...membresia });
+    this.membresias.set(membresia.membresiaId, { ...membresia });
     return membresia;
   }
 
@@ -196,70 +226,15 @@ export class MemorySociosRepository implements ISociosRepository {
     }
   }
 
-  async evaluarHabilitacion(socioId: string, fechaReferencia: Date): Promise<ResultadoHabilitacion> {
-    const socio = await this.obtenerSocio(socioId);
-    if (!socio) {
-      return { socioId, habilitado: false, motivo: 'SOCIO_NO_EXISTE' };
-    }
-    if (socio.estado !== 'ACTIVO') {
-      return { socioId, habilitado: false, motivo: 'SOCIO_INACTIVO' };
-    }
 
-    const membresia = await this.obtenerMembresia(socioId);
-    if (!membresia) {
-      return { socioId, habilitado: false, motivo: 'SIN_MEMBRESIA' };
-    }
-
-    if (membresia.estado === 'SUSPENDIDA') {
-      return {
-        socioId,
-        habilitado: false,
-        motivo: 'MEMBRESIA_SUSPENDIDA',
-        membresia: {
-          membresiaId: membresia.membresiaId,
-          tipoPlan: membresia.tipoPlan,
-          estado: membresia.estado,
-          fechaInicio: membresia.fechaInicio,
-          fechaFin: membresia.fechaFin,
-        },
-      };
-    }
-
-    const fechaRefTime = fechaReferencia.getTime();
-    const inicioTime = new Date(membresia.fechaInicio).getTime();
-    const finTime = new Date(membresia.fechaFin).getTime();
-
-    if (fechaRefTime < inicioTime || fechaRefTime > finTime || membresia.estado === 'VENCIDA') {
-      return {
-        socioId,
-        habilitado: false,
-        motivo: 'MEMBRESIA_VENCIDA',
-        membresia: {
-          membresiaId: membresia.membresiaId,
-          tipoPlan: membresia.tipoPlan,
-          estado: 'VENCIDA',
-          fechaInicio: membresia.fechaInicio,
-          fechaFin: membresia.fechaFin,
-        },
-      };
-    }
-
-    return {
-      socioId,
-      habilitado: true,
-      membresia: {
-        membresiaId: membresia.membresiaId,
-        tipoPlan: membresia.tipoPlan,
-        estado: membresia.estado,
-        fechaInicio: membresia.fechaInicio,
-        fechaFin: membresia.fechaFin,
-      },
-    };
-  }
 }
 
 export class PostgresSociosRepository implements ISociosRepository {
   constructor(private pool: Pool) {}
+
+  conexionesActivas(): number {
+    return this.pool.totalCount - this.pool.idleCount;
+  }
 
   async verificarSalud(): Promise<{ ok: boolean; detalle?: string }> {
     try {
@@ -304,6 +279,30 @@ export class PostgresSociosRepository implements ISociosRepository {
         );
 
         CREATE INDEX IF NOT EXISTS idx_membresias_socio ON membresias(socio_id);
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_socios_email_normalizado ON socios (LOWER(BTRIM(email)));
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_socios_dni_normalizado ON socios (BTRIM(dni));
+
+        CREATE TABLE IF NOT EXISTS solicitudes_membresia (
+          solicitud_id VARCHAR(50) PRIMARY KEY,
+          socio_id VARCHAR(50) NOT NULL UNIQUE REFERENCES socios(socio_id),
+          estado VARCHAR(20) NOT NULL CHECK (estado = 'PENDIENTE'),
+          created_at TIMESTAMPTZ NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS empleados_externos (
+          origen VARCHAR(100) NOT NULL,
+          empleado_externo_id VARCHAR(100) NOT NULL,
+          socio_id VARCHAR(50) NOT NULL UNIQUE REFERENCES socios(socio_id),
+          PRIMARY KEY (origen, empleado_externo_id)
+        );
+        CREATE TABLE IF NOT EXISTS altas_empleados_idempotencia (
+          origen VARCHAR(100) NOT NULL,
+          clave VARCHAR(128) NOT NULL,
+          contenido TEXT NOT NULL,
+          respuesta JSONB NOT NULL,
+          solicitud_id VARCHAR(50) NOT NULL REFERENCES solicitudes_membresia(solicitud_id),
+          created_at TIMESTAMPTZ NOT NULL,
+          PRIMARY KEY (origen, clave)
+        );
       `);
 
       // Seed if empty or upsert seeded users
@@ -360,7 +359,7 @@ export class PostgresSociosRepository implements ISociosRepository {
     const res = await this.pool.query(
       `SELECT socio_id, dni, nombre, email, password_hash, rol, telefono, estado, created_at 
        FROM socios 
-       WHERE LOWER(email) = LOWER($1) OR dni = $1 
+       WHERE LOWER(BTRIM(email)) = LOWER($1) OR BTRIM(dni) = $1
        LIMIT 1`,
       [clean]
     );
@@ -379,15 +378,12 @@ export class PostgresSociosRepository implements ISociosRepository {
     };
   }
 
-  async obtenerMembresia(socioId: string): Promise<Membresia | null> {
+  async obtenerMembresias(socioId: string): Promise<Membresia[]> {
     const res = await this.pool.query(
-      `SELECT membresia_id, socio_id, tipo_plan, fecha_inicio, fecha_fin, estado, created_at, updated_at
-       FROM membresias WHERE socio_id = $1 ORDER BY created_at DESC LIMIT 1`,
-      [socioId]
+      'SELECT membresia_id, socio_id, tipo_plan, fecha_inicio, fecha_fin, estado, created_at, updated_at FROM membresias WHERE socio_id = $1 ORDER BY fecha_inicio DESC, created_at DESC, membresia_id',
+      [socioId],
     );
-    if (res.rows.length === 0) return null;
-    const row = res.rows[0];
-    return {
+    return res.rows.map((row) => ({
       membresiaId: row.membresia_id,
       socioId: row.socio_id,
       tipoPlan: row.tipo_plan,
@@ -396,7 +392,7 @@ export class PostgresSociosRepository implements ISociosRepository {
       estado: row.estado,
       createdAt: row.created_at.toISOString(),
       updatedAt: row.updated_at.toISOString(),
-    };
+    }));
   }
 
   async crearSocio(socio: Socio): Promise<Socio> {
@@ -436,6 +432,51 @@ export class PostgresSociosRepository implements ISociosRepository {
     return membresia;
   }
 
+  async registrarEmpleado(registro: RegistroEmpleado): Promise<AltaEmpleado> {
+    const { origen, clave, contenido, empleado, socio, respuesta } = registro;
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      // Cada clave y empleado tienen su propia exclusión compartida entre instancias.
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [JSON.stringify(['alta-empleado', origen, clave])]);
+      const replay = await client.query('SELECT contenido,respuesta FROM altas_empleados_idempotencia WHERE origen=$1 AND clave=$2', [origen, clave]);
+      if (replay.rowCount) {
+        if (replay.rows[0].contenido !== contenido) throw conflictoEmpleado('IDEMPOTENCIA_EN_CONFLICTO');
+        await client.query('COMMIT');
+        return replay.rows[0].respuesta as AltaEmpleado;
+      }
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [JSON.stringify(['empleado-externo', origen, empleado.empleadoExternoId])]);
+      const externo = await client.query(
+        'SELECT s.dni FROM empleados_externos e JOIN socios s ON s.socio_id=e.socio_id WHERE e.origen=$1 AND e.empleado_externo_id=$2',
+        [origen, empleado.empleadoExternoId],
+      );
+      if (externo.rowCount && externo.rows[0].dni !== empleado.dni) throw conflictoEmpleado('EMPLEADO_EXTERNO_EN_CONFLICTO');
+      const duplicados = await client.query('SELECT dni,email FROM socios WHERE BTRIM(dni)=$1 OR LOWER(BTRIM(email))=$2', [empleado.dni, empleado.email]);
+      if (duplicados.rows.some((row) => row.dni.trim() === empleado.dni)) throw conflictoEmpleado('DNI_EXISTENTE');
+      if (duplicados.rowCount) throw conflictoEmpleado('EMAIL_EXISTENTE');
+      await client.query("INSERT INTO socios(socio_id,dni,nombre,email,rol,estado,created_at) VALUES($1,$2,$3,$4,'SOCIO','ACTIVO',$5)",
+        [socio.socioId, socio.dni, socio.nombre, socio.email, socio.createdAt]);
+      await client.query("INSERT INTO solicitudes_membresia(solicitud_id,socio_id,estado,created_at) VALUES($1,$2,'PENDIENTE',$3)",
+        [respuesta.solicitudId, socio.socioId, socio.createdAt]);
+      await client.query('INSERT INTO empleados_externos(origen,empleado_externo_id,socio_id) VALUES($1,$2,$3)',
+        [origen, empleado.empleadoExternoId, socio.socioId]);
+      await client.query('INSERT INTO altas_empleados_idempotencia(origen,clave,contenido,respuesta,solicitud_id,created_at) VALUES($1,$2,$3,$4,$5,$6)',
+        [origen, clave, contenido, JSON.stringify(respuesta), respuesta.solicitudId, socio.createdAt]);
+      await client.query('COMMIT');
+      return { ...respuesta };
+    } catch (error) {
+      await client.query('ROLLBACK');
+      const sqlError = error as { code?: string; constraint?: string };
+      if (sqlError.code === '23505') {
+        if (sqlError.constraint === 'uq_socios_email_normalizado') throw conflictoEmpleado('EMAIL_EXISTENTE');
+        if (sqlError.constraint === 'socios_dni_key' || sqlError.constraint === 'uq_socios_dni_normalizado') throw conflictoEmpleado('DNI_EXISTENTE');
+      }
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async actualizarEstadoMembresia(membresiaId: string, nuevoEstado: Membresia['estado']): Promise<void> {
     await this.pool.query(
       'UPDATE membresias SET estado = $1, updated_at = NOW() WHERE membresia_id = $2',
@@ -443,64 +484,15 @@ export class PostgresSociosRepository implements ISociosRepository {
     );
   }
 
-  async evaluarHabilitacion(socioId: string, fechaReferencia: Date): Promise<ResultadoHabilitacion> {
-    const socio = await this.obtenerSocio(socioId);
-    if (!socio) {
-      return { socioId, habilitado: false, motivo: 'SOCIO_NO_EXISTE' };
-    }
-    if (socio.estado !== 'ACTIVO') {
-      return { socioId, habilitado: false, motivo: 'SOCIO_INACTIVO' };
-    }
 
-    const membresia = await this.obtenerMembresia(socioId);
-    if (!membresia) {
-      return { socioId, habilitado: false, motivo: 'SIN_MEMBRESIA' };
-    }
+}
 
-    if (membresia.estado === 'SUSPENDIDA') {
-      return {
-        socioId,
-        habilitado: false,
-        motivo: 'MEMBRESIA_SUSPENDIDA',
-        membresia: {
-          membresiaId: membresia.membresiaId,
-          tipoPlan: membresia.tipoPlan,
-          estado: membresia.estado,
-          fechaInicio: membresia.fechaInicio,
-          fechaFin: membresia.fechaFin,
-        },
-      };
-    }
-
-    const fechaRefTime = fechaReferencia.getTime();
-    const inicioTime = new Date(membresia.fechaInicio).getTime();
-    const finTime = new Date(membresia.fechaFin).getTime();
-
-    if (fechaRefTime < inicioTime || fechaRefTime > finTime || membresia.estado === 'VENCIDA') {
-      return {
-        socioId,
-        habilitado: false,
-        motivo: 'MEMBRESIA_VENCIDA',
-        membresia: {
-          membresiaId: membresia.membresiaId,
-          tipoPlan: membresia.tipoPlan,
-          estado: 'VENCIDA',
-          fechaInicio: membresia.fechaInicio,
-          fechaFin: membresia.fechaFin,
-        },
-      };
-    }
-
-    return {
-      socioId,
-      habilitado: true,
-      membresia: {
-        membresiaId: membresia.membresiaId,
-        tipoPlan: membresia.tipoPlan,
-        estado: membresia.estado,
-        fechaInicio: membresia.fechaInicio,
-        fechaFin: membresia.fechaFin,
-      },
-    };
-  }
+function conflictoEmpleado(codigo: string) {
+  const mensajes: Record<string, string> = {
+    IDEMPOTENCIA_EN_CONFLICTO: 'La clave de idempotencia ya se utilizó con otro contenido.',
+    EMPLEADO_EXTERNO_EN_CONFLICTO: 'El empleado externo ya está asociado a otro DNI.',
+    DNI_EXISTENTE: 'El DNI ya pertenece a un socio.',
+    EMAIL_EXISTENTE: 'El email ya pertenece a un socio.',
+  };
+  return new SociosError(409, codigo, mensajes[codigo]);
 }

@@ -1,12 +1,13 @@
-import React, { useState } from 'react';
-import { AuthUser } from '../types/auth';
+import React, { useState, useEffect } from 'react';
+import { AuthResponse } from '../types/auth';
 import { apiLogin, apiRegistro } from '../services/api';
 
 interface AuthModalProps {
   isOpen: boolean;
   initialMode?: 'login' | 'register';
   onClose: () => void;
-  onSuccess: (user: AuthUser) => void;
+  onSuccess: (session: AuthResponse) => void;
+  allowRegistration?: boolean;
   showToast: (msg: string, icon?: string) => void;
 }
 
@@ -16,6 +17,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onClose,
   onSuccess,
   showToast,
+  allowRegistration = false,
 }) => {
   const [mode, setMode] = useState<'login' | 'register'>(initialMode);
   const [showPassword, setShowPassword] = useState(false);
@@ -32,15 +34,17 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   const [regEmail, setRegEmail] = useState('');
   const [regTelefono, setRegTelefono] = useState('');
   const [regPassword, setRegPassword] = useState('');
-  const [regPlan, setRegPlan] = useState('FULL_ANUAL');
+  useEffect(() => {
+    if (isOpen) {
+      setMode(allowRegistration ? initialMode : 'login');
+      setErrorMessage('');
+      setLoginPassword('');
+      setRegPassword('');
+      setShowPassword(false);
+    }
+  }, [isOpen, initialMode, allowRegistration]);
 
   if (!isOpen) return null;
-
-  const handleQuickLogin = (email: string, pass: string) => {
-    setLoginIdentificador(email);
-    setLoginPassword(pass);
-    setErrorMessage('');
-  };
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -55,7 +59,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     try {
       const res = await apiLogin(loginIdentificador, loginPassword);
       showToast(`¡Bienvenido, ${res.socio.nombre}!`, 'verified_user');
-      onSuccess(res.socio);
+      onSuccess(res);
       onClose();
     } catch (err: any) {
       setErrorMessage(err.message || 'Credenciales inválidas. Verifique sus datos.');
@@ -66,6 +70,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
 
   const handleRegisterSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!allowRegistration) return;
     if (!regNombre || !regDni || !regEmail || !regPassword) {
       setErrorMessage('Nombre, DNI, Email y Contraseña son obligatorios.');
       return;
@@ -86,11 +91,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         email: regEmail,
         telefono: regTelefono,
         password: regPassword,
-        tipoPlan: regPlan,
       });
 
-      showToast(`¡Cuenta creada con éxito! Membresía habilitada.`, 'fitness_center');
-      onSuccess(res.socio);
+      showToast(`Socio ${res.socio.nombre} creado sin membresía. Plan y pago pendientes.`, 'person_add');
       onClose();
     } catch (err: any) {
       setErrorMessage(err.message || 'Error al registrar socio.');
@@ -127,7 +130,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
           </div>
 
           {/* Selector de Pestañas */}
-          <div className="mt-3.5 grid grid-cols-2 p-0.5 bg-surface-container-lowest rounded-lg border border-outline-variant/40">
+          {allowRegistration && <div className="mt-3.5 grid grid-cols-2 p-0.5 bg-surface-container-lowest rounded-lg border border-outline-variant/40">
             <button
               type="button"
               onClick={() => { setMode('login'); setErrorMessage(''); }}
@@ -148,9 +151,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   : 'text-on-surface-variant hover:text-on-surface'
               }`}
             >
-              Crear Cuenta
+              Alta de Socio
             </button>
-          </div>
+          </div>}
         </div>
 
         {/* Mensaje de Error si hay */}
@@ -178,7 +181,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     required
                     value={loginIdentificador}
                     onChange={(e) => setLoginIdentificador(e.target.value)}
-                    placeholder="socio@pulse.com o 38912441"
+                    placeholder="Email o DNI registrado"
                     className="w-full bg-surface-container-low border border-outline-variant focus:border-primary rounded-lg pl-8 pr-3 py-2 text-xs text-on-surface placeholder:text-on-surface-variant/60 focus:outline-none transition-colors"
                   />
                 </div>
@@ -189,7 +192,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                   <label className="text-label-code text-label-code text-on-surface-variant uppercase tracking-wider">
                     Contraseña
                   </label>
-                  <span className="text-[10px] text-on-surface-variant/70 font-label-code">Hash seguro (scrypt)</span>
+                  <span className="text-[10px] text-on-surface-variant/70 font-label-code">Sesión de acceso</span>
                 </div>
                 <div className="relative">
                   <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-on-surface-variant text-base">
@@ -234,38 +237,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 )}
               </button>
 
-              {/* Accesos Rápidos de Prueba (Demo) */}
-              <div className="pt-3 border-t border-outline-variant/40">
-                <p className="text-[10px] uppercase tracking-wider text-on-surface-variant font-label-code mb-1.5 flex items-center gap-1">
-                  <span className="material-symbols-outlined text-xs text-primary">bolt</span>
-                  Accesos rápidos de demostración:
-                </p>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => handleQuickLogin('admin@pulse.com', 'admin123')}
-                    className="p-2 rounded-lg bg-surface-container-low hover:bg-surface-container-high border border-outline-variant hover:border-primary/50 text-left transition-all group"
-                  >
-                    <div className="flex items-center justify-between mb-0.5">
-                      <span className="text-xs font-bold text-on-surface group-hover:text-primary">Valeria M.</span>
-                      <span className="text-[9px] px-1 py-0.2 rounded bg-warning-container text-warning font-label-code">ADMIN</span>
-                    </div>
-                    <span className="text-[10px] text-on-surface-variant block truncate">admin@pulse.com</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => handleQuickLogin('juan.perez@example.com', 'socio123')}
-                    className="p-2 rounded-lg bg-surface-container-low hover:bg-surface-container-high border border-outline-variant hover:border-secondary/50 text-left transition-all group"
-                  >
-                    <div className="flex items-center justify-between mb-0.5">
-                      <span className="text-xs font-bold text-on-surface group-hover:text-secondary">Juan Pérez</span>
-                      <span className="text-[9px] px-1 py-0.2 rounded bg-secondary-container text-secondary font-label-code">SOCIO</span>
-                    </div>
-                    <span className="text-[10px] text-on-surface-variant block truncate">juan.perez@example.com</span>
-                  </button>
-                </div>
-              </div>
+              <p className="text-[11px] text-on-surface-variant">Las altas de socios las realiza el administrador.</p>
             </form>
           ) : (
             <form onSubmit={handleRegisterSubmit} className="space-y-2.5">
@@ -351,51 +323,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 </div>
               </div>
 
-              <div>
-                <label className="block text-label-code text-[10.5px] uppercase tracking-wider text-on-surface-variant mb-1">
-                  Membresía Inicial
-                </label>
-                <div className="grid grid-cols-3 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => setRegPlan('FULL_ANUAL')}
-                    className={`p-2 rounded-lg border text-left transition-all ${
-                      regPlan === 'FULL_ANUAL'
-                        ? 'border-primary bg-primary/10 text-on-surface'
-                        : 'border-outline-variant/60 bg-surface-container-low text-on-surface-variant hover:border-outline'
-                    }`}
-                  >
-                    <span className="block text-[11px] font-bold text-primary">Full Anual</span>
-                    <span className="text-[9.5px] text-on-surface-variant">Pase libre VIP</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setRegPlan('STANDARD_SEMESTRAL')}
-                    className={`p-2 rounded-lg border text-left transition-all ${
-                      regPlan === 'STANDARD_SEMESTRAL'
-                        ? 'border-secondary bg-secondary/10 text-on-surface'
-                        : 'border-outline-variant/60 bg-surface-container-low text-on-surface-variant hover:border-outline'
-                    }`}
-                  >
-                    <span className="block text-[11px] font-bold text-secondary">Semestral</span>
-                    <span className="text-[9.5px] text-on-surface-variant">Musc. + Clases</span>
-                  </button>
-
-                  <button
-                    type="button"
-                    onClick={() => setRegPlan('MENSUAL')}
-                    className={`p-2 rounded-lg border text-left transition-all ${
-                      regPlan === 'MENSUAL'
-                        ? 'border-tertiary-fixed-dim bg-tertiary-container/20 text-on-surface'
-                        : 'border-outline-variant/60 bg-surface-container-low text-on-surface-variant hover:border-outline'
-                    }`}
-                  >
-                    <span className="block text-[11px] font-bold text-tertiary-fixed-dim">Mensual</span>
-                    <span className="text-[9.5px] text-on-surface-variant">Flexible 30d</span>
-                  </button>
-                </div>
-              </div>
+              <p className="text-[11px] text-on-surface-variant">Se creará un socio sin membresía. La elección del plan y su habilitación requieren confirmar el pago; ese flujo está pendiente.</p>
 
               {/* Botón de Submit Registro */}
               <button
@@ -411,7 +339,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 ) : (
                   <>
                     <span className="material-symbols-outlined text-base">person_add</span>
-                    <span>Crear Mi Cuenta & Habilitar Membresía</span>
+                    <span>Crear Socio sin Membresía</span>
                   </>
                 )}
               </button>
@@ -423,9 +351,9 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         <div className="px-5 py-2.5 border-t border-outline-variant/50 bg-surface-container-lowest flex items-center justify-between text-[10px] text-on-surface-variant">
           <span className="flex items-center gap-1">
             <span className="material-symbols-outlined text-primary text-xs">lock</span>
-            Cifrado con scrypt + sal criptográfica (OWASP)
+            La sesión se cierra al salir o vencer.
           </span>
-          <span className="font-label-code text-on-surface-variant/70">PostgreSQL</span>
+          <span className="font-label-code text-on-surface-variant/70">PULSE CLUB</span>
         </div>
       </div>
     </div>

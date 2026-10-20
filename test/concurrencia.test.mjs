@@ -41,13 +41,15 @@ test('D4 / D13 Concurrencia extrema: 50 solicitudes simultaneas compitiendo por 
   const sociosClient = new MockSociosAlwaysEnabled();
 
   const app = buildClasesApp({
-    apiKey,
+    apiKey, jwtSecret: 'secreto-ficticio-compartido-pruebas-mas-de-32-caracteres', internalApiKey: 'clave-interna-ficticia-pruebas',
     repository,
     sociosClient,
     logger: false,
     clock: () => new Date('2026-10-15T12:00:00Z'),
   });
 
+  await app.ready();
+  const authorization = 'Bearer ' + app.jwt.sign({ sub: 'admin-ficticio', rol: 'ADMIN' });
   try {
     // 50 socios distintos intentando reservar en el mismo instante
     const totalCompetidores = 50;
@@ -59,7 +61,7 @@ test('D4 / D13 Concurrencia extrema: 50 solicitudes simultaneas compitiendo por 
         app.inject({
           method: 'POST',
           url: '/api/v1/reservas',
-          headers: { 'content-type': 'application/json' },
+          headers: { authorization, 'content-type': 'application/json' },
           payload: {
             claseId: 'clase-concurrencia-01',
             socioId,
@@ -96,7 +98,7 @@ test('D4 / D13 Concurrencia extrema: 50 solicitudes simultaneas compitiendo por 
     const detalleRes = await app.inject({
       method: 'GET',
       url: '/api/v1/clases/clase-concurrencia-01',
-      headers: { 'x-api-key': apiKey },
+      headers: { authorization, 'x-api-key': apiKey },
     });
     assert.equal(detalleRes.statusCode, 200);
     assert.equal(detalleRes.json().cuposDisponibles, 0);
@@ -105,7 +107,7 @@ test('D4 / D13 Concurrencia extrema: 50 solicitudes simultaneas compitiendo por 
     const auditoriaRes = await app.inject({
       method: 'GET',
       url: '/api/v1/clases/clase-concurrencia-01/reservas',
-      headers: { 'x-api-key': apiKey },
+      headers: { authorization, 'x-api-key': apiKey },
     });
     const confirmadas = auditoriaRes.json().reservas.filter((r) => r.estado === 'CONFIRMADA');
     assert.equal(confirmadas.length, 10, 'No debe existir sobreventa de cupos bajo concurrencia');

@@ -105,10 +105,10 @@
         </div>
       </section>
 
-      <!-- Panel de Clases y Reservas (Capacidad Compartida) -->
+      <!-- Catálogo histórico y operaciones privadas de Clases y Reservas -->
       <section class="panel">
         <h2>
-          <span>Capacidad Compartida: Catálogo de Clases y Reservas</span>
+          <span>Catálogo de Clases y Reservas</span>
           <button onclick="cargarClases()">Cargar Clases (/api/v1/clases)</button>
         </h2>
         <div class="key-bar">
@@ -116,6 +116,11 @@
           <button class="secondary" onclick="guardarClave()">Guardar Clave</button>
           <input type="text" id="socioActivoInput" value="socio-demo-01" placeholder="Socio ID para reservar" style="max-width: 200px;" />
         </div>
+        <div class="key-bar">
+          <label for="sessionTokenInput">JWT de sesión:</label>
+          <input type="password" id="sessionTokenInput" autocomplete="off" spellcheck="false" placeholder="Pegar token obtenido en POST /api/v1/auth/login" />
+        </div>
+        <p>Obtené el token con tu email o DNI y contraseña mediante <code>POST /api/v1/auth/login</code>. Solo se usa mientras esta página esté abierta; no se guarda. Las reservas requieren tu sesión o una sesión ADMIN para operar por otro socio. Ver reservas de una clase requiere ADMIN. X-API-Key se usa únicamente para consultar el catálogo histórico.</p>
         <div id="clasesContainer" class="grid-cards">
           <p style="color: #64748b; font-size: 0.95rem;">Hacé click en <strong>Cargar Clases</strong> para consultar el almacenamiento PostgreSQL en tiempo real.</p>
         </div>
@@ -166,6 +171,27 @@
         const key = getApiKey();
         localStorage.setItem('gimnasio_api_key', key);
         alert('Clave guardada en el navegador.');
+      }
+
+      function sessionHeaders(json = false) {
+        const token = document.getElementById('sessionTokenInput').value.trim();
+        if (!token) throw new Error('Pegá un JWT vigente obtenido en POST /api/v1/auth/login para esta operación privada.');
+        return {
+          Authorization: 'Bearer ' + token,
+          ...(json ? { 'Content-Type': 'application/json' } : {})
+        };
+      }
+
+      function responseError(res, data) {
+        const message = data.mensaje || data.codigo || 'No se pudo completar la operación.';
+        if (res.status === 401) {
+          document.getElementById('sessionTokenInput').value = '';
+          return 'HTTP 401: ' + message + ' Obtené y pegá un JWT vigente.';
+        }
+        if (res.status === 403) {
+          return 'HTTP 403: ' + message + ' Para operar por otro socio o consultar reservas de una clase se requiere ADMIN.';
+        }
+        return 'HTTP ' + res.status + ': ' + message;
       }
 
       function logResponse(method, url, res, data) {
@@ -248,7 +274,7 @@
                     ? `<button onclick="reservar('${c.claseId}')">Reservar Cupo</button>`
                     : `<button class="secondary" onclick="unirseEspera('${c.claseId}')">Unirse a Espera</button>`
                   }
-                  <button class="secondary" onclick="verReservas('${c.claseId}')">Ver Reservas</button>
+                  <button class="secondary" onclick="verReservas('${c.claseId}')">Ver Reservas (ADMIN)</button>
                 </div>
                 <div id="detalles-${c.claseId}" style="margin-top: 8px; font-size: 0.82rem;"></div>
               </article>
@@ -260,41 +286,42 @@
       }
 
       async function reservar(claseId) {
-        const socioId = document.getElementById('socioActivoInput').value.trim() || 'socio-demo-01';
+        const socioId = document.getElementById('socioActivoInput').value.trim() || undefined;
         try {
           const res = await fetch('/api/v1/reservas', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ claseId, socioId, ingresarEsperaSiLlena: true })
+            headers: sessionHeaders(true),
+            body: JSON.stringify({ claseId, socioId, ingresarEsperaSiLlena: false })
           });
           const data = await res.json();
           logResponse('POST', '/api/v1/reservas', res, data);
-          if (res.ok) {
+          if (res.ok && data.reservaId && data.estado === 'CONFIRMADA') {
             alert(`¡Reserva confirmada con éxito!\nReserva ID: ${data.reservaId}\nSocio: ${data.socioId}`);
             cargarClases();
           } else {
-            alert(`No se pudo reservar (${res.status}): ${data.mensaje || data.codigo}`);
+            alert(res.ok ? 'El servidor no confirmó la reserva. Actualizá el catálogo.' : responseError(res, data));
+            if (res.status === 409) cargarClases();
           }
         } catch (err) {
-          alert('Error de red: ' + err.message);
+          alert(err.message);
         }
       }
 
       async function unirseEspera(claseId) {
-        const socioId = document.getElementById('socioActivoInput').value.trim() || 'socio-demo-01';
+        const socioId = document.getElementById('socioActivoInput').value.trim() || undefined;
         try {
           const res = await fetch(`/api/v1/clases/${encodeURIComponent(claseId)}/espera`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: sessionHeaders(true),
             body: JSON.stringify({ socioId })
           });
           const data = await res.json();
           logResponse('POST', `/api/v1/clases/${claseId}/espera`, res, data);
-          if (res.ok) {
+          if (res.ok && data.esperaId && data.estado === 'PENDIENTE') {
             alert(`¡Ingreso exitoso a la lista de espera!\nOrden en la fila: ${data.orden}`);
             cargarClases();
           } else {
-            alert(`No se pudo ingresar a la lista de espera: ${data.mensaje || data.codigo}`);
+            alert(res.ok ? 'El servidor no confirmó la inscripción a la espera. Actualizá el catálogo.' : responseError(res, data));
           }
         } catch (err) {
           alert('Error: ' + err.message);
@@ -302,17 +329,16 @@
       }
 
       async function verReservas(claseId) {
-        const apiKey = getApiKey();
         const detallesEl = document.getElementById(`detalles-${claseId}`);
         detallesEl.innerHTML = '<em>Cargando auditoría...</em>';
         try {
           const res = await fetch(`/api/v1/clases/${encodeURIComponent(claseId)}/reservas`, {
-            headers: apiKey ? { 'X-API-Key': apiKey } : {}
+            headers: sessionHeaders()
           });
           const data = await res.json();
           logResponse('GET', `/api/v1/clases/${claseId}/reservas`, res, data);
           if (!res.ok) {
-            detallesEl.innerHTML = `<span style="color:#c53030;">Requiere X-API-Key válida para ver auditoría.</span>`;
+            detallesEl.textContent = responseError(res, data);
             return;
           }
           const activas = data.reservas ? data.reservas.filter(r => r.estado === 'CONFIRMADA') : [];
@@ -337,22 +363,21 @@
       }
 
       async function cancelar(reservaId, claseId) {
-        if (!confirm('¿Seguro que deseas cancelar esta reserva? Si hay lista de espera, se promoverá automáticamente al siguiente socio.')) return;
+        if (!confirm('¿Seguro que deseas cancelar esta reserva? La reasignación a la lista de espera se procesa en segundo plano y vuelve a validar la membresía.')) return;
         try {
           const res = await fetch(`/api/v1/reservas/${encodeURIComponent(reservaId)}/cancelar`, {
-            method: 'POST'
+            method: 'POST',
+            headers: sessionHeaders()
           });
           const data = await res.json();
           logResponse('POST', `/api/v1/reservas/${reservaId}/cancelar`, res, data);
-          if (res.ok) {
-            if (data.promocion) {
-              alert(`Reserva cancelada. ¡Promoción automática activada para el socio ${data.promocion.socioId}!`);
-            } else {
-              alert('Reserva cancelada y cupo liberado.');
-            }
+          if (res.ok && data.exito === true) {
+            alert(data.reasignacionPendiente
+              ? 'Reserva cancelada. La reasignación del cupo está pendiente.'
+              : 'Reserva cancelada.');
             cargarClases();
           } else {
-            alert('Error al cancelar: ' + (data.mensaje || data.codigo));
+            alert(res.ok ? 'El servidor no confirmó la cancelación.' : responseError(res, data));
           }
         } catch (err) {
           alert('Error: ' + err.message);
@@ -371,9 +396,14 @@
         resEl.innerHTML = '<em>Consultando servicio de Socios y Membresías...</em>';
 
         try {
-          const res = await fetch(`/api/v1/socios/${encodeURIComponent(socioId)}/habilitacion`);
+          const res = await fetch(`/api/v1/socios/${encodeURIComponent(socioId)}/habilitacion`, { headers: sessionHeaders() });
           const data = await res.json();
           logResponse('GET', `/api/v1/socios/${socioId}/habilitacion`, res, data);
+
+          if (!res.ok) {
+            resEl.textContent = responseError(res, data);
+            return;
+          }
 
           const badgeClass = data.habilitado ? 'badge available' : 'badge full';
           const badgeText = data.habilitado ? 'HABILITADO PARA RESERVAR' : `NO HABILITADO (${data.motivo || 'DENEGADO'})`;

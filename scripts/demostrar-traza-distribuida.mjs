@@ -1,7 +1,7 @@
 /**
  * Script de demostración de Observabilidad y Trazabilidad Distribuida (D11)
- * Muestra logs estructurados en JSON y una primera traza distribuida completa
- * entre clases-reservas y socios-membresias correlacionada mediante W3C traceparent.
+ * Muestra la propagación W3C entre aplicaciones en memoria mediante inject.
+ * No sustituye una prueba HTTP entre procesos y con almacenamiento real.
  */
 import { Writable } from 'node:stream';
 import clasesModule from '../services/clases-reservas/dist/app.js';
@@ -15,7 +15,7 @@ const { buildSociosApp } = sociosModule;
 async function ejecutarDemostracion() {
   console.log('======================================================================');
   console.log(' DEMOSTRACION: LOGS ESTRUCTURADOS Y TRAZA DISTRIBUIDA DEL FLUJO');
-  console.log(' Entrega 2 - Dominio Propio de Punta a Punta');
+  console.log(' Entrega 2 - Demostración aislada en memoria mediante inject');
   console.log('======================================================================\n');
 
   const collectedLogs = [];
@@ -35,15 +35,19 @@ async function ejecutarDemostracion() {
   });
 
   const sociosRepo = new MemorySociosRepository();
+  const jwtSecret = 'clave-ficticia-solo-para-demostracion-local-2026';
+  const internalApiKey = 'servicios-ficticios-demo-local';
   const sociosApp = buildSociosApp({
     repository: sociosRepo,
+    jwtSecret,
+    internalApiKey,
     logger: { level: 'info', stream: logStream },
   });
 
   // Cliente integrado que propaga la cabecera W3C traceparent y x-correlation-id
   class IntegratedSociosClient {
     async verificarHabilitacion(socioId, fecha, traceContext) {
-      const headers = { Accept: 'application/json' };
+      const headers = { Accept: 'application/json', 'X-Service-Key': internalApiKey };
       if (traceContext) {
         headers.traceparent = `00-${traceContext.traceId}-${traceContext.spanId}-${traceContext.traceFlags}`;
         headers['x-correlation-id'] = traceContext.traceId;
@@ -52,6 +56,7 @@ async function ejecutarDemostracion() {
         fecha ? `?fecha=${encodeURIComponent(fecha)}` : ''
       }`;
       const response = await sociosApp.inject({ method: 'GET', url, headers });
+      if (response.statusCode !== 200) throw new Error('Falló la consulta de habilitación de la demostración.');
       return response.json();
     }
   }
@@ -61,6 +66,8 @@ async function ejecutarDemostracion() {
     apiKey: 'demo-api-key',
     repository: clasesRepo,
     sociosClient: new IntegratedSociosClient(),
+    jwtSecret,
+    internalApiKey,
     logger: { level: 'info', stream: logStream },
   });
 
@@ -68,6 +75,12 @@ async function ejecutarDemostracion() {
   const clientTraceId = '4bf92f3577b34da6a3ce929d0e0e4736';
   const clientSpanId = '00f067aa0ba902b7';
   const incomingTraceparent = `00-${clientTraceId}-${clientSpanId}-01`;
+  const login = await sociosApp.inject({
+    method: 'POST', url: '/api/v1/auth/login',
+    payload: { emailOrDni: 'juan.perez@example.com', password: 'socio123' },
+  });
+  if (login.statusCode !== 200) throw new Error('Falló el login del socio ficticio de la demostración.');
+  const { token } = login.json();
 
   console.log(`[1] Cliente envía solicitud HTTP POST /api/v1/reservas`);
   console.log(`    Headers: { traceparent: '${incomingTraceparent}', x-correlation-id: '${clientTraceId}' }`);
@@ -78,6 +91,7 @@ async function ejecutarDemostracion() {
     url: '/api/v1/reservas',
     headers: {
       'content-type': 'application/json',
+      authorization: `Bearer ${token}`,
       traceparent: incomingTraceparent,
       'x-correlation-id': clientTraceId,
     },
@@ -86,6 +100,7 @@ async function ejecutarDemostracion() {
       socioId: 'socio-demo-01',
     },
   });
+  if (response.statusCode !== 201) throw new Error(`La reserva de demostración devolvió HTTP ${response.statusCode}.`);
 
   console.log(`[2] Respuesta recibida HTTP ${response.statusCode}:`);
   console.log(`    Body: ${response.payload}`);
@@ -113,19 +128,23 @@ async function ejecutarDemostracion() {
   
   const clasesSpans = traceLogs.filter((l) => l.service === 'clases-reservas');
   const sociosSpans = traceLogs.filter((l) => l.service === 'socios-membresias');
+  if (!clasesSpans.length || !sociosSpans.length) {
+    throw new Error('No se registraron logs correlacionados de ambos servicios.');
+  }
 
   if (clasesSpans.length > 0) {
     const rootServiceSpan = clasesSpans[0].span_id;
     console.log(`        |`);
     console.log(`        +-- [Span clases-reservas] span_id: ${rootServiceSpan} | parent_span_id: ${clientSpanId}`);
-    console.log(`        |     Mensaje: "Iniciando solicitud de reserva para clase"`);
+    console.log(`        |     Mensaje: ${JSON.stringify(clasesSpans[0].msg)}`);
     
     if (sociosSpans.length > 0) {
-      const sociosSpan = sociosSpans[0].span_id;
-      console.log(`        |       |`);
-      console.log(`        |       +-- [Span socios-membresias] span_id: ${sociosSpan} | parent_span_id: ${rootServiceSpan}`);
-      console.log(`        |             Mensaje: "Evaluando habilitacion de membresia para socio"`);
-      console.log(`        |             Resultado: { habilitado: true }`);
+      for (const entry of sociosSpans) {
+        console.log(`        |       |`);
+        console.log(`        |       +-- [Span socios-membresias] span_id: ${entry.span_id} | parent_span_id: ${entry.parent_span_id}`);
+        console.log(`        |             Mensaje: ${JSON.stringify(entry.msg)}`);
+        console.log(`        |             Resultado: { habilitado: ${entry.habilitado} }`);
+      }
     }
     console.log(`        |`);
     console.log(`        +-- [clases-reservas] Confirmacion y persistencia: reserva confirmada`);

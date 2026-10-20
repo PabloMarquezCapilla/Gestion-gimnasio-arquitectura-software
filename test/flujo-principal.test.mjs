@@ -9,6 +9,8 @@ const { buildApp: buildClasesApp } = clasesModule;
 const { buildSociosApp } = sociosModule;
 
 const apiKey = 'test-api-key-flujo';
+const configuration = { jwtSecret: 'secreto-ficticio-compartido-pruebas-mas-de-32-caracteres', internalApiKey: 'clave-interna-ficticia-pruebas' };
+const clock = () => new Date('2026-10-19T12:00:00Z');
 
 class IntegratedSociosClient {
   constructor(sociosApp) {
@@ -16,7 +18,7 @@ class IntegratedSociosClient {
   }
 
   async verificarHabilitacion(socioId, fecha, traceContext) {
-    const headers = { Accept: 'application/json' };
+    const headers = { Accept: 'application/json', 'x-service-key': configuration.internalApiKey };
     if (traceContext) {
       headers.traceparent = `00-${traceContext.traceId}-${traceContext.spanId}-${traceContext.traceFlags}`;
       headers['x-correlation-id'] = traceContext.traceId;
@@ -33,6 +35,7 @@ async function setupTestEnvironment() {
   const sociosRepo = new MemorySociosRepository();
   const sociosLogs = [];
   const sociosApp = buildSociosApp({
+    ...configuration, clock,
     repository: sociosRepo,
     logger: false,
   });
@@ -41,23 +44,26 @@ async function setupTestEnvironment() {
   const clasesClient = new IntegratedSociosClient(sociosApp);
   const clasesLogs = [];
   const clasesApp = buildClasesApp({
-    apiKey,
+    apiKey, ...configuration, clock,
     repository: clasesRepo,
     sociosClient: clasesClient,
     logger: false,
   });
 
-  return { sociosApp, clasesApp, sociosRepo, clasesRepo };
+  await clasesApp.ready();
+  const authorization = 'Bearer ' + clasesApp.jwt.sign({ sub: 'admin-ficticio', rol: 'ADMIN' });
+  return { sociosApp, clasesApp, sociosRepo, clasesRepo, authorization };
 }
 
 test('Flujo principal de punta a punta: consulta de clases, validacion de membresia y reserva exitosa', async () => {
-  const { sociosApp, clasesApp } = await setupTestEnvironment();
+  const { sociosApp, clasesApp, authorization } = await setupTestEnvironment();
 
   try {
     // 1. El socio consulta su membresia en Socios y Membresias
     const resSocio = await sociosApp.inject({
       method: 'GET',
       url: '/api/v1/socios/socio-demo-01/habilitacion',
+      headers: { 'x-service-key': configuration.internalApiKey },
     });
     assert.equal(resSocio.statusCode, 200);
     const bodySocio = resSocio.json();
@@ -67,7 +73,7 @@ test('Flujo principal de punta a punta: consulta de clases, validacion de membre
     const resCatalogo = await clasesApp.inject({
       method: 'GET',
       url: '/api/v1/clases?sedeId=sede-demo-01',
-      headers: { 'x-api-key': apiKey },
+      headers: { authorization, 'x-api-key': apiKey },
     });
     assert.equal(resCatalogo.statusCode, 200);
     const catalogo = resCatalogo.json();
@@ -87,6 +93,7 @@ test('Flujo principal de punta a punta: consulta de clases, validacion de membre
       method: 'POST',
       url: '/api/v1/reservas',
       headers: {
+        authorization,
         'content-type': 'application/json',
         traceparent: traceparentHeader,
       },
@@ -111,7 +118,7 @@ test('Flujo principal de punta a punta: consulta de clases, validacion de membre
     const resDetalle = await clasesApp.inject({
       method: 'GET',
       url: '/api/v1/clases/clase-demo-001',
-      headers: { 'x-api-key': apiKey },
+      headers: { authorization, 'x-api-key': apiKey },
     });
     assert.equal(resDetalle.statusCode, 200);
     const detalleActualizado = resDetalle.json();
@@ -123,14 +130,14 @@ test('Flujo principal de punta a punta: consulta de clases, validacion de membre
 });
 
 test('Garantias de consistencia: duplicados rechazados y membresia inactiva rechazada', async () => {
-  const { sociosApp, clasesApp } = await setupTestEnvironment();
+  const { sociosApp, clasesApp, authorization } = await setupTestEnvironment();
 
   try {
     // 1. Socio reserva por primera vez
     const res1 = await clasesApp.inject({
       method: 'POST',
       url: '/api/v1/reservas',
-      headers: { 'content-type': 'application/json' },
+      headers: { authorization, 'content-type': 'application/json' },
       payload: { claseId: 'clase-demo-001', socioId: 'socio-demo-01' },
     });
     assert.equal(res1.statusCode, 201);
@@ -139,7 +146,7 @@ test('Garantias de consistencia: duplicados rechazados y membresia inactiva rech
     const resDuplicada = await clasesApp.inject({
       method: 'POST',
       url: '/api/v1/reservas',
-      headers: { 'content-type': 'application/json' },
+      headers: { authorization, 'content-type': 'application/json' },
       payload: { claseId: 'clase-demo-001', socioId: 'socio-demo-01' },
     });
     assert.equal(resDuplicada.statusCode, 409);
@@ -149,7 +156,7 @@ test('Garantias de consistencia: duplicados rechazados y membresia inactiva rech
     const resVencido = await clasesApp.inject({
       method: 'POST',
       url: '/api/v1/reservas',
-      headers: { 'content-type': 'application/json' },
+      headers: { authorization, 'content-type': 'application/json' },
       payload: { claseId: 'clase-demo-001', socioId: 'socio-vencido-01' },
     });
     assert.equal(resVencido.statusCode, 422);
@@ -159,7 +166,7 @@ test('Garantias de consistencia: duplicados rechazados y membresia inactiva rech
     const resInexistente = await clasesApp.inject({
       method: 'POST',
       url: '/api/v1/reservas',
-      headers: { 'content-type': 'application/json' },
+      headers: { authorization, 'content-type': 'application/json' },
       payload: { claseId: 'clase-demo-001', socioId: 'socio-fantasma-999' },
     });
     assert.equal(resInexistente.statusCode, 422);
@@ -170,14 +177,14 @@ test('Garantias de consistencia: duplicados rechazados y membresia inactiva rech
 });
 
 test('Flujo de clase llena: ingreso a lista de espera, cancelacion y promocion automatica', async () => {
-  const { sociosApp, clasesApp } = await setupTestEnvironment();
+  const { sociosApp, clasesApp, authorization } = await setupTestEnvironment();
 
   try {
     // clase-demo-002 tiene 0 cupos disponibles inicialmente
     const resDetalleInicial = await clasesApp.inject({
       method: 'GET',
       url: '/api/v1/clases/clase-demo-002',
-      headers: { 'x-api-key': apiKey },
+      headers: { authorization, 'x-api-key': apiKey },
     });
     assert.equal(resDetalleInicial.json().cuposDisponibles, 0);
 
@@ -185,7 +192,7 @@ test('Flujo de clase llena: ingreso a lista de espera, cancelacion y promocion a
     const resSinCupo = await clasesApp.inject({
       method: 'POST',
       url: '/api/v1/reservas',
-      headers: { 'content-type': 'application/json' },
+      headers: { authorization, 'content-type': 'application/json' },
       payload: { claseId: 'clase-demo-002', socioId: 'socio-demo-01' },
     });
     assert.equal(resSinCupo.statusCode, 409);
@@ -196,7 +203,7 @@ test('Flujo de clase llena: ingreso a lista de espera, cancelacion y promocion a
     const resEspera = await clasesApp.inject({
       method: 'POST',
       url: '/api/v1/clases/clase-demo-002/espera',
-      headers: { 'content-type': 'application/json' },
+      headers: { authorization, 'content-type': 'application/json' },
       payload: { socioId: 'socio-demo-01' },
     });
     assert.equal(resEspera.statusCode, 201);
@@ -208,7 +215,7 @@ test('Flujo de clase llena: ingreso a lista de espera, cancelacion y promocion a
     const resInspeccion = await clasesApp.inject({
       method: 'GET',
       url: '/api/v1/clases/clase-demo-002/reservas',
-      headers: { 'x-api-key': apiKey },
+      headers: { authorization, 'x-api-key': apiKey },
     });
     const { reservas } = resInspeccion.json();
     assert.ok(reservas.length > 0);
@@ -218,18 +225,20 @@ test('Flujo de clase llena: ingreso a lista de espera, cancelacion y promocion a
     const resCanc = await clasesApp.inject({
       method: 'POST',
       url: `/api/v1/reservas/${reservaACancelar.reservaId}/cancelar`,
+      headers: { authorization },
     });
     assert.equal(resCanc.statusCode, 200);
     const cancelacion = resCanc.json();
     assert.equal(cancelacion.exito, true);
-    assert.ok(cancelacion.promocion);
-    assert.equal(cancelacion.promocion.socioId, 'socio-demo-01');
+    assert.equal(cancelacion.reasignacionPendiente, true);
+    const proceso = await clasesApp.reservasService.procesarPendientes();
+    assert.equal(proceso.promovidas, 1);
 
     // 5. Verificar que el socio promovido ahora tiene reserva CONFIRMADA
     const resInspeccionPost = await clasesApp.inject({
       method: 'GET',
       url: '/api/v1/clases/clase-demo-002/reservas',
-      headers: { 'x-api-key': apiKey },
+      headers: { authorization, 'x-api-key': apiKey },
     });
     const postReservas = resInspeccionPost.json().reservas;
     const reservaPromovida = postReservas.find((r) => r.socioId === 'socio-demo-01');

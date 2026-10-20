@@ -27,32 +27,33 @@ export interface AuthState {
   isAuthenticated: boolean;
 }
 
+export interface AuthResponse {
+  token: string;
+  socio: AuthUser;
+  membresia: UserMembresia | null;
+}
+
 export interface ClassSession {
   id: string;
   nombre: string;
-  disciplina: 'SPINNING' | 'CROSSFIT' | 'FUNCIONAL' | 'YOGA' | 'PILATES' | 'BOXEO';
-  instructor: string;
-  instructorAvatar?: string;
-  sala: string;
-  horario: string; // Ej: "18:30 - 19:30"
-  dia: string; // Ej: "Hoy", "Mañana"
+  sedeId: string;
+  horario: string;
+  dia: string;
   fechaIso: string;
   cupoMaximo: number;
   cupoOcupado: number;
-  intensidad: 'ALTA' | 'MEDIA' | 'CALMA';
-  caloriasAprox: number;
 }
 
 export interface UserReservation {
   reservaId: string;
   claseId: string;
   nombreClase: string;
-  disciplina: string;
-  instructor: string;
-  sala: string;
+  tipo: 'RESERVA' | 'ESPERA';
+  sedeId?: string;
   horario: string;
   fechaTexto: string;
   estado: 'CONFIRMADA' | 'LISTA_ESPERA' | 'CANCELADA';
   posicionEspera?: number;
   fechaCreacion: string;
+  inicio?: string;
 }

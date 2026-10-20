@@ -3,7 +3,52 @@
 **Estado:** validada en la Entrega 2 con almacenamiento relacional integrado.  
 **Fecha:** 07/10/2026 (propuesta inicial) | 12/10/2026 (validación operativa con PostgreSQL).
 
+## Diseño de integración del paso 2 - antecedente del 19/10/2026
+
+Los pendientes de empleados descritos en este apartado se resolvieron en el paso 5, detallado debajo; la integración de Tienda continúa pendiente.
+
+Se mantienen los motores y el almacenamiento propietario de la decisión inicial. La [recepción de empleados](ADR-014-contrato-empleados.md) agrega datos de diseño a Socios y Membresías:
+
+- Una aceptación deberá conservar conjuntamente el nuevo socio, su solicitud de membresía pendiente, la referencia al origen/empleado externo y el resultado de idempotencia. La implementación futura se coordinará dentro de la base PostgreSQL del servicio, sin accesos directos desde otro servicio.
+- `PENDIENTE` es estado de la **solicitud**. El POST no crea una membresía; los estados actuales de `membresias` y su habilitación posterior al pago son conceptos separados.
+- El diseño exige evitar altas nuevas con DNI/email existentes y la asociación de un empleado externo a otro DNI. Una repetición con el mismo origen, clave y cuerpo devuelve el resultado original; una clave reutilizada con otro cuerpo produce conflicto sin nuevos efectos.
+- El modelo físico, las restricciones, las migraciones y el registro durable de idempotencia están pendientes. El **mock separado usa memoria** y no demuestra persistencia después de reiniciar.
+- **Tienda** es el servicio separado confirmado para consultar productos y stock, según [ADR-015](ADR-015-limites-con-tienda.md). Desde el paso 6 tiene estructura ejecutable sin base, volumen, persistencia local, caché ni stock propio. El catálogo y las existencias pertenecen a la distribuidora; su identidad y contrato están pendientes.
+
+La tabla de almacenamiento inicial que sigue se conserva como antecedente. El cuarto servicio no agrega un motor ni modifica las bases de los tres anteriores; su implementación está pendiente. Los límites vigentes están registrados en ADR-015, sucesor de D1.
+
+Los esquemas y afirmaciones de validación del 12/10 se conservan como antecedentes del flujo de clases; no incluyen la nueva solicitud ni acreditan su implementación. Esta revisión no modifica bases ni datos.
+
+**Referencias:** sección 3, página 4; sección 4.1, página 5; sección 5, páginas 6–7. Esta aclaración mantiene la decisión de motores y propiedad; cualquier sustitución posterior deberá dejar el ADR sucesor correspondiente.
+
 ## Requisito del enunciado
+
+### Implementación de empleados - paso 5
+
+Se mantiene la base `socios` y se agregan tablas mediante la inicialización transaccional existente (`CREATE TABLE IF NOT EXISTS`), sin reemplazar tablas ni datos anteriores:
+
+| Tabla | Propiedad y restricciones |
+|---|---|
+| `socios` | Cuenta SOCIO, DNI/email únicos; el alta externa no define contraseña ni habilita membresía. |
+| `solicitudes_membresia` | Identificador de solicitud, socio asociado único, estado PENDIENTE y fecha; separado de `membresias`. El tratamiento administrativo posterior queda pendiente. |
+| `empleados_externos` | Clave primaria `(origen, empleado_externo_id)` y referencia única al socio. |
+| `altas_empleados_idempotencia` | Clave primaria `(origen, clave)`, contenido normalizado, respuesta original JSONB, solicitud referenciada y fecha. |
+
+Los cuatro registros se confirman en una sola transacción. Se serializan los reintentos por origen/clave y los registros de un mismo empleado por origen/identificador mediante `pg_advisory_xact_lock`; la unicidad normalizada de DNI/email cubre también carreras con altas administrativas. No se utiliza Redis, RabbitMQ ni almacenamiento del consumidor para esta garantía.
+
+La idempotencia persiste entre reinicios y réplicas y no tiene una limpieza automática en esta etapa. Cambiar `EMPLEADOS_ORIGEN_ID` cambia el ámbito de las claves: debe conservarse al reiniciar. Los errores no se guardan como altas exitosas. Las pruebas con PostgreSQL provocan un fallo al insertar el último registro, comprueban el rollback y reintentan exitosamente la misma clave.
+
+El adaptador en memoria conserva reglas equivalentes para pruebas de un solo proceso; solo PostgreSQL acredita durabilidad y coordinación entre instancias. No se crean pagos, planes ni membresías desde esta operación.
+
+### Validación adicional del paso 4
+
+Se conservan PostgreSQL y la propiedad de cada base. Socios consulta el historial de membresías por socio y selecciona el período aplicable a la fecha solicitada; en memoria se conserva cada membresía por su identificador para no perder la vigente al agregar una renovación futura. Los índices únicos `LOWER(BTRIM(email))` y `BTRIM(dni)` evitan identidades ambiguas incluso ante escrituras concurrentes. Si una base existente contiene duplicados incompatibles, la inicialización falla sin borrar, fusionar ni sobrescribir esas cuentas.
+
+Clases mantiene sus tablas existentes, índices únicos parciales y bloqueos por clase. Una cancelación y una espera persistidas permiten inferir una promoción pendiente sin una tabla nueva. La nueva política queda en [D4, ADR-017](ADR-017-consistencia-y-recuperacion-de-espera.md).
+
+`npm run test:postgres` comprobó ambos adaptadores contra PostgreSQL 17 efímero y dos instancias con pools independientes. El inicio completo se comprobó por separado con usuarios de base distintos en Compose; las pruebas conservaron los datos y volúmenes del grupo. Esto no valida aún pagos, solicitudes de empleados, persistencia de accesos ni almacenamiento no relacional integrado al dominio.
+
+### Referencias
 
 - **Sección 5, página 6:** D3 debe justificar el almacenamiento por servicio, sus patrones de acceso y las limitaciones aceptadas.
 - **Sección 6.2 y 6.3:** la Entrega 1 requería la propuesta inicial y la Entrega 2 exige validar la persistencia integrando al menos un tipo de almacenamiento operativo al flujo principal.
