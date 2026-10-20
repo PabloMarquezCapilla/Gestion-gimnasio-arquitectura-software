@@ -1,6 +1,6 @@
 # D8 - Contrato de recepción de empleados
 
-**Estado:** diseño confirmado e implementado con PostgreSQL y gateway en el paso 5. Mock separado conservado; publicación accesible y prueba conjunta con el consumidor pendientes.
+**Estado:** diseño confirmado e implementado con PostgreSQL y gateway localmente. Mock separado conservado; publicación accesible y prueba conjunta con el consumidor pendientes.
 **Fecha:** 19/10/2026.
 **Reemplaza:** [ADR-008 - Contrato de la capacidad propia](ADR-008-contrato-propio.md).
 
@@ -34,19 +34,19 @@ Se requiere `Idempotency-Key`. El grupo, la clave y los datos normalizados ident
 - Misma clave y otros datos: conflicto.
 - Otra clave: se aplican nuevamente las restricciones de empleado, DNI y email existentes, sin convertir el alta en una actualización.
 
-La implementación persistente conserva origen, clave, datos normalizados y resultado junto al alta en una única transacción. El diseño inicial del paso 2 se concretó en el paso 5: bloqueos consultivos por origen/clave y origen/empleado serializan reintentos entre instancias; índices únicos protegen DNI/email, y un fallo revierte todos los registros. El mock solo conserva estado durante su ejecución.
+La implementación persistente conserva origen, clave, datos normalizados y resultado junto al alta en una única transacción. Los bloqueos consultivos por origen/clave y origen/empleado serializan reintentos entre instancias; índices únicos protegen DNI/email, y un fallo revierte todos los registros. El mock solo conserva estado durante su ejecución.
 
 ### Contrato y compatibilidad
 
 Se publica [openapi-empleados-v1.yaml](../contracts/openapi-empleados-v1.yaml), versión `1.0.1`, como contrato independiente para esta capacidad. `1.0.0` fue la versión inicial del mock; `1.0.1` actualiza descripciones y servidores al estado operativo, sin cambiar campos, respuestas ni reglas. Su guía está en [docs/contracts/README.md](../contracts/README.md).
 
-El [contrato anterior de clases](../contracts/openapi-v1.yaml) se conserva como antecedente y para las pruebas existentes. La API de empleados tiene otra ruta; este paso no elimina ni cambia el comportamiento de los GET de clases. La nueva versión `1.0.0` corresponde a la API de empleados, no a una reinterpretación del contrato anterior.
+El [contrato anterior de clases](../contracts/openapi-v1.yaml) se conserva como antecedente y para las pruebas existentes. Las APIs tienen rutas y versiones independientes: empleados `1.0.1` y clases `1.0.0`. Los GET de clases se conservan como funciones del gimnasio.
 
 Los cambios incompatibles futuros en la API de empleados requerirán una nueva versión mayor y coordinación con el consumidor. Los cambios compatibles incrementarán la versión menor y las correcciones documentales compatibles, la de parche.
 
 ### Estado de implementación
 
-El mock separado utiliza datos ficticios y memoria. Permite comprobar el contrato sin ejecutar el alta pública de usuarios del backend actual ni conectarse a PostgreSQL.
+El mock separado utiliza datos ficticios y memoria. Permite comprobar el contrato sin iniciar el backend operativo ni conectarse a PostgreSQL.
 
 El servidor operativo y el gateway exponen el POST. `empleados.http.ts` valida el contrato y la credencial; `EmpleadosService` prepara el alta; `PostgresSociosRepository` guarda socio, solicitud, referencia externa e idempotencia atómicamente. Es parte de la arquitectura en Capas de D2, sin un microservicio nuevo.
 
@@ -54,7 +54,7 @@ La credencial se configura con `EMPLEADOS_API_KEY` y el origen con `EMPLEADOS_OR
 
 La coordinación con pagos, el acceso personal de estos socios y una URL accesible al otro grupo siguen pendientes. Se crea la cuenta SOCIO sin contraseña ni membresía; la solicitud queda PENDIENTE. El replay devuelve el resultado original del alta, no una consulta del estado actual de una membresía futura.
 
-**Verificación:** `npm test` conserva las 11 pruebas del mock y agrega 7 del servidor operativo. `npm run test:postgres` verifica 20 reintentos simultáneos entre dos instancias, unicidad concurrente, recuperación del replay tras recrear el servidor y rollback ante un fallo provocado al final de la transacción. README registra la comprobación adicional de Docker/gateway.
+**Verificación:** `npm test` conserva las 11 pruebas del mock y agrega 7 del servidor operativo. `npm run test:postgres` verifica 20 reintentos simultáneos entre dos instancias, unicidad concurrente, recuperación del replay tras recrear el servidor y rollback ante un fallo provocado al final de la transacción. La prueba de Docker/gateway se reproduce con `npm run test:balanceo`; sus resultados están en D12 y el postmortem.
 
 ## Alternativas consideradas
 

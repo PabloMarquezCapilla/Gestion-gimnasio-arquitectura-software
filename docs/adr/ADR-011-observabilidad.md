@@ -1,8 +1,8 @@
 # D11 - Observabilidad
 
 **Estado:** primera versión implementada para E2: logs JSON, correlación W3C, métricas básicas y primera traza HTTP verificada. Tableros y alertas pendientes.
-**Fecha original:** 12/10/2026. **Revisión factual:** 19/10/2026.
-**Enunciado:** §6.3, página 8, exige logs correlacionados y primera traza; §5, D11, página 7, pide estrategia, objetivos y alertas.
+**Fecha original:** 12/10/2026. **Validación:** 19/10/2026.
+**Enunciado:** §2.10, página 3; §6.3, página 8, exige logs correlacionados y primera traza; §5, D11, página 7, pide estrategia, objetivos y alertas.
 
 ## Logs y traza implementados
 
@@ -21,7 +21,7 @@ Ejecución del 19/10/2026 (Argentina): trace ID `c7cab1c968ccd7baa1d58a49564f5e1
 
 ## Métricas y estrategia pendiente
 
-Socios y Clases exponen `/metrics` en formato compatible con Prometheus: `http_requests_total`, `http_errors_total`, `process_uptime_seconds` y `pg_pool_active_connections`. Son contadores por proceso que se reinician con él. Las conexiones ocupadas provienen de `totalCount - idleCount` del pool; se corrigió el valor fijo que publicaba Clases.
+Socios y Clases exponen `/metrics` en formato compatible con Prometheus: `http_requests_total`, `http_errors_total`, `process_uptime_seconds` y `pg_pool_active_connections`. Son contadores por proceso que se reinician con él. Las conexiones ocupadas provienen de `totalCount - idleCount` del pool.
 
 No existen todavía histogramas de duración, métricas de caché/cola/event loop, recolector Prometheus, Grafana, alertas ni exportador OpenTelemetry. Un identificador W3C permite correlacionar logs, pero enviar spans completos a un backend requiere instrumentación/exportación adicional.
 
@@ -29,6 +29,6 @@ Se conserva como diseño el tablero RED (tasa, errores, duración) y USE (utiliz
 
 Criterios propuestos: alertar ante >1% de 5xx durante 5 min, p99 de reservas >1500 ms durante 3 min, o conexiones ocupadas >85% del máximo por 2 min. Falta implementar ventanas, clasificación de errores, canal y tablero antes de habilitar alertas. Deben contemplar los 504 transitorios observados en D12.
 
-## Consecuencias y rectificación
+## Consecuencias
 
-Ya se puede seguir una reserva real entre servicios sin incorporar una plataforma de monitoreo completa para este hito. La revisión conserva la estrategia y corrige afirmaciones anteriores de histogramas/tableros/exportación ya disponibles. No se presentan esos componentes como parte terminada de E2.
+La primera traza permite seguir una reserva entre servicios HTTP con PostgreSQL. La observabilidad general de §2.10 aún requiere tablero y mayor cobertura; no se acredita por exponer métricas sin recolector ni alertas.

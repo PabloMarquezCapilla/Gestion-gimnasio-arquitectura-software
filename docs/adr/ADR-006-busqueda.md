@@ -11,7 +11,7 @@ Clases y Reservas es propietario del catálogo. Se mantiene PostgreSQL Full-Text
 ## Implementado y verificado
 
 - `PostgresClaseRepository.inicializarEsquema` crea `documento_busqueda`, columna `tsvector` generada con diccionario español y pesos A/B/C para nombre/actividad/profesor, e índice GIN `idx_clases_fts`.
-- El índice B-Tree real es `idx_clases_consulta (publicada, sede_id, inicio)`. No se han creado los otros índices descritos por la versión inicial del documento.
+- El índice B-Tree real es `idx_clases_consulta (publicada, sede_id, inicio)`.
 - `listarClases` consulta clases publicadas, filtra por sede y rango de inicio `[desde, hasta)`, pagina con offset (20 por defecto, máximo 100) y ordena por `inicio, clase_id`. El desempate es estable para un conjunto sin modificaciones; no garantiza una instantánea entre páginas ante escrituras concurrentes.
 - Vector e índices se actualizan en la misma transacción que los campos de la clase: no hay sincronización por eventos ni demora adicional de indexación. Esto no equivale a latencia de consulta cero.
 
@@ -21,8 +21,8 @@ La consulta HTTP todavía no acepta texto ni utiliza `@@ plainto_tsquery`. Tener
 
 Para mantenimiento se prevé `REINDEX INDEX CONCURRENTLY idx_clases_fts`, fuera de una transacción explícita; deberá ensayarse antes de una operación real. Las altas/publicación administrativa de clases tampoco están implementadas como flujo completo.
 
-## Consecuencias y rectificación
+## Consecuencias
 
 Se reutiliza la base propietaria y se evita una copia eventual del catálogo. Los cupos se calculan sobre reservas transaccionales; incluso una lectura reciente no garantiza que el cupo continúe libre al reservar.
 
-La revisión corrige afirmaciones anteriores de filtros, índices y tiempos ya implementados. Conserva la decisión FTS/GIN y su historia en Git; no presenta tiempos submilisegundo ni el requisito general §2.6 como demostrados.
+El catálogo filtrado y el índice preparado no completan todavía la búsqueda textual requerida por §2.6. La decisión se conserva; faltan conectar y verificar esas consultas.

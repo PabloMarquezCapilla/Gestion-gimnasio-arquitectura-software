@@ -1,89 +1,68 @@
-# Arquitectura del sistema - diseño de Entrega 1 y evolución
+# Arquitectura del sistema
 
-Este documento reúne el diseño de servicios requerido para la Entrega 1 y su evolución. La revisión del **19/10/2026** incluye las correcciones del flujo propio del paso 4 y el POST persistente de empleados publicado localmente por el gateway en el paso 5. La publicación accesible y prueba conjunta con el otro grupo siguen pendientes.
+**Estado documental:** 20/10/2026. Evolución del diseño de E1 con el flujo propio y la capacidad de empleados operativos localmente. Se distinguen responsabilidades del sistema previsto e implementación disponible.
 
-**Referencias del enunciado:** documentación de arquitectura en sección 3, página 4; integración entre grupos en sección 4.1, página 5; decisiones y conservación de su historia en sección 5, páginas 6–7. La Entrega 1 solicita el diseño inicial en sección 6.2, página 8.
+**Enunciado:** §3, página 4; §4.1, páginas 5–6; §5, páginas 6–7; §6.2–6.3, página 8. Los patrones internos y el balanceo corresponden a §2.1 y §2.3, página 2.
 
-## Integraciones acordadas - 19/10/2026
+## Servicios, responsabilidades y datos
 
-- **Capacidad ofrecida:** `POST /api/v1/integraciones/empleados`, a cargo de **Socios y Membresías**, según el [contrato de empleados](contracts/openapi-empleados-v1.yaml) y [ADR-014](adr/ADR-014-contrato-empleados.md). Reemplaza a la consulta de clases como capacidad ofrecida al otro grupo. El [contrato anterior](contracts/openapi-v1.yaml) y [ADR-008](adr/ADR-008-contrato-propio.md) quedan como antecedentes; las consultas de clases continúan como funcionalidad interna.
-- El otro grupo envía `empleadoExternoId`, `dni`, `nombre` y `email`. La credencial `X-API-Key` identifica el origen autorizado; el origen no se toma de un campo enviado en el cuerpo.
-- Una recepción válida crea un socio y una **solicitud de membresía `PENDIENTE`**, sin crear ni habilitar una membresía. El administrador elige el plan y confirma el pago antes de habilitarla. `PENDIENTE` es un estado de la solicitud, distinto del estado de una membresía.
-- La repetición con el mismo origen, `Idempotency-Key` y cuerpo devuelve la respuesta original. Una clave reutilizada con otro cuerpo, un identificador externo asociado a otro DNI o un alta nueva con DNI/email ya existente devuelve `409`, sin modificar registros existentes.
-- **Capacidad consumida:** el microservicio **Tienda** consultará productos y stock de una distribuidora, según [ADR-015](adr/ADR-015-limites-con-tienda.md). El catálogo y el stock pertenecen a la distribuidora. En el paso 6 se preparan servicio, gateway y pestaña del portal, sin base ni persistencia local. La consulta externa sigue pendiente: el equipo aún no dispone del contrato, URL ni autenticación.
-- Los datos de prueba son ficticios. El **mock separado en memoria** se conserva para el contrato. En el paso 5, `empleados.http.ts` → `EmpleadosService` → `PostgresSociosRepository` implementan el alta atómica y el gateway publica su ruta. No se generan credenciales personales ni se habilita la membresía; su tratamiento administrativo y pago siguen pendientes.
-
-## Microservicios y responsabilidades
-
-### Estructura y controles implementados en el paso 4
-
-- **Clases:** arquitectura Hexagonal. `app.ts` recibe HTTP; `application/reservas.service.ts` implementa casos de uso y depende de `ports.ts`; `repository.ts` y `clients/socios.client.ts` implementan los adaptadores. `server.ts` compone las dependencias y ejecuta el trabajador de promoción.
-- **Socios:** arquitectura en Capas. `app.ts` → `AuthService`/`SociosService` en `services.ts` → `repository.ts`. Criptografía en `security.ts`, errores en `errors.ts` y entrada local administrativa en `crear-admin.ts`. Se conserva la decisión D2; detalle en [ADR-002](adr/ADR-002-arquitectura-interna-de-servicios.md).
-- **Identidad:** JWT firmado, rol y propiedad en ambos servicios. Alta interna solo ADMIN, sin membresía automática; comando local para crear el administrador. Credencial `X-Service-Key` exclusiva de la consulta técnica de habilitación. [ADR-016](adr/ADR-016-autenticacion-y-altas.md).
-- **Interfaz:** sesión en memoria, datos del perfil/clases/reservas desde sus APIs y errores visibles. Pagos, reactivación, comprobantes, QR y operaciones sin backend quedan identificadas como pendientes, sin simular resultados.
-- **Consistencia:** escrituras atómicas por clase, sin validación HTTP dentro del bloqueo; cancelación local y promoción recuperable con prioridad FIFO. [D4 vigente, ADR-017](adr/ADR-017-consistencia-y-recuperacion-de-espera.md).
-
-| Servicio | Responsabilidades de diseño | Estado de implementación |
+| Servicio | Responsabilidad y propiedad | Implementación actual |
 |---|---|---|
-| **Socios y Membresías** | Administrar socios, planes, membresías, pagos y comprobantes; evaluar habilitación; recibir empleados externos y gestionar sus solicitudes pendientes; comunicar cambios de membresía. | PostgreSQL, identidad, altas y consulta de habilitación. POST externo y almacenamiento de solicitudes/referencias/idempotencia operativos. Pagos, resolución administrativa de solicitudes y eventos pendientes. |
-| **Clases y Reservas** | Publicar clases y horarios; gestionar reservas, cancelaciones y espera; controlar capacidad; ofrecer consultas internas de clases y cupos. | El código existente dispone de un adaptador PostgreSQL y rutas de clases/reservas. La publicación externa anterior se conserva como antecedente del contrato. |
-| **Accesos y Ocupación** | Administrar sedes; registrar ingresos y egresos; validar membresía antes del ingreso; calcular ocupación a partir de presencias abiertas; gestionar caché de ocupación. | Estructura HTTP lista; soporte de MongoDB 8.0 replica set configurado. |
-| **Tienda** | Consultar productos y stock de la distribuidora para la sección Tienda. La distribuidora conserva la propiedad del catálogo y sus existencias. | Workspace y Compose ejecutables, salud y ruta interna con JWT. Devuelve 503 INTEGRACION_PENDIENTE; no tiene cliente externo, catálogo de prueba ni base propia. |
-| **API Gateway (NGINX)** | Enrutar peticiones entrantes, distribuir tráfico y propagar contexto de traza. | Puerto `8080` (o `GATEWAY_PORT`), `least_conn`, dos réplicas de Clases declaradas y ruta externa de empleados hacia Socios. |
+| **Socios y Membresías** | Socios, planes, membresías, pagos, comprobantes, referencia de empleados externos y solicitudes. | Capas; JWT, altas administrativas, habilitación y POST externo. PostgreSQL: `socios`, `membresias`, `solicitudes_membresia`, `empleados_externos`, `altas_empleados_idempotencia`. Pagos, planes y resolución administrativa pendientes. |
+| **Clases y Reservas** | Clases, capacidad, reservas, espera e índice de búsqueda derivado. | Hexagonal; catálogo, reservas/cancelación y recuperación FIFO. PostgreSQL: `clases`, `reservas`, `lista_espera`. Publicación administrativa y consulta textual pendientes. |
+| **Accesos y Ocupación** | Sedes, intentos y movimientos de acceso, presencias y ocupación/caché derivadas. | Estructura HTTP. MongoDB configurado; persistencia y reglas de negocio pendientes. |
+| **Tienda** | Integrar la consulta de productos y stock. El catálogo y las existencias pertenecen a la distribuidora. | Estructura en Capas, JWT y pantalla. Sin base propia ni cliente externo; devuelve `503 INTEGRACION_PENDIENTE`. |
 
-## Propiedad de los datos y persistencia (D1, D3)
+Socios y Clases usan bases y usuarios PostgreSQL separados en una instancia local compartida; no hay acceso de un servicio a tablas ajenas. MongoDB tiene un replica set de un solo nodo, sin redundancia. El diseño de motores y restricciones se justifica en [D3](adr/ADR-003-persistencia.md); los límites vigentes, en [D1](adr/ADR-015-limites-con-tienda.md).
 
-Los servicios que persisten datos utilizan almacenamiento propio e independiente. Ningún servicio accede directamente a las tablas de otro. Tienda consulta los datos de su proveedor y no incorpora almacenamiento local:
+NGINX sirve el portal React y enruta las solicitudes por un único puerto local (`8080` o `GATEWAY_PORT`). La autenticación y los permisos se validan en los servicios. Las llamadas internas y la futura salida al proveedor no pasan por nuestro gateway.
 
-- **`Socios y Membresías` (PostgreSQL 17):** tablas `socios`, `membresias`, `solicitudes_membresia`, `empleados_externos` y `altas_empleados_idempotencia`.
-- **`Clases y Reservas` (PostgreSQL 17):** tablas `clases`, `reservas` y `lista_espera`. Restricciones de unicidad parcial (`uq_reserva_activa`) para impedir duplicados y bloqueos de fila (`FOR UPDATE`) para proteger el aforo del último cupo.
-- **`Accesos y Ocupación` (MongoDB 8.0 replica set):** almacenamiento previsto para sedes, movimientos e historial; el servicio todavía mantiene una estructura HTTP.
-- **`Tienda` (sin base de datos):** consulta el catálogo y stock de la distribuidora; no administra existencias propias ni conserva una copia local. Los límites vigentes de los cuatro microservicios están en [ADR-015](adr/ADR-015-limites-con-tienda.md).
+## Arquitectura interna e identidad
 
-## Preparación de Tienda - paso 6
+- **Clases, Hexagonal:** `app.ts` adapta HTTP; `application/reservas.service.ts` contiene casos de uso; `ports.ts` declara las interfaces; PostgreSQL, memoria y cliente HTTP de Socios son adaptadores. `server.ts` compone y arranca el trabajador de promociones.
+- **Socios, Capas:** HTTP (`app.ts`, `empleados.http.ts`) → servicios de aplicación (`services.ts`, `empleados.service.ts`) → repositorio. La criptografía y la configuración de JWT están en `security.ts`.
+- **Tienda, Capas:** HTTP/autenticación → servicio de consulta pendiente; todavía no tiene adaptador externo. Accesos conserva su diseño por eventos/proyección, sin implementarlo.
+- **Identidad:** JWT HS256 firmado con vencimiento configurable (una hora por defecto), rol y controles de propietario. Alta interna solo ADMIN; bootstrap local sin contraseña administrativa predeterminada nueva. El portal mantiene la sesión en memoria. [D2](adr/ADR-002-arquitectura-interna-de-servicios.md), [autenticación](adr/ADR-016-autenticacion-y-altas.md).
 
-La pestaña Tienda del portal del socio usa la misma sesión JWT para llamar a `GET /api/v1/tienda/productos` por el gateway. Esta ruta pertenece al gimnasio; no define ninguna ruta de la distribuidora. En el estado actual devuelve `503 INTEGRACION_PENDIENTE`, sin artículos ni cantidades, y la pantalla distingue ese estado de un error de red o sesión.
+## Comunicaciones y operaciones consistentes
 
-La estructura en Capas es `services/tienda/src/app.ts` → `services.ts`, con composición en `server.ts`. `GET /health`, publicado como `/health/tienda`, confirma el proceso con `estado: estructura` e `integracion: PENDIENTE_CONTRATO`. No se configura URL externa, credencial de proveedor, base, caché, broker ni volumen. La implementación del cliente y de la respuesta de productos depende del contrato real; el detalle y la información faltante están en [D9](adr/ADR-009-consumo-del-proveedor.md). La integración externa no se acredita con esta estructura.
+### Flujo principal: reservar una clase
 
-La recepción de empleados guarda socio, solicitud pendiente, referencia externa y resultado original en una transacción de la base `socios`. Los bloqueos por origen/clave y origen/empleado serializan los reintentos entre instancias; la unicidad de DNI/email impide conflictos con otras altas. No se crea una membresía y un error revierte toda el alta. El detalle está en [D3](adr/ADR-003-persistencia.md) y [D8](adr/ADR-014-contrato-empleados.md). El mock utiliza solo memoria. Tienda no cambia los motores existentes.
+1. El portal obtiene catálogo, reservas y espera propias con `GET /api/v1/reservas/clases` y Bearer JWT. Las consultas históricas `/api/v1/clases` conservan `X-API-Key` y el contrato anterior.
+2. Antes del inicio, `POST /api/v1/reservas` recibe `claseId` y, si se eligió, `ingresarEsperaSiLlena`. La identidad se toma del token; solo ADMIN puede indicar otro socio.
+3. Clases consulta en paralelo a Socios para ahora y para la fecha de clase, con `X-Service-Key`. Cada verificación tiene presupuesto de 3000 ms, incluido cuerpo y como máximo un reintento. Una respuesta desconocida produce indisponibilidad, no habilitación.
+4. La escritura bloquea primero la fila de la clase, vuelve a verificar inicio, duplicados, cupo y prioridad de espera y confirma la reserva o la espera voluntaria. Los índices únicos parciales respaldan las restricciones.
+5. Una cancelación anterior al inicio se guarda sin depender de Socios. Si hay espera, el cupo conserva esa prioridad. El trabajador valida al primero fuera del bloqueo y confirma la promoción atómicamente; si hay falla de red, conserva al candidato y reintenta. Una inhabilitación comprobada lo retira y permite evaluar al siguiente.
 
-## Flujo de clases y reservas vigente - paso 4
+El trabajador recupera el trabajo de las tablas persistidas al iniciar y cada 5 s por defecto, sin superponer pasadas en una instancia. Varias instancias pueden competir; la transacción comprueba nuevamente el estado. No hay una transacción distribuida entre las bases: las validaciones remotas son puntuales. Detalle en [D4 vigente](adr/ADR-017-consistencia-y-recuperacion-de-espera.md) y [D5](adr/ADR-005-comunicacion-entre-servicios.md).
 
-Este flujo corresponde al dominio propio, comprobado con memoria y con PostgreSQL/HTTP real. No describe el nuevo contrato de empleados.
+### Capacidad ofrecida: recepción de empleados
 
-1. **Consulta interna de clases y cupos:**
-   - El portal usa `GET /api/v1/reservas/clases` con Bearer JWT para obtener catálogo, reservas y espera propias. Los dos GET `/api/v1/clases` del contrato anterior se conservan con `X-API-Key`.
-   - `Clases y Reservas` calcula dinámicamente en PostgreSQL `cuposDisponibles = capacidad - COUNT(reservas activas)`.
-   - Responde con `Cache-Control: no-store` y cabeceras de traza W3C.
-2. **Solicitud de reserva:**
-   - El cliente envía `POST /api/v1/reservas` con `{ claseId }` y Bearer JWT. Se utiliza la identidad del token; solo ADMIN puede indicar otro `socioId`. La opción `ingresarEsperaSiLlena` es falsa salvo elección explícita.
-   - Clases verifica la membresía en el instante actual y al inicio de la clase mediante dos GET a Socios en paralelo, con credencial técnica y propagación de traza. Sin cobertura en alguno de los dos momentos no se confirma.
-   - Si la membresía está inactiva o vencida, retorna `422 MEMBRESIA_NO_HABILITADA`.
-3. **Confirmación transaccional:**
-   - Bajo una transacción PostgreSQL con `FOR UPDATE`, se verifica que el socio no tenga una reserva confirmada previa y que existan cupos libres.
-   - Si hay cupo, se inserta la reserva con estado `CONFIRMADA` (HTTP 201).
-   - Si la clase está llena, se ofrece ingreso voluntario a la lista de espera (HTTP 409 con opción de espera).
-4. **Cancelación y promoción automática:**
-   - Si un socio cancela antes del inicio (`POST /api/v1/reservas/:id/cancelar`), la cancelación se guarda localmente. Si hay espera, el cupo queda destinado al primero y la respuesta informa `reasignacionPendiente`.
-   - El trabajador consulta la membresía fuera del bloqueo y luego verifica atómicamente prioridad, cupo, inicio y duplicados. Si Socios no responde, conserva al primero y reintenta. Si se comprueba una inhabilitación, lo retira y evalúa al siguiente. El trabajo pendiente se recupera a partir de las tablas existentes incluso con otra instancia.
+Socios expone `POST /api/v1/integraciones/empleados`, contrato **1.0.1**, como reemplazo de la capacidad de clases asignada inicialmente. `X-API-Key` identifica el origen y `Idempotency-Key` delimita la repetición. Una transacción guarda socio sin contraseña, solicitud `PENDIENTE`, referencia externa y respuesta original. El replay devuelve esa respuesta; los conflictos no sobrescriben datos. El pago y la habilitación posterior no forman parte del POST.
 
-**Límites:** pagos/renovación/reactivación, el evento de suspensión que cancela reservas futuras, la resolución administrativa de solicitudes y acceso personal de empleados, el dominio de Accesos y el cliente externo de Tienda siguen pendientes. La prueba SQL de dos instancias y la de balanceo son verificaciones funcionales; no acreditan capacidad máxima ni SLO.
+El [contrato y sus ejemplos](contracts/README.md) y [D8 vigente](adr/ADR-014-contrato-empleados.md) describen campos, errores y versionado. Hay un mock separado en memoria; la implementación local usa PostgreSQL. Falta publicar una URL accesible y verificarla con el consumidor.
 
-## Balanceo y disponibilidad comprobada - paso 7
+### Capacidad consumida: Tienda
 
-NGINX conserva `least_conn` y resolución DNS dinámica para las dos réplicas de Clases. El gateway registra `upstream_addr`, `upstream_status` y `upstream_response_time`; Clases responde con `X-Instance-ID` y Compose informa la salud de cada contenedor. Estos datos permiten verificar distribución y estado según §2.3, página 2, sin inferir todas las réplicas a partir de una única consulta `/health/clases`.
+El portal llama por nuestro gateway a `GET /api/v1/tienda/productos` con JWT. Actualmente recibe `503 INTEGRACION_PENDIENTE`. La ruta es interna del gimnasio; no define la API de la distribuidora. La salud `/health/tienda` confirma solo la estructura HTTP.
 
-`npm run test:balanceo` construye una copia temporal del Compose con recursos propios y verifica distribución, último cupo, detención de una instancia, servicio estable desde la superviviente y reincorporación de un contenedor nuevo sin reiniciar NGINX. El reporte separa los errores durante la detección: en el cierre observado hubo cuatro HTTP 504 durante unos 3,3 s, seguidos de 40/40 lecturas correctas desde la superviviente; tras el reemplazo hubo 40/40 con distribución entre dos procesos.
+Tienda será quien llame al proveedor y adapte su contrato, sin stock ni base local. Falta recibir contrato, URL y autenticación para fijar rutas, modelo de productos, errores y políticas temporales. No se inventan cantidades ni una integración exitosa. [D9](adr/ADR-009-consumo-del-proveedor.md).
 
-La detección es pasiva por errores de upstream, complementada por DNS; las sondas de salud de Compose coordinan el inicio y exponen estado. No se configura una sonda activa HTTP de NGINX ni un despliegue redundante del gateway. Los parámetros, fuentes técnicas y límites están en [D12](adr/ADR-012-balanceo-de-carga.md); el reporte y la reproducción, en README. Esto no acredita un benchmark de carga ni disponibilidad de las bases compartidas.
+### Mensajería prevista
 
-## Trazabilidad distribuida y logs estructurados (D11)
+RabbitMQ está configurado. Se conserva el diseño `MembresiaActualizada` con Outbox en Socios, consumidor idempotente/Inbox en Clases y cola de mensajes fallidos. Publicador, consumidor y recuperación aún no están implementados; la suspensión posterior no cancela automáticamente reservas futuras todavía. [D5](adr/ADR-005-comunicacion-entre-servicios.md).
 
-- El código de Socios y Clases incorpora Pino y propagación de contexto mediante `tracing.ts`. La cobertura de campos y la validación entre procesos reales siguen pendientes de las correcciones de observabilidad.
-- `scripts/demostrar-traza-distribuida.mjs` usa aplicaciones y repositorios en memoria. Esa demostración aislada no valida una ejecución distribuida con PostgreSQL ni demuestra el nuevo POST de empleados.
+## Balanceo y observabilidad
+
+NGINX distribuye con `least_conn` entre dos instancias de Clases; usa DNS dinámico y detección pasiva de fallos. Compose comprueba salud y coordina el inicio, pero su marca `healthy` no configura una sonda activa de NGINX. `X-Instance-ID` identifica la réplica; los logs del proxy muestran upstreams, estados y tiempos. El ensayo comprobó continuidad y reemplazo sin reiniciar el gateway, con cuatro 504 transitorios durante detección. [D12](adr/ADR-012-balanceo-de-carga.md), [postmortem](POSTMORTEM.md).
+
+Socios y Clases emiten logs de negocio JSON con `trace_id`, `span_id` y padre. Clases propaga su contexto a las dos verificaciones HTTP de Socios; los servicios devuelven identificadores de traza. `npm run test:postgres` exige correlación, relación padre/hijo y reserva persistida entre instancias HTTP con puertos distintos. La demostración con `inject` es complementaria. Los campos de correlación entrantes de NGINX pueden estar vacíos si el cliente no los envía; no se afirma cobertura de todos los logs de infraestructura.
+
+Las métricas actuales son contadores HTTP/errores, uptime y conexiones ocupadas del pool. No hay tableros, alertas, histogramas ni backend de trazas todavía. La estrategia y objetivos propuestos están en [D11](adr/ADR-011-observabilidad.md); carga local y costos ilustrativos, en [D13](adr/ADR-013-capacidad-y-costos.md).
 
 ## Diagrama de contexto (C4 - Nivel 1)
+
+El contexto representa el alcance del sistema. Las funciones administrativas y de recepción no implementadas se identifican en la tabla de servicios y en las limitaciones.
 
 ```mermaid
 flowchart LR
@@ -95,9 +74,9 @@ flowchart LR
 
     sistema["🏋️ Sistema Integral de Gestión de Gimnasio<br/>(Plataforma de Microservicios)"]
 
-    socio -->|HTTPS / Web UI| sistema
-    admin -->|HTTPS / Web UI| sistema
-    recepcion -->|HTTPS / Web UI| sistema
+    socio -->|Web UI| sistema
+    admin -->|Web UI| sistema
+    recepcion -->|Web UI| sistema
     consumidor -->|POST /api/v1/integraciones/empleados<br/>X-API-Key e Idempotency-Key| sistema
     sistema -.->|Tienda: consulta de productos y stock<br/>Integración pendiente| proveedor
 ```
@@ -110,17 +89,17 @@ flowchart TB
     consumidor["Microservicio del grupo consumidor"] -->|POST de empleados<br/>Contrato operativo local| gateway
     
     subgraph backend["Backend Distribuido del Gimnasio"]
-        gateway["API Gateway & Frontend (NGINX 1.28)<br/>Balanceo least_conn · Trazas W3C · SPA Estática"]
+        gateway["API Gateway & Frontend (NGINX 1.28)<br/>Balanceo least_conn · Propaga traceparent · SPA estática"]
         
-        gateway -->|POST /api/v1/reservas<br/>GET /api/v1/clases| clases["Clases y Reservas (2 réplicas)<br/>Fastify + TypeScript · Hexagonal"]
+        gateway -->|Clases y reservas<br/>JWT; clave para GET histórico| clases["Clases y Reservas (2 réplicas)<br/>Fastify + TypeScript · Hexagonal"]
         gateway -->|GET /api/v1/socios/:id<br/>POST /api/v1/auth/*| socios["Socios y Membresías<br/>Fastify + TypeScript · Capas"]
         gateway -->|POST /api/v1/integraciones/empleados<br/>X-API-Key e Idempotency-Key| socios
         gateway -->|Comprobación de salud| accesos["Accesos y Ocupación<br/>Estructura HTTP · negocio pendiente"]
         gateway -->|GET /api/v1/tienda/productos · JWT<br/>503: integración pendiente| tienda["Tienda · estructura ejecutable<br/>Sin base de datos<br/>Cliente externo pendiente"]
         
-        clases -->|HTTP: consulta de habilitación<br/>Cliente existente; políticas por corregir| socios
+        clases -->|HTTP: consulta de habilitación<br/>Ahora y fecha de clase · X-Service-Key| socios
         clases --> dbClases[("Base de Datos Clases<br/>PostgreSQL 17<br/>clases, reservas, lista_espera")]
-        socios --> dbSocios[("Base de Datos Socios<br/>PostgreSQL 17<br/>socios, membresias")]
+        socios --> dbSocios[("Base de Datos Socios<br/>PostgreSQL 17<br/>socios, membresias,<br/>solicitudes y alta externa")]
         accesos -.->|Persistencia prevista| dbAccesos[("Base de Datos Accesos<br/>MongoDB 8.0 replica set configurado")]
         
         socios -.->|Diseño pendiente: Outbox y publicación| rabbitmq["RabbitMQ 4.1 configurado"]
@@ -130,9 +109,9 @@ flowchart TB
     tienda -.->|Consulta externa prevista<br/>Según contrato por recibir| distribuidora
 ```
 
-Las líneas discontinuas señalan capacidades previstas. El diseño, workspaces y Compose contienen cuatro microservicios desde el paso 6. La respuesta de productos de Tienda y su llamada externa se definirán con el contrato de la distribuidora, sin asignar ahora rutas externas ni datos de conexión. Los patrones de Socios y Clases se concretaron en el paso 4; Tienda prepara una estructura en Capas, sin repositorio ni adaptador externo todavía.
+Las líneas discontinuas indican integraciones previstas. El entorno local utiliza HTTP; HTTPS y publicación accesible se resolverán en el despliegue.
 
-## Diagrama de secuencia del flujo principal (Entrega 2)
+## Diagrama de secuencia del flujo principal
 
 ```mermaid
 sequenceDiagram
@@ -169,7 +148,21 @@ sequenceDiagram
     end
 ```
 
-## Registro de Decisiones Arquitectónicas (ADR)
+## Limitaciones conocidas y deuda técnica aceptada
+
+- **Dominio pendiente:** pagos/comprobantes, planes, renovación/reactivación, resolución de solicitudes, credenciales de empleados, publicación de clases, movimientos y ocupación de Accesos. El frontend no simula éxito de esas funciones.
+- **Integración externa:** Tienda aún no consume productos/stock y carece de test de contrato del proveedor. La integración debe incorporarse a un flujo importante (§4.1); su preparación interna no acredita ese requisito. Falta URL accesible y prueba conjunta de la capacidad propia.
+- **Búsqueda y caché:** FTS/GIN creado pero sin consulta textual; Redis/caché de negocio pendiente de implementación y medición comparativa.
+- **Mensajería:** broker configurado sin evento publicado/consumido, Inbox/Outbox ni DLQ; reservas futuras no se cancelan automáticamente por una suspensión posterior.
+- **Disponibilidad:** un gateway, una instancia PostgreSQL y MongoDB de un nodo. Dos réplicas HTTP no eliminan esos puntos de falla ni los errores durante detección. No hay despliegue multizona ni protección completa por circuit breaker/límite de concurrencia.
+- **Identidad:** Clases y Tienda validan el JWT hasta su vencimiento; no hay revocación inmediata ni refresh tokens. La configuración actual del POST admite un origen externo por entorno.
+- **Operación:** faltan tableros/alertas, prueba de carga sostenida y presupuesto definitivo. Las mediciones locales no acreditan SLO ni capacidad máxima. El postmortem registra un ensayo local, no la jornada completa con proveedor.
+- **Datos de demostración:** clases con fechas fijas y cuentas ficticias; los datos persistidos pueden diferir de los iniciales. No hay gestión versionada completa de migraciones ni política de purga de idempotencia.
+
+Estas limitaciones mantienen visibles los requisitos generales y de la presentación final pendientes (§6, páginas 8–9); no amplían el alcance funcional acordado.
+
+## Decisiones arquitectónicas
+
 
 | Decisión | Título | Estado | Documento |
 |---|---|---|---|

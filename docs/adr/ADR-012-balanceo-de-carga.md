@@ -1,11 +1,11 @@
 # D12 - Balanceo de carga
 
-**Estado:** decisión de NGINX y least_conn conservada; ensayo reproducible agregado en el paso 7. Resultado y límites registrados en README.
-**Fecha:** 12/10/2026; revisión del paso 7: 19/10/2026.
+**Estado:** NGINX y least_conn conservados; distribución, caída y reemplazo comprobados. Resultado y límites en el postmortem.
+**Fecha:** 12/10/2026; validación: 19/10/2026.
 
 **Origen:** sección 2.3, página 2: al menos un servicio con dos o más instancias, reconocimiento de indisponibilidad y distribución/estado comprobables por observabilidad. D12 y su inclusión en E2 corresponden a las secciones 5 y 6.3; documentación actualizada según sección 3, página 4.
 
-## Verificación reproducible del paso 7
+## Verificación reproducible
 
 ```sh
 npm run test:balanceo
@@ -21,7 +21,7 @@ El ensayo realiza:
 4. Detención de una réplica temporal, consultas durante la orden y registro de la ventana de detección, incluidos todos los errores. Se exige una muestra estable de cuarenta lecturas atendidas por la superviviente dentro del presupuesto del ensayo (30 s), conservando la reserva.
 5. Reemplazo de la instancia detenida, nuevas lecturas y comprobación de que ambas reciben tráfico sin reiniciar NGINX. También se registran las muestras durante la reincorporación.
 
-El tiempo de detección informado incluye las consultas de muestreo; no es un SLO ni una medición de latencia pura. Los contadores y errores corresponden a ese ensayo local. El resultado completo se imprime en JSON, sin tokens ni claves. El resumen medido se conserva en README.
+El tiempo de detección informado incluye las consultas de muestreo; no es un SLO ni una medición de latencia pura. Los contadores y errores corresponden a ese ensayo local. El resultado completo se imprime en JSON, sin tokens ni claves. El resultado medido y su análisis se conservan en [POSTMORTEM](../POSTMORTEM.md).
 
 ## Evidencia observable
 
@@ -36,7 +36,7 @@ El sistema expone servicios que pueden escalar horizontalmente. Se necesita un p
 
 ## Decisión
 
-Se conserva **NGINX 1.28** como gateway y balanceador HTTP, con **least_conn**, detección pasiva y resolución DNS dinámica. Compose sondea la salud de los procesos. El paso 7 valida esta decisión existente; no incorpora otro balanceador.
+Se conserva **NGINX 1.28** como gateway y balanceador HTTP, con **least_conn**, detección pasiva y resolución DNS dinámica. Compose sondea la salud de los procesos. La verificación utiliza esta configuración existente.
 
 ### 1. Servicio seleccionado y justificación
 
@@ -67,7 +67,7 @@ upstream socios_backend {
 
 - **Algoritmo seleccionado: Least Connections (`least_conn`):**
   - *Funcionamiento:* Elige la instancia con menos conexiones activas; en empate utiliza reparto ponderado por turnos. [Documentación oficial](https://nginx.org/en/docs/http/ngx_http_upstream_module.html#least_conn).
-  - *Justificación frente a Round Robin:* Una consulta paginada de búsqueda o una transacción de reserva con validación remota toma más tiempo que una comprobación simple de salud. Round Robin distribuye ciegamente en turnos fijos, lo que puede sobrecargar una instancia que esté procesando transacciones pesadas. `least_conn` equilibra la carga según el trabajo real en curso.
+  - *Justificación frente a Round Robin:* Una consulta paginada de búsqueda o una transacción de reserva con validación remota toma más tiempo que una comprobación simple de salud. Round Robin reparte por turnos; `least_conn` usa las conexiones activas como aproximación a la carga. No mide CPU ni garantiza un reparto igual de solicitudes.
 
 ### 3. Verificación de disponibilidad (Health Checks)
 
@@ -97,7 +97,7 @@ proxy_next_upstream_timeout 5s;
 
 ## Consecuencias
 
-- **Escalado previsto:** el número de réplicas puede cambiar mediante Compose y `resolve` permite actualizar direcciones. El ensayo del paso 7 comprueba dos instancias y el reemplazo de una; no prueba reparto sobre tres instancias ni un plazo instantáneo de incorporación.
+- **Escalado previsto:** el número de réplicas puede cambiar mediante Compose y `resolve` permite actualizar direcciones. El ensayo comprueba dos instancias y el reemplazo de una; no prueba reparto sobre tres instancias ni un plazo instantáneo de incorporación.
 - **Disponibilidad local limitada:** hay un solo gateway y bases compartidas. La redundancia de Clases no elimina esas dependencias; no se ha desplegado una solución multizona ni un balanceador gestionado en la nube.
 
-La revisión conserva tecnología, algoritmo y réplicas. Corrige las afirmaciones iniciales del 12/10 sobre memoria/rendimiento no medidos, sonda activa de NGINX y ausencia garantizada de errores. Las garantías actuales son las comprobaciones reproducibles descritas arriba.
+Las garantías se limitan a las comprobaciones reproducibles: la detección pasiva y el DNS no aseguran ausencia de errores durante la transición. El [postmortem](../POSTMORTEM.md) registra el impacto observado y acciones pendientes.

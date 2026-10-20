@@ -1,13 +1,13 @@
 # D2 - Arquitectura interna de los servicios
 
-**Estado:** patrones conservados y estructura de Socios/Clases implementada en el paso 4. Tienda tiene estructura propia desde el paso 6; su cliente externo y el dominio de Accesos siguen pendientes.
+**Estado:** patrones conservados e implementados en Socios/Clases. Tienda tiene estructura propia; su cliente externo y el dominio de Accesos siguen pendientes.
 **Fecha:** 12/10/2026; validación de estructura 19/10/2026.
 
 **Referencia:** sección 2.1, página 2 (al menos dos servicios con patrones internos diferentes), D2 en sección 5 y actualización documental en sección 3, página 4. Se mantienen Hexagonal y Capas; no se sustituye la decisión inicial.
 
 ## Contexto
 
-Cada uno de los microservicios del sistema (`Socios y Membresías`, `Clases y Reservas`, `Accesos y Ocupación`) debe resolver una problemática de negocio específica, interactuar con su respectivo motor de persistencia y comunicarse con otros servicios o clientes externos a través de HTTP y mensajería.
+Cada servicio resuelve una responsabilidad de negocio con dependencias internas reconocibles. Socios y Clases usan persistencia propia; Accesos la integrará y Tienda solo consultará al proveedor, sin una base local.
 
 Para asegurar mantenibilidad, facilidad de testing unitario y desacoplamiento de la infraestructura técnica (como bases de datos y frameworks web), es necesario definir el estilo arquitectónico interno y los patrones de diseño aplicados dentro de cada microservicio.
 
@@ -19,14 +19,14 @@ Para cumplir con el requisito de la sección 2.1 del enunciado (*"Al menos dos s
 |---|---|---|
 | **`Clases y Reservas`** | **Arquitectura Hexagonal (Ports & Adapters)** | `ReservasService` concentra reservas, espera, validación remota y recuperación. Depende de puertos propios; HTTP, PostgreSQL y memoria son adaptadores. Conserva las consultas de clases, que ya no son la capacidad ofrecida al otro grupo. |
 | **`Socios y Membresías`** | **Arquitectura en Capas (Layered Architecture)** | HTTP en `app.ts`/`empleados.http.ts` → casos de uso `AuthService`, `SociosService` y `EmpleadosService` → persistencia en `repository.ts`; `security.ts` ofrece operaciones criptográficas. El POST externo utiliza las mismas capas y PostgreSQL; el mock separado se conserva. |
-| **`Accesos y Ocupación`** | **Arquitectura Orientada a Eventos / Proyección de Lectura (CQRS-lite), prevista** | Diseño para separar registro de movimientos y lectura de ocupación. Actualmente solo tiene estructura HTTP; este paso no implementa esas reglas ni su proyección. |
+| **`Accesos y Ocupación`** | **Arquitectura Orientada a Eventos / Proyección de Lectura (CQRS-lite), prevista** | Diseño para separar registro de movimientos y lectura de ocupación. Actualmente solo tiene estructura HTTP; sus reglas y proyección siguen pendientes. |
 | **`Tienda`** | **Estructura en Capas, integración pendiente** | `app.ts` controla transporte/autenticación, `services.ts` representa la consulta no habilitada y `server.ts` arranca el proceso. Sin repositorio ni cliente externo mientras no exista contrato; no se incorpora un patrón nuevo distinto de los ya elegidos. |
 
 ### 1. Detalle de `Clases y Reservas`: Arquitectura Hexagonal (Ports & Adapters)
 
 ```text
 services/clases-reservas/src/
-├── types.ts                  # Núcleo de Dominio: entidades, invariantes y contratos de resultado
+├── types.ts                  # Entidades y contratos de resultado
 ├── ports.ts                  # Puertos propios IClaseRepository e ISociosClient
 ├── application/
 │   └── reservas.service.ts   # Casos de uso, reglas y recuperación; sin Fastify ni pg
@@ -69,12 +69,12 @@ services/socios-membresias/src/
 ## Alternativas consideradas y motivos de selección
 
 1. **Aplicar un único patrón idéntico en todos los microservicios (ej. Hexagonal pesada en todos o Transaction Script en todos):**
-   - *Motivo de rechazo:* Aplicar Arquitectura Hexagonal completa con múltiples puertos en servicios centrados en datos o eventos simples agrega código repetitivo (*boilerplate*), mientras que usar un *Transaction Script* plano en `Clases y Reservas` acoplaría las reglas de lista de espera y cupos directamente a SQL e impediría testear el contrato OpenAPI de forma aislada.
+   - *Motivo de rechazo:* Aplicar Arquitectura Hexagonal completa con múltiples puertos en servicios centrados en datos o eventos simples agrega código repetitivo (*boilerplate*), mientras que usar un *Transaction Script* plano en `Clases y Reservas` acoplaría las reglas de lista de espera y cupos directamente a SQL e dificultaría probar las reglas sin infraestructura.
 2. **Domain-Driven Design (DDD) táctico con Event Sourcing completo:**
    - *Motivo de rechazo:* Para el alcance del sistema, reconstruir el estado de cada socio desde eventos puros complejiza innecesariamente las consultas relacionales de vigencia. Se reservó el enfoque basado en eventos únicamente para el historial de accesos y la mensajería asíncrona entre servicios.
 
 ## Consecuencias
 
 - **Cumplimiento arquitectónico y adecuación al problema:** Cada microservicio utiliza el patrón que mejor resuelve su complejidad específica (Hexagonal donde hay orquestación e integraciones múltiples; Capas donde predomina la gestión transaccional de entidades).
-- **Verificación:** los casos de uso pueden probarse sin red ni SQL; `npm test` incluye contratos, autenticación, reglas, concurrencia e interfaz. `npm run test:postgres` comprueba por separado los adaptadores reales con dos instancias. Los resultados del cierre se registran en README, sin prometer duraciones de ejecución.
-- **Flexibilidad Operativa:** Facilita extender adaptadores (Redis, RabbitMQ, MongoDB) sin modificar las reglas de negocio ni la API pública.
+- **Verificación:** los casos de uso pueden probarse sin red ni SQL; `npm test` incluye contratos, autenticación, reglas, concurrencia e interfaz. `npm run test:postgres` comprueba por separado los adaptadores reales con dos instancias. La reproducción se documenta en README; las mediciones y sus límites están en D11–D13.
+- **Flexibilidad Operativa:** Permite sustituir adaptadores dentro de los puertos existentes; incorporar nuevas reglas o eventos puede requerir cambios de aplicación y contrato.

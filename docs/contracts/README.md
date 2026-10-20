@@ -2,9 +2,11 @@
 
 **Servicio propietario:** Socios y Membresías.
 
+Para iniciar y usar el portal, consultar las [instrucciones y usuarios de prueba del README principal](../../README.md#usuarios-de-prueba). Para inspeccionar las altas persistidas, seguir [Consultar PostgreSQL desde Docker](../../README.md#consultar-las-bases-de-datos). Esta guía se concentra en el contrato y sus pruebas.
+
 **Contrato:** [openapi-empleados-v1.yaml](openapi-empleados-v1.yaml), versión 1.0.1, OpenAPI 3.1.1.
 
-**Estado al 19/10/2026, paso 5:** POST persistente publicado por el gateway local y mock separado conservado. La URL accesible al otro grupo, su identidad operativa, credenciales compartidas y prueba conjunta siguen pendientes.
+**Estado:** POST persistente disponible por el gateway local y mock separado conservado. La URL accesible al otro grupo, su identidad operativa, credenciales compartidas y prueba conjunta siguen pendientes.
 
 Esta capacidad reemplaza la consulta de clases como integración ofrecida por asignación del profesor confirmada por el equipo. Su justificación está en [D8, ADR-014](../adr/ADR-014-contrato-empleados.md), que reemplaza [ADR-008](../adr/ADR-008-contrato-propio.md). El [contrato anterior de clases](openapi-v1.yaml) y sus pruebas se conservan como antecedentes; clases y reservas continúan como funciones del gimnasio.
 
@@ -48,7 +50,7 @@ Desde la raíz del proyecto:
 node scripts/iniciar.mjs
 ~~~
 
-Este comando construye el servicio con el contrato incluido en su imagen y publica `POST http://localhost:8080/api/v1/integraciones/empleados` (o el puerto `GATEWAY_PORT`). Las variables nuevas son:
+Este comando construye el servicio con el contrato incluido en su imagen y publica `POST http://localhost:8080/api/v1/integraciones/empleados` (o el puerto `GATEWAY_PORT`). La configuración de integración es:
 
 | Variable | Uso |
 |---|---|
@@ -147,11 +149,9 @@ npm run test:postgres
 
 La suite incluye 7 casos adicionales del endpoint operativo con el adaptador en memoria. La prueba PostgreSQL usa un contenedor efímero propio y HTTP real con dos instancias de Socios; comprueba 20 reintentos, unicidad concurrente, replay tras recrear el servicio y rollback total ante un fallo provocado. Ninguna de estas comprobaciones acredita una integración con el otro grupo ni una habilitación por pago.
 
-**Evidencia histórica del paso 2, 19/10/2026:** las 11 pruebas del mock y las 16 pruebas anteriores aprobaron mediante `npm test`. Una comprobación adicional inició el mock en un puerto temporal y verificó por HTTP 201, repetición y 409. El cierre actualizado del paso 5 se registra en README.
-
 ## Versionado y pendientes
 
 - La versión 1.0.0 fue el diseño inicial de la API de empleados. La versión 1.0.1 actualiza descripciones y servidores al estado operativo; conserva los mismos campos, códigos y comportamiento. El contrato anterior de clases mantiene su versión y rutas.
 - Cambios incompatibles requieren una nueva versión mayor y coordinación con el consumidor. Cambios compatibles incrementan la menor; correcciones documentales compatibles, el parche.
 - Todavía faltan identificación y datos de conexión del otro grupo, credenciales operativas y URL de publicación. El mock local no es la URL compartida requerida para la capacidad operativa.
-- El servicio Tienda, separado y sin una base de datos nueva, consumirá productos y stock de la distribuidora según [D1, ADR-015](../adr/ADR-015-limites-con-tienda.md). Su implementación y el contrato externo siguen pendientes; esta guía no inventa esa API.
+- El servicio Tienda, separado y sin una base de datos nueva, consumirá productos y stock de la distribuidora según [D1, ADR-015](../adr/ADR-015-limites-con-tienda.md). Su estructura propia está preparada, pero el cliente y el contrato externo siguen pendientes; esta guía no inventa esa API.

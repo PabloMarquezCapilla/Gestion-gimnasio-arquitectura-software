@@ -1,6 +1,6 @@
 # D4 - Consistencia y recuperación de la lista de espera
 
-**Estado:** aceptada e implementada en el paso 4, 19/10/2026. Reemplaza [ADR-004](ADR-004-consistencia-y-concurrencia.md).
+**Estado:** aceptada e implementada, 19/10/2026. Reemplaza [ADR-004](ADR-004-consistencia-y-concurrencia.md).
 
 **Referencias:** consistencia en sección 2.8, página 3; fallas de comunicación en sección 2.5, página 2; D4 e historia de decisiones en sección 5, páginas 6–7. El equipo confirmó que una cancelación debe aceptarse aunque Socios esté caído y que debe conservarse la prioridad FIFO.
 
@@ -25,8 +25,8 @@ La cancelación automática de reservas por una suspensión posterior de membres
 
 ## Verificación
 
-### Alta externa de empleados - paso 5
+### Alta externa de empleados
 
 Sin modificar la política de reservas, se concreta otra operación consistente dentro de Socios: el alta externa guarda socio, solicitud pendiente, referencia externa y resultado de idempotencia en una transacción PostgreSQL. Bloqueos consultivos por clave/empleado e índices únicos impiden duplicados entre instancias. Un replay se resuelve antes de comprobar duplicados de negocio; una solicitud nueva en conflicto revierte la transacción sin sobrescribir datos. La estructura y comprobaciones están en [D3](ADR-003-persistencia.md) y [D8](ADR-014-contrato-empleados.md). Se conserva esta decisión; no se reemplaza la política FIFO.
 
-Pruebas de aplicación y repositorio en `services/clases-reservas/test/reservas.test.mjs`, concurrencia del último cupo en `test/concurrencia.test.mjs` y flujo en `test/flujo-principal.test.mjs`. `npm run test:postgres` ejecuta HTTP real y dos instancias con pools independientes, comprueba el último cupo y la cancelación con caída/recuperación de Socios, y retira únicamente su contenedor efímero. El cierre verificado se registra en README.
+Pruebas de aplicación y repositorio en `services/clases-reservas/test/reservas.test.mjs`, concurrencia del último cupo en `test/concurrencia.test.mjs` y flujo en `test/flujo-principal.test.mjs`. `npm run test:postgres` ejecuta HTTP real y dos instancias con pools independientes, comprueba el último cupo y la cancelación con caída/recuperación de Socios, y retira únicamente su contenedor efímero. La reproducción se documenta en README; los resultados de caída y carga están en POSTMORTEM y D13.

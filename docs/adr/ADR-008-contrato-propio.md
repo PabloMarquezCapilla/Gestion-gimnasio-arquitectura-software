@@ -4,7 +4,7 @@
 
 **Fecha:** 07/10/2026 (diseño inicial y mock) | 12/10/2026 (actualización e implementación operativa sobre PostgreSQL).
 
-**Aclaración de evidencia del 19/10/2026:** las pruebas `contract.test.mjs` y `flujo-principal.test.mjs` citadas en este registro utilizan repositorios en memoria. Sus resultados no representan una validación exhaustiva de PostgreSQL. La consulta de clases continúa como función del gimnasio; la capacidad ofrecida al otro grupo pasa a ser el POST de empleados documentado en el sucesor.
+**Aclaración de evidencia del 19/10/2026:** las pruebas `contract.test.mjs` y `flujo-principal.test.mjs` citadas en este registro utilizan repositorios en memoria. Sus resultados no representan una validación exhaustiva de PostgreSQL. Las afirmaciones históricas de disponibilidad no acreditan un despliegue público; la URL compartida sigue pendiente en el sucesor. La consulta de clases continúa como función del gimnasio; la capacidad ofrecida al otro grupo pasa a ser el POST de empleados documentado en el sucesor.
 
 ## Contexto
 

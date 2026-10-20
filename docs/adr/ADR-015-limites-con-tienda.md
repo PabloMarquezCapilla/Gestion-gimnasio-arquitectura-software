@@ -1,6 +1,6 @@
 # D1 - Límites de servicios con Tienda
 
-**Estado:** diseño confirmado; estructura de Tienda ejecutable desde el paso 6. Consulta externa pendiente del contrato del proveedor.
+**Estado:** diseño confirmado; estructura de Tienda ejecutable. Consulta externa pendiente del contrato del proveedor.
 **Fecha:** 19/10/2026.
 **Reemplaza:** [ADR-001 - Límites de servicios y propiedad de los datos](ADR-001-limites-de-servicios.md).
 
@@ -16,7 +16,7 @@ Se mantienen los tres límites originales y se agrega Tienda al diseño:
 
 | Servicio | Responsabilidad y propiedad de datos |
 |---|---|
-| Socios y Membresías | Socios, planes, membresías, pagos y comprobantes. También será propietario de la referencia al empleado externo, de su solicitud pendiente y de la idempotencia del POST definido en [D8, ADR-014](ADR-014-contrato-empleados.md). |
+| Socios y Membresías | Socios, planes, membresías, pagos y comprobantes. También es propietario de la referencia al empleado externo, de su solicitud pendiente y de la idempotencia del POST definido en [D8, ADR-014](ADR-014-contrato-empleados.md). |
 | Clases y Reservas | Clases, capacidad, reservas, listas de espera e índice de búsqueda derivado. Sus consultas continúan como funciones del gimnasio. |
 | Accesos y Ocupación | Sedes, intentos de ingreso, egresos, ingresos abiertos, ocupación derivada y su caché. |
 | Tienda | Consulta e integración con el catálogo y stock de la distribuidora. No administra stock propio ni incorpora una base de datos local en el alcance acordado. Productos y existencias son propiedad del proveedor. |
@@ -35,7 +35,7 @@ El contrato, las rutas concretas y los datos de conexión de la distribuidora se
 
 ## Consecuencias y estado
 
-- Desde el paso 6, el diseño y la estructura ejecutable contemplan cuatro servicios. Tienda tiene workspace, imagen, Compose, salud y una sección en el portal del socio. No se incorpora almacenamiento local.
+- En la implementación actual, el diseño y la estructura ejecutable contemplan cuatro servicios. Tienda tiene workspace, imagen, Compose, salud y una sección en el portal del socio. No se incorpora almacenamiento local.
 - El contrato y mock de empleados pertenecen a Socios y Membresías; Tienda no intermedia ese alta.
 - El proveedor sigue sin identificación, contrato ni URL conocidos. Esa información está pendiente y no se simula como una integración real ya existente.
 - El equipo confirmó que todavía no dispone de esos datos. Por ello solo se prepara el recorrido interno portal → gateway → Tienda. La ruta interna `GET /api/v1/tienda/productos` exige la sesión existente y devuelve `503 INTEGRACION_PENDIENTE`; no define ni invoca una ruta de la distribuidora. El cliente externo y el modelo de productos se incorporarán con su contrato.

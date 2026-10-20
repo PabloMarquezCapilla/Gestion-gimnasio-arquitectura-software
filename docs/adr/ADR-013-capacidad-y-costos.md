@@ -1,12 +1,12 @@
 # D13 - Capacidad y costos
 
 **Estado:** línea base local reproducible y estimación ilustrativa; capacidad máxima y despliegue pendientes de dimensionar.
-**Fecha original:** 12/10/2026. **Revisión factual:** 19/10/2026.
+**Fecha original:** 12/10/2026. **Validación:** 19/10/2026.
 **Enunciado:** §5, D13, página 7; decisión requerida en §6.3, página 8.
 
-## Rectificación de la evidencia anterior
+## Contexto y criterio
 
-No se encontraron scripts ni resultados que respalden 482 RPS, p95 28,1 ms, un límite de 350–450 reservas/s o el presupuesto de USD 208 de la versión original. Esos números se retiran como evidencia. Se conserva en Git la historia del documento; esta revisión no aprueba una contratación ni un proveedor de nube.
+El análisis de capacidad debe apoyarse en resultados reproducibles, identificar límites y justificar alternativas de escalado. Se utiliza una línea base local y una estimación ilustrativa de infraestructura; todavía no hay un despliegue ni presupuesto definitivo elegidos.
 
 ## Prueba de carga reproducible
 
@@ -36,7 +36,7 @@ Primera alternativa: mantener transacciones cortas sin red bajo bloqueo, medir e
 
 ## Estimación ilustrativa de infraestructura
 
-Para poder discutir costos sin elegir aún el despliegue, se calcula un escenario educativo alternativo al anterior: una VM Linux con Docker Compose, gateway NGINX, los servicios del repositorio (Clases x2), PostgreSQL, MongoDB y RabbitMQ en el mismo host. No es alta disponibilidad entre máquinas ni una capacidad validada para producción.
+Para poder discutir costos sin elegir aún el despliegue, se calcula un escenario educativo: una VM Linux con Docker Compose, gateway NGINX, los servicios del repositorio (Clases x2), PostgreSQL, MongoDB y RabbitMQ en el mismo host. No es alta disponibilidad entre máquinas ni una capacidad validada para producción.
 
 Precios públicos consultados el 19/10/2026; USD sin impuestos, 730 horas/mes. Supuestos explícitos de cálculo, no necesidades del negocio confirmadas:
 

@@ -2,7 +2,7 @@
 
 **Estado:** diseño de caché conservado; Redis y caché de negocio pendientes. Exclusión de caché de cupos implementada.
 **Fecha original:** 12/10/2026. **Revisión factual:** 19/10/2026.
-**Enunciado:** §5, D7, página 7; decisión requerida en §6.3, página 8.
+**Enunciado:** §2.7, página 3; §5, D7, página 7; decisión requerida en §6.3, página 8.
 
 ## Contexto y decisión
 
@@ -25,6 +25,6 @@ Comparar consultas equivalentes con y sin caché: aciertos/fallos, p95 de latenc
 
 Se evaluó memoria local, pero requeriría invalidar cada réplica y podría dar valores diferentes. Redis agrega operación y otro punto de falla; se diferirá su incorporación hasta tener el flujo de ocupación y demostrar beneficio.
 
-## Rectificación
+## Consecuencias
 
-Se conserva el diseño y se corrigen sus afirmaciones de implementación. No hay evidencia de reducción del 80%, latencia menor de 2 ms ni fallback medido. E2 documenta D7; la implementación efectiva sigue pendiente para completar el sistema.
+Se agrega una dependencia prescindible para acelerar lecturas derivadas, con un costo de invalidación y operación que debe medirse. E2 documenta D7; la caché efectiva y su comparación antes/después siguen pendientes para §2.7.
