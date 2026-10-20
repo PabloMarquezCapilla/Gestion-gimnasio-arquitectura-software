@@ -6,11 +6,20 @@
   "workspaces": [
     "services/socios-membresias",
     "services/clases-reservas",
-    "services/accesos-ocupacion"
+    "services/accesos-ocupacion",
+    "services/tienda"
   ],
   "scripts": {
     "build": "npm run build --workspaces",
-    "test": "npm run build --workspace=@gimnasio/clases-reservas && node --test services/clases-reservas/test/contract.test.mjs",
+    "test": "npm run build && node --test",
+    "test:contrato-empleados": "npm run build --workspace=@gimnasio/socios-membresias && node --test services/socios-membresias/test/empleados-contract.test.mjs",
+    "mock:empleados": "npm run build --workspace=@gimnasio/socios-membresias && node services/socios-membresias/dist/empleados.mock.js",
+    "crear-admin": "node scripts/crear-admin.mjs",
+    "test:frontend": "node --test frontend/src/services/api.test.mjs",
+    "test:postgres": "npm run build && node scripts/verificar-postgres.mjs",
+    "test:balanceo": "node scripts/verificar-balanceo.mjs",
+    "frontend:dev": "npm --prefix frontend run dev",
+    "frontend:build": "npm --prefix frontend run build",
     "iniciar": "node scripts/iniciar.mjs"
   },
   "devDependencies": {

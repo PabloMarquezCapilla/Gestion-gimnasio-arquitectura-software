@@ -2,6 +2,8 @@
 
 Trabajo Práctico Integrador — Arquitectura de Software 2026
 
+**Guías:** [Inicio](#ejecutar-localmente) · [Usuarios de prueba](#usuarios-de-prueba) · [Consultar las bases](#consultar-las-bases-de-datos) · [Documentación](#documentación).
+
 ## Integrantes
 
 - Lorenzo Rossi
@@ -10,13 +12,13 @@ Trabajo Práctico Integrador — Arquitectura de Software 2026
 
 ## Dominio
 
-Sistema integral de gestión de gimnasios orientado a membresías, pagos y comprobantes internos, reserva de clases, control de acceso y ocupación de sedes.
+Sistema integral de gestión de gimnasios orientado a membresías, pagos y comprobantes internos, reserva de clases, control de acceso y ocupación de sedes. Incluye la recepción de empleados de otro grupo y la consulta de productos y stock de una distribuidora.
 
 ## Objetivo
 
 Construir una plataforma que permita gestionar el ciclo completo de un socio dentro de un gimnasio: alta, renovación y vigencia de membresías, registro de pagos y comprobantes internos, búsqueda y reserva de actividades con cupos limitados, control de ingreso y consulta de ocupación de las sedes.
 
-## Alcance preliminar
+## Alcance
 
 El sistema contemplará inicialmente:
 
@@ -30,6 +32,8 @@ El sistema contemplará inicialmente:
 - Control de acceso al gimnasio según el estado de la membresía.
 - Registro de ingresos y egresos por recepción desde la aplicación, sin dispositivos físicos y con validación de alternancia por socio y sede.
 - Consulta de ocupación actual de cada sede.
+- Recepción de empleados de otro grupo para crear socios con solicitud de membresía pendiente de pago.
+- Consulta de productos y stock de una distribuidora desde Tienda, sin compras ni reposición.
 
 ## Flujo principal
 
@@ -37,161 +41,190 @@ El sistema contemplará inicialmente:
 2. Solicita reservar antes del inicio de la clase.
 3. El sistema valida la habilitación actual de la membresía y su vigencia para la fecha de la clase, evita reservas confirmadas duplicadas y comprueba la disponibilidad respetando la prioridad de la lista de espera.
 4. Si se cumplen las condiciones y existe cupo para ese socio, se confirma la reserva. Si la clase está llena, el socio puede elegir ingresar a la lista de espera.
-5. Una cancelación anterior al inicio libera el cupo y activa la promoción automática por orden de inscripción, validando nuevamente la membresía de las personas en espera.
+5. Una cancelación anterior al inicio libera el cupo y activa la promoción automática por orden de inscripción, validando nuevamente la membresía de las personas en espera. Si Socios no responde, la cancelación se conserva y la promoción queda pendiente de reintento sin perder la prioridad.
 
-El caso de uso, las políticas confirmadas y los criterios de aceptación están documentados en [docs/ALCANCE_PRELIMINAR.md](docs/ALCANCE_PRELIMINAR.md#caso-de-uso-cu-01-reservar-una-clase).
+Las reglas de negocio, exclusiones y criterios de aceptación están en [ALCANCE_PRELIMINAR.md](docs/ALCANCE_PRELIMINAR.md). El dominio fue aprobado por la cátedra. Las funcionalidades del alcance que aún no tienen backend se identifican a continuación.
 
-## Reglas de negocio para la primera versión
+## Estado de implementación
 
-- Membresías vigentes y habilitadas para reservar y acceder; las altas y renovaciones se habilitan al confirmar el pago correspondiente.
-- Reservas sin duplicados ni exceso de capacidad, con cancelaciones antes del inicio y una lista de espera voluntaria con promoción automática por orden de inscripción.
-- Pagos y comprobantes internos sin duplicación; accesos registrados por recepción con ingresos y egresos alternados por socio y sede.
-
-Las reglas completas, las exclusiones y los criterios de aceptación se encuentran en [docs/ALCANCE_PRELIMINAR.md](docs/ALCANCE_PRELIMINAR.md).
-
-La división preliminar en microservicios, sus responsabilidades, la propiedad de los datos y los diagramas se encuentran en [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Su justificación está en [D1](docs/adr/ADR-001-limites-de-servicios.md).
-
-La capacidad seleccionada para otro grupo es la **consulta de clases y cupos disponibles**. Su contrato inicial OpenAPI, versión `1.0.0`, y sus ejemplos están en [docs/contracts/README.md](docs/contracts/README.md); la decisión se registra en [D8](docs/adr/ADR-008-contrato-propio.md). Hay un mock local con datos ficticios. El consumidor todavía no fue asignado; la implementación real y su URL pública están pendientes.
-
-Las propuestas iniciales de persistencia y comunicación están en [D3](docs/adr/ADR-003-persistencia.md) y [D5](docs/adr/ADR-005-comunicacion-entre-servicios.md), requeridas para la Entrega 1 en la sección 6.2, página 8 del enunciado.
-
-## Necesidades arquitectónicas identificadas
-
-El dominio fue ampliado para que los requisitos técnicos del trabajo surjan de necesidades reales del negocio:
-
-- **Base de datos relacional:** membresías, planes, pagos, comprobantes internos, clases y reservas, donde se requieren relaciones, integridad y transacciones.
-- **Base de datos no relacional:** historial de accesos y eventos de asistencia, orientado a alto volumen de registros.
-- **Motor de búsqueda:** búsqueda de clases con paginación, filtros y ordenamiento.
-- **Caché:** lecturas frecuentes como ocupación actual de las sedes y otros datos de consulta repetitiva.
-- **Consistencia y concurrencia:** reserva del último cupo disponible y procesamiento idempotente de pagos.
-- **Mensajería asíncrona:** cambios de membresía que permiten cancelar reservas futuras afectadas y reasignar sus cupos.
-
-## Operación crítica preliminar
-
-La reserva de una clase con cupos limitados será una de las operaciones críticas del sistema. Si dos usuarios intentan reservar el último cupo al mismo tiempo, el sistema deberá garantizar que solo uno obtenga la reserva y que nunca se supere la capacidad máxima.
-
-## Estructura inicial y relación con el enunciado
-
-| Archivos | Para qué sirven | Requisito |
+| Componente | Disponible | Pendiente |
 |---|---|---|
-| `services/` | Tres procesos HTTP independientes; Clases y Reservas incluye el mock. | Sección 6.2, página 8: estructura inicial de servicios y dependencias. |
-| `package.json`, `package-lock.json`, `tsconfig*.json` | Declaran dependencias, fijan versiones y permiten compilar TypeScript. | Soporte de la estructura inicial; estos nombres y tecnologías son decisiones del grupo. |
-| `compose.yaml`, `infra/`, `scripts/iniciar.mjs`, `.env.example`, `.dockerignore`, `.gitattributes` | Construyen los servicios, inician las dependencias, crean credenciales locales y permiten ejecutar en Windows y Linux. | Sección 6.2, página 8, y puesta en marcha automatizada del punto 2.12, página 4. |
-| `services/clases-reservas/test/contract.test.mjs` | Comprueba respuestas, autenticación, filtros y errores del mock contra OpenAPI. | Verificación del hito «Diseño y contrato con mock», sección 6.2, páginas 7–8; no es un entregable adicional exigido. |
+| Socios y Membresías | Login JWT, permisos, altas administrativas, consulta de membresías y POST persistente de empleados. | Planes/pagos/comprobantes, renovación/reactivación y resolución administrativa de solicitudes; acceso personal de empleados recibidos. |
+| Clases y Reservas | Catálogo por sede/fechas, reservas, cancelación, espera FIFO y recuperación de promociones; PostgreSQL y dos réplicas. | Publicación administrativa de clases, consulta textual FTS y cancelación de reservas por cambios posteriores de membresía. |
+| Accesos y Ocupación | Estructura HTTP y MongoDB configurado. | Movimientos, ocupación, persistencia de negocio y caché. |
+| Tienda | Servicio y sección web con JWT; informa `503 INTEGRACION_PENDIENTE`. | Contrato, URL, autenticación y consumo real de la distribuidora. |
+| Gateway y portal | NGINX, rutas, portal React, balanceo y logs de destinos. | Despliegue público y frontend completo de los flujos pendientes. |
 
-Se usa **Node.js 22 LTS, TypeScript y Fastify**. Es una elección para comenzar con una estructura pequeña y APIs tipadas; el enunciado no impone un lenguaje ni un framework. PostgreSQL, MongoDB y RabbitMQ siguen D3 y D5. NGINX dirige las consultas al servicio de Clases y Reservas y permite verificar los tres procesos desde un punto local. El gateway actualiza las direcciones de los servicios mediante DNS interno: Docker puede cambiar sus IP al recrearlos, según su [documentación de redes](https://docs.docker.com/compose/how-tos/networking/); se usa la [resolución dinámica de NGINX](https://nginx.org/en/docs/http/ngx_http_upstream_module.html#server) para evitar conservar una dirección anterior.
+La capacidad ofrecida es **POST `/api/v1/integraciones/empleados`**, de Socios y Membresías. El consumidor envía ID externo, DNI, nombre y email; se crea un socio y una solicitud `PENDIENTE`, sin membresía ni contraseña. `X-API-Key` identifica el origen e `Idempotency-Key` evita duplicar el alta. Contrato **1.0.1**, ejemplos y mock en [docs/contracts/README.md](docs/contracts/README.md). Reemplaza a clases como capacidad compartida; sus consultas siguen disponibles para el gimnasio.
+
+**Acceso desplegado:** todavía no hay URL pública acordada ni prueba conjunta con los otros grupos. La implementación está verificada localmente. La publicación accesible requerida en §4.1 y el despliegue de la presentación final siguen pendientes; no se considera completa la integración entre grupos.
+
+## Arquitectura y estructura
+
+Se utiliza Node.js 22, TypeScript y Fastify; React/Vite para el portal y NGINX como entrada. Clases aplica Hexagonal y Socios, Capas. PostgreSQL 17 está integrado; MongoDB 8.0 y RabbitMQ 4.1 están configurados, sin flujo de Accesos ni eventos de dominio operativos. Redis es una propuesta pendiente.
 
 ```text
 services/
-  socios-membresias/     # Estructura HTTP; funciones de negocio pendientes
-  clases-reservas/       # Estructura HTTP y mock del contrato
-  accesos-ocupacion/     # Estructura HTTP; funciones de negocio pendientes
-infra/
-  node/                 # Dockerfile común para construir cada servicio
-  postgres/             # Bases y usuarios separados
-  mongo/                # Replica set local y usuario de Accesos
-  gateway/              # Rutas de entrada
-scripts/iniciar.mjs      # Inicio automatizado
+  socios-membresias/     # Cuentas, habilitación y recepción de empleados
+  clases-reservas/       # Catálogo, reservas y espera
+  accesos-ocupacion/     # Estructura; dominio pendiente
+  tienda/               # Estructura; proveedor pendiente
+frontend/               # Portal React
+infra/                  # Imágenes, gateway e inicializadores de dependencias
+scripts/                # Inicio, bootstrap administrativo y verificaciones
 ```
+
+Responsabilidades, propiedad de datos, diagramas y limitaciones: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md). Las tecnologías son decisiones del grupo; el enunciado no exige un framework concreto.
 
 ## Ejecutar localmente
 
-### Requisitos
+### Requisitos e inicio
 
-- **Node.js 22 LTS**. Verificar que `node --version` comience con `v22`. El proyecto rechaza otras versiones para que el entorno local y las imágenes utilicen la misma familia.
-- **Docker Desktop actualizado**, iniciado y configurado para utilizar contenedores Linux.
-- **Docker Compose v2 o posterior**, disponible como `docker compose` dentro de Docker Desktop.
-
-En macOS, Node.js 22 puede instalarse con `brew install node@22`. Si existe otra versión vinculada, se puede seleccionar para la terminal actual sin reemplazarla globalmente:
-
-```sh
-export PATH="$(brew --prefix node@22)/bin:$PATH"
-node --version
-```
-
-En Windows se puede utilizar el instalador oficial de Node.js 22 LTS o un administrador de versiones. Docker Desktop debe estar en modo de contenedores Linux. En PowerShell, comprobar:
+- Node.js **22**, Docker Desktop iniciado con contenedores Linux y Docker Compose v2 o posterior.
+- Ejecutar desde `Gestion-gimnasio-arquitectura-software`, donde están `package.json` y `compose.yaml`.
 
 ```powershell
 node --version
-docker info
 docker compose version
+npm run iniciar
 ```
 
-### Inicio
+El inicio automatizado valida el entorno, genera las credenciales locales ausentes, construye el portal y los cuatro servicios e inicia las dependencias. La primera ejecución necesita Internet. Para iniciar el entorno completo no hace falta instalar las bases ni paquetes npm en Windows: las imágenes realizan su instalación. Las pruebas locales sí requieren las dependencias indicadas más abajo.
 
-Desde la raíz del repositorio, tanto en macOS como en Windows:
+El script conserva `.env`. Si ya existen volúmenes pero falta ese archivo, recuperar el original; cambiar las claves no actualiza las credenciales persistidas. `.env` no se publica; `.env.example` contiene la configuración de referencia. La única entrada publicada es `localhost:8080`, configurable mediante `GATEWAY_PORT`.
 
-```sh
-node scripts/iniciar.mjs
-```
-
-El comando comprueba Node.js, Docker Engine, contenedores Linux, Docker Compose y la configuración de Compose. Después construye los tres servicios e inicia PostgreSQL 17, MongoDB 8.0, RabbitMQ 4.1 y NGINX 1.28 respetando sus dependencias. La primera ejecución necesita Internet para descargar imágenes y paquetes. Los parches de las imágenes siguen las etiquetas de esas familias; las dependencias npm se fijan en `package-lock.json`.
-
-La preparación de PostgreSQL se ejecuta como un paso idempotente después de que el motor está saludable. Esto permite crear las bases y usuarios en un volumen nuevo y completar una inicialización anterior interrumpida sin eliminar datos. MongoDB incluye la configuración de compatibilidad requerida por los kernels Linux recientes de Docker Desktop. No se necesita cambiar permisos de archivos ni utilizar un Compose alternativo.
-
-El script conserva el `.env` existente. **Guardar ese archivo mientras se usen los mismos volúmenes**: las credenciales de las bases y del broker se establecen al inicializarlos. Si hay volúmenes previos y falta `.env`, el script pide recuperar el original y no reemplaza los datos. No subir `.env` al repositorio; `.env.example` contiene solo los nombres de las variables. Las claves generadas son hexadecimales, compatibles con las URLs de conexión.
-
-El único puerto publicado es `localhost:8080`. Puede cambiarse con `GATEWAY_PORT` en `.env`.
-
-| URL local | Resultado |
+| Acceso local | Uso |
 |---|---|
-| `http://localhost:8080` | Página de estado local de los tres microservicios y acceso a sus comprobaciones. |
-| `http://localhost:8080/api/v1/clases` | Listado del mock; exige `X-API-Key`. |
-| `http://localhost:8080/api/v1/clases/clase-demo-001` | Detalle ficticio; exige `X-API-Key`. |
-| `http://localhost:8080/health/socios` | Proceso de Socios y Membresías iniciado. |
-| `http://localhost:8080/health/clases` | Proceso de Clases y Reservas iniciado, modo mock. |
-| `http://localhost:8080/health/accesos` | Proceso de Accesos y Ocupación iniciado. |
+| [http://localhost:8080](http://localhost:8080) | Portal del socio y administración. |
+| [http://localhost:8080/consola.html](http://localhost:8080/consola.html) | Consola técnica de clases, reservas y trazas. |
+| `/health/socios`, `/health/clases` | Salud del proceso y conectividad con PostgreSQL. |
+| `/health/accesos`, `/health/tienda` | Salud de las estructuras HTTP; no acredita negocio ni proveedor conectado. |
+| `/metrics/socios`, `/metrics/clases` | Métricas básicas compatibles con Prometheus. |
 
-Los endpoints de salud indican que los procesos responden; no afirman que el negocio esté implementado o que los servicios ya usen las bases. MongoDB tiene un replica set de un nodo para permitir transacciones posteriores, sin redundancia. Las bases y RabbitMQ se inician y quedan configurados; sus modelos, conexiones desde el código y flujos se implementarán en los siguientes hitos.
+Las rutas de salud son decisiones operativas para comprobar disponibilidad, no reglas de negocio. La configuración local usa HTTP; HTTPS y la URL compartida deben resolverse al publicar.
 
-### Probar el mock en PowerShell
+### Usuarios de prueba
 
-La clave local es `CAPACIDAD_API_KEY` de `.env`. Este ejemplo la utiliza sin mostrarla:
+
+Las siguientes cuentas están definidas en `services/socios-membresias/src/repository.ts`. Todas tienen rol **SOCIO** y contraseña inicial ficticia **`socio123`**:
+
+| DNI | Nombre | Email | Membresía inicial |
+|---|---|---|---|
+| `11111111` | Juan Pérez | `juan.perez@example.com` | Habilitada, del 01/01/2026 al 31/12/2027. |
+| `22222222` | María Gómez | `maria.gomez@example.com` | Habilitada, del 01/01/2026 al 31/12/2027. |
+| `33333333` | Lucas Silva | `lucas.silva@example.com` | Habilitada, del 01/01/2026 al 31/12/2027. |
+| `44444444` | Pedro Vencido | `pedro.vencido@example.com` | Vencida desde 2025. |
+| `55555555` | Ana Suspendida | `ana.suspendida@example.com` | Suspendida. |
+
+La inicialización incorpora las cuentas de demostración faltantes; no restablece una contraseña ya guardada ni reemplaza una membresía existente del mismo identificador. Si se modificaron esos datos, su estado puede diferir de esta tabla. La habilitación también depende de la fecha de la clase.
+
+**Administrador:** no se genera una nueva cuenta ADMIN con contraseña predeterminada. Si todavía no hay una cuenta administrativa elegida por el equipo, ejecutar con el entorno iniciado:
 
 ```powershell
-$apiKey = (Select-String -LiteralPath .env -Pattern '^CAPACIDAD_API_KEY=').Line.Split('=', 2)[1]
-Invoke-RestMethod -Uri 'http://localhost:8080/api/v1/clases?sedeId=sede-demo-01' -Headers @{ 'X-API-Key' = $apiKey }
+npm run crear-admin
 ```
 
-El mock devuelve cuatro clases ficticias y responde con `X-Mock: true`. Permite probar ambos endpoints, filtros, paginación y errores; no crea reservas ni obtiene cupos de una base real. La documentación de integración está en [docs/contracts/README.md](docs/contracts/README.md).
+Ingresar DNI, nombre, email, contraseña y confirmación. Para acceder después, usar esos datos. El comando rechaza un DNI/email existente sin sobrescribirlo. Las cuentas administrativas anteriores se conservan; las contraseñas reales no se documentan en el repositorio.
 
-Para verificar el contrato y compilar fuera de Docker:
+### Comprobar el uso del portal
 
-```sh
-npm ci --ignore-scripts
-npm run build
-npm test
-```
+| Prueba | Resultado esperado |
+|---|---|
+| Contraseña incorrecta | Error; no se inicia sesión. |
+| Ingresar como Juan y reservar una clase futura con cupo | Perfil propio y reserva confirmada; un cupo menos. No se permite duplicarla. |
+| Cancelar antes del inicio | Reserva cancelada; si hay espera, promoción automática recuperable. |
+| Elegir entrar a la espera de una clase llena | Espera registrada solo por elección del socio; no se confirma sin cupo. |
+| Reservar como Pedro o Ana | Rechazo por membresía vencida/suspendida. |
+| Crear socio como ADMIN | Cuenta SOCIO sin membresía; se conserva la sesión del administrador. DNI/email repetidos se rechazan. |
+| Abrir Tienda o consultar pagos/reactivación | Se muestran los pendientes; no se simulan productos, pagos ni habilitaciones. |
 
-Para consultar el estado, revisar logs y detener el entorno conservando los datos:
+El JWT se guarda en memoria: recargar la página o recibir un 401 requiere nuevo login. En una base nueva, Yoga del 12/11/2026 tiene tres cupos y Pilates del mismo día está llena; los movimientos cambian esos valores. Las fechas de demostración son fijas: las clases iniciadas rechazan nuevas reservas, espera y cancelaciones.
 
-```sh
+Para probar el POST de empleados, usar el [ejemplo operativo PowerShell](docs/contracts/README.md#ejemplo-operativo-en-powershell): alta nueva 201, misma clave/cuerpo mismos IDs, clave reutilizada con otros datos 409 y credencial inválida 401. Ese POST no habilita membresías ni permite iniciar sesión por el empleado.
+
+### Estado, logs y detención
+
+```powershell
 docker compose ps
-docker compose logs
-docker compose down
+docker compose logs --tail 50
+docker compose stop
 ```
 
-Volver a ejecutar `node scripts/iniciar.mjs` reinicia el entorno con la misma configuración y los mismos volúmenes.
+Los datos se conservan al detener el entorno. `npm run iniciar` vuelve a iniciarlo. Si falla el arranque: comprobar Docker en modo Linux, Node 22, puerto libre y correspondencia de `.env` con los volúmenes. Para revisar inicializadores: `docker compose logs --no-color postgres-init mongo-init mongodb rabbitmq`.
 
-### Resolución de problemas
+## Consultar las bases de datos
 
-- **“Se necesita Node.js 22 LTS”**: la terminal está utilizando otra versión. Activar Node.js 22, comprobar `node --version` y repetir el comando.
-- **“Docker no está disponible”**: iniciar Docker Desktop y esperar a que `docker info` responda. En Windows, confirmar que se estén utilizando contenedores Linux.
-- **Credenciales administradoras de PostgreSQL rechazadas o clave de MongoDB distinta**: el `.env` no corresponde a los volúmenes existentes. Recuperar el `.env` original; no regenerar claves ni borrar volúmenes.
-- **Puerto ocupado**: cambiar `GATEWAY_PORT` en `.env` por un puerto local libre y volver a iniciar.
-- **Inicialización incompleta**: el comando muestra automáticamente el estado y los últimos registros de PostgreSQL, MongoDB y RabbitMQ. También pueden consultarse sin exponer el contenido de `.env`:
+Con el entorno iniciado, abrir PowerShell en la raíz. Entrar al cliente de PostgreSQL del contenedor:
 
-```sh
-docker compose ps --all
-docker compose logs --no-color postgres-init mongo-init mongodb rabbitmq
+```powershell
+docker compose exec postgres psql -U postgres -d socios
 ```
 
-Los scripts del repositorio se almacenan con saltos de línea LF mediante `.gitattributes`, incluidos los clones realizados desde Windows.
+El rol `postgres` es administrativo local; cada servicio utiliza su propio usuario. Cuando aparezca `socios=#`, los comandos siguientes se ejecutan **dentro de psql**, no en PowerShell:
 
-## Estado
+```text
+\pset pager off
+\dt
+```
 
-Dominio aprobado; alcance, D1, D8 y versiones iniciales de D3 y D5 documentados. Estructura de los tres servicios y mock local preparados — 07/10/2026. Entrega 1 pendiente de revisión final del grupo.
+Listar tablas y consultar socios, membresías y altas externas sin mostrar hashes:
 
-Verificación local de esta estructura: compilación de los tres servicios, nueve pruebas del contrato, diez comprobaciones HTTP a través del gateway, autenticación y permisos de las dependencias, y arranque/reinicio conservando `.env` y volúmenes. Estas comprobaciones verifican la estructura y el mock, no los flujos de negocio pendientes.
+```sql
+SELECT socio_id, dni, nombre, email, rol, estado FROM socios;
+SELECT membresia_id, socio_id, tipo_plan, estado, fecha_inicio, fecha_fin FROM membresias;
+SELECT solicitud_id, socio_id, estado FROM solicitudes_membresia;
+SELECT origen, empleado_externo_id, socio_id FROM empleados_externos;
+```
 
-No hay todavía un despliegue público de la capacidad real ni integración con otros grupos. Su URL se documentará cuando exista. El frontend, los flujos de negocio y las demás decisiones corresponden a los siguientes hitos del enunciado.
+Cambiar a la base propia de Clases:
+
+```text
+\c clases
+\pset pager off
+\dt
+```
+
+```sql
+SELECT clase_id, nombre, sede_id, inicio, capacidad FROM clases;
+SELECT reserva_id, clase_id, socio_id, estado FROM reservas;
+SELECT espera_id, clase_id, socio_id, orden, estado FROM lista_espera;
+```
+
+Al reservar y luego cancelar desde la web, el registro pasa de `CONFIRMADA` a `CANCELADA`; no se borra. Para salir de psql, escribir `\q`. MongoDB está preparado, pero Accesos aún no persiste movimientos. Tienda no tiene base propia.
+
+## Pruebas y evidencia
+
+Instalar las dependencias locales antes de compilar o ejecutar las pruebas:
+
+```powershell
+npm ci --ignore-scripts
+npm --prefix frontend ci --ignore-scripts
+```
+
+| Comando | Qué comprueba |
+|---|---|
+| `npm test` | Compilación de los cuatro servicios y reglas/contratos con adaptadores en memoria; incluye API del frontend. Última verificación: 68/68, sin omitidas, 19/10/2026. |
+| `npm run frontend:build` | TypeScript y bundle de producción del portal. |
+| `npm run test:contrato-empleados` | Contrato y mock separado de empleados (11 pruebas). |
+| `npm run test:postgres` | HTTP real, PostgreSQL efímero, dos instancias por servicio, permisos, reintentos/rollback de empleados, último cupo, FIFO con fallas, traza y línea base de carga. |
+| `npm run test:balanceo` | Compose completo aislado, dos réplicas, distribución, escrituras concurrentes y caída/reemplazo sin reiniciar el gateway. |
+
+Los dos últimos requieren Docker, usan recursos temporales propios, no cargan `.env` y los retiran al terminar. Los tests en memoria no acreditan durabilidad. Para desarrollar solo el portal: `npm run frontend:dev`, manteniendo el backend iniciado.
+
+Los resultados de carga y sus límites están en [D13](docs/adr/ADR-013-capacidad-y-costos.md); la primera traza, en [D11](docs/adr/ADR-011-observabilidad.md); la caída controlada y sus cuatro 504 transitorios durante detección, en [POSTMORTEM](docs/POSTMORTEM.md). La operación estable posterior y la recuperación se verificaron; no se promete una transición sin errores ni capacidad máxima.
+
+## Ramas, revisión e integración
+
+Los cambios de esta entrega se preparan en `entrega-2` y se revisan mediante PR hacia `main`. Antes de integrar, revisar diferencias, pruebas y coherencia documental. La versión evaluable debe quedar en `main` (§2.12). Las credenciales locales permanecen fuera de Git.
+
+## Documentación
+
+| Documento | Contenido y referencia del enunciado |
+|---|---|
+| [Alcance](docs/ALCANCE_PRELIMINAR.md) | Funcionalidades, reglas y criterios de aceptación; equivalente a SPEC (§3). |
+| [Arquitectura](docs/ARCHITECTURE.md) | Servicios, datos, comunicaciones, diagramas, decisiones y limitaciones (§3, §6.2–6.3). |
+| [ADR](docs/ARCHITECTURE.md#decisiones-arquitectónicas) | D1–D13 y decisiones adicionales; los reemplazados conservan su historia (§5). |
+| [Contrato e integración](docs/contracts/README.md) | Capacidad ofrecida, versión, ejemplos, errores, autenticación e idempotencia (§4.1). |
+| [Postmortem](docs/POSTMORTEM.md) | Ensayo local de caída: impacto, secuencia, detección, respuesta, causa y mejoras (§2.9 y §3). |
+
+E1 (§6.2) queda representada por alcance, arquitectura/diagramas, límites, estructura y contrato/mock; E2 (§6.3), por el flujo operativo, capacidad ofrecida local, PostgreSQL, logs/traza y ADR actualizados. D9 conserva pendientes de contrato externo y la publicación compartida aún debe coordinarse. La implementación completa de búsqueda, caché, mensajería, Accesos y frontend, además del despliegue y la integración real, sigue pendiente para los requisitos generales y la presentación final (§6, páginas 8–9).

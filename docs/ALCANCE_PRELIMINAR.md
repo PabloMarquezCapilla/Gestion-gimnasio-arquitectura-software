@@ -1,8 +1,8 @@
-# Alcance inicial - Entrega 1
+# Alcance del sistema
 
-Este documento es la primera versión del alcance solicitada para la Entrega 1: funcionalidades, reglas de negocio y criterios de aceptación. Las políticas de negocio fueron confirmadas durante la revisión con el grupo. Se documenta el sistema previsto; la implementación de sus funcionalidades corresponde a los siguientes hitos.
+Este documento registra las funcionalidades, reglas de negocio y criterios de aceptación del dominio aprobado por la cátedra. Conserva el alcance de E1 e incorpora las integraciones asignadas y las reglas confirmadas por el equipo. Es el artefacto equivalente a SPEC previsto en §3, página 4.
 
-El dominio del gimnasio está aprobado por la cátedra. La elección de tecnologías y la coordinación entre servicios se documentarán en la arquitectura y sus ADR.
+El alcance describe el sistema objetivo; no implica que todas sus funciones estén implementadas. El estado disponible y sus limitaciones se mantienen en [ARCHITECTURE.md](ARCHITECTURE.md#limitaciones-conocidas-y-deuda-técnica-aceptada). Las integraciones siguen §4.1, páginas 5–6; los campos y políticas concretos son acuerdos del proyecto.
 
 ## Problema
 
@@ -10,16 +10,24 @@ Un gimnasio necesita centralizar la administración de sus socios y, al mismo ti
 
 Una solución limitada únicamente a un CRUD de membresías no alcanza para representar estos flujos. Por eso, el dominio se amplía a un sistema integral de gestión del gimnasio.
 
-## Actores preliminares
+## Actores
 
 ### Socio
-Puede consultar su membresía, buscar clases, reservar o cancelar actividades, elegir ingresar a una lista de espera y consultar el estado de sus operaciones.
+Puede consultar su membresía, buscar clases, reservar o cancelar actividades, elegir ingresar a una lista de espera y consultar el estado de sus operaciones. El alcance actualizado incorpora la consulta de productos y stock de la tienda.
 
 ### Administrador
 Administra socios y membresías, registra y confirma los pagos y genera sus comprobantes internos. También gestiona planes, clases y sedes y consulta información operativa del gimnasio.
 
+Las altas internas requieren un administrador; no hay autorregistro público. El administrador inicial se crea mediante comando local. El alta crea la cuenta sin habilitar membresía; el pago correspondiente es necesario para su habilitación. El POST externo de empleados es una capacidad distinta, con las reglas indicadas más abajo.
+
 ### Personal de recepción
 Valida el acceso de los socios y registra sus ingresos y egresos desde la aplicación. Puede consultar el estado de una membresía cuando sea necesario. La primera versión no utiliza dispositivos físicos para registrar esos movimientos.
+
+### Grupo consumidor de membresías para empleados
+Envía los datos de un empleado mediante el POST publicado por el gimnasio. Se identifica por una credencial del grupo y obtiene el resultado del alta del socio y de su solicitud pendiente. No elige el plan ni confirma pagos mediante esta capacidad.
+
+### Distribuidora proveedora
+Provee la información de productos y stock que consultará la tienda. Todavía no se dispone de su identificación, contrato ni datos de conexión.
 
 ## Capacidades principales
 
@@ -72,6 +80,33 @@ Los ingresos y egresos deben alternarse por socio y sede: no se admite un segund
 
 No se incluyen lectores, molinetes ni otros dispositivos físicos en esta versión.
 
+### Integración: membresías para empleados
+
+La capacidad ofrecida al otro grupo pasa a ser **recibir empleados mediante `POST /api/v1/integraciones/empleados`**, a cargo de Socios y Membresías. Reemplaza la consulta de clases y cupos como capacidad compartida. Clases y reservas continúan dentro del dominio del gimnasio.
+
+Reglas confirmadas por el equipo:
+
+- Se reciben `empleadoExternoId`, `dni`, `nombre` y `email`. El grupo de origen se obtiene de su credencial `X-API-Key`, no del cuerpo de la solicitud.
+- Un alta aceptada crea al socio y una **solicitud de membresía `PENDIENTE`**. El administrador elige el plan y confirma el pago correspondiente antes de habilitar la membresía.
+- La solicitud pendiente es distinta de una membresía habilitada. El POST no asigna plan, vigencia, contraseña ni permisos de administrador.
+- Un DNI o email ya registrado produce un conflicto, sin modificar al socio ni su membresía.
+- `Idempotency-Key` permite repetir la misma solicitud del mismo grupo y obtener el alta original, sin crear otro socio ni otra solicitud. Reutilizar la clave con otros datos o registrar el mismo identificador de empleado con otro DNI produce un conflicto.
+- Se utilizarán datos ficticios. La definición de credenciales de acceso personal de estos socios queda pendiente; esta capacidad no entrega sesiones de usuario.
+
+El contrato y sus ejemplos se publican en [la guía de integración](contracts/README.md). El alta persistente está disponible en el gateway local y conserva la idempotencia en PostgreSQL; el mock separado se mantiene en memoria. La selección del plan, confirmación del pago y acceso personal del empleado siguen pendientes: este POST no los implementa ni simula una membresía habilitada.
+
+### Integración: tienda de consulta
+
+El socio podrá consultar los productos y el stock publicados por la distribuidora. El alcance confirmado es de **solo consulta**, sin compras, pedidos ni reposición.
+
+El equipo confirmó un **servicio Tienda separado**, sin una base de datos nueva, que iniciará la comunicación con la distribuidora conforme a la sección 4.1 del enunciado. Su responsabilidad se documenta en [D1, ADR-015](adr/ADR-015-limites-con-tienda.md). Productos y stock seguirán siendo datos del proveedor. La estructura propia está preparada; el cliente externo depende del contrato de la distribuidora.
+
+**Estado de integración:** el equipo confirmó que aún no dispone del contrato ni los datos de conexión. Quedan preparados el servicio, gateway y pestaña Tienda del portal; la consulta informa integración pendiente sin mostrar productos ficticios ni existencias en cero. RF-11/CA-G11 no quedan satisfechos hasta conectar y verificar la capacidad real del proveedor. Compras, pedidos y reposición continúan fuera del alcance acordado.
+
+El contrato externo, sus operaciones concretas, los datos de conexión y su comportamiento ante fallas se acordarán antes de implementar esa integración. No se presupone una API del proveedor ni se incorpora un almacenamiento local de productos o existencias.
+
+Los datos de prueba serán ficticios; está pendiente confirmar si esa condición continuará durante toda la evaluación.
+
 ## Requisitos funcionales de la primera versión
 
 | Identificador | Requisito |
@@ -85,6 +120,8 @@ No se incluyen lectores, molinetes ni otros dispositivos físicos en esta versi�
 | RF-07 | El socio puede reservar y cancelar clases o elegir ingresar a una lista de espera según las reglas de CU-01. |
 | RF-08 | Recepción puede registrar intentos de ingreso y egresos de una sede desde la aplicación, validando la membresía y la alternancia de los movimientos. |
 | RF-09 | El sistema permite consultar la ocupación actual por sede a partir de los ingresos aceptados y sus egresos. |
+| RF-10 | El grupo consumidor puede enviar un empleado para crear un socio y una solicitud de membresía pendiente, respetando autenticación, ausencia de duplicados e idempotencia. |
+| RF-11 | El socio puede consultar los productos y el stock de la distribuidora desde la tienda, conforme al contrato externo que se acuerde. |
 
 ## Reglas de negocio generales
 
@@ -98,6 +135,9 @@ No se incluyen lectores, molinetes ni otros dispositivos físicos en esta versi�
 | RN-G06 | Por socio y sede, un ingreso aceptado requiere que no exista otro ingreso abierto; un egreso aceptado requiere que exista un ingreso abierto. |
 | RN-G07 | La ocupación por sede se calcula con los socios que tienen un ingreso aceptado sin una salida asociada; no puede resultar negativa. |
 | RN-G08 | Un ingreso o egreso rechazado no cambia la ocupación de la sede. |
+| RN-G09 | El alta externa de un empleado no habilita una membresía: el administrador selecciona el plan y confirma el pago. |
+| RN-G10 | El alta externa rechaza DNI o email existentes sin sobrescribir datos; una repetición idempotente devuelve el resultado original. |
+| RN-G11 | El grupo de origen de un empleado se identifica por su credencial, no por un dato enviado en el cuerpo. |
 
 ## Criterios de aceptación de las capacidades generales
 
@@ -110,8 +150,12 @@ No se incluyen lectores, molinetes ni otros dispositivos físicos en esta versi�
 | CA-G05 | Recepción registra un ingreso. | Se acepta y aumenta la ocupación en una persona solo si la membresía está vigente y habilitada y no existe un ingreso abierto en esa sede. Los intentos rechazados no incrementan la ocupación. |
 | CA-G06 | Recepción registra una salida. | Se cierra el ingreso abierto y la ocupación disminuye en una persona; una salida sin ingreso abierto se rechaza y no altera la ocupación. |
 | CA-G07 | Se consulta la ocupación de una sede. | El valor corresponde a los socios con ingreso abierto de esa sede y nunca es negativo. |
+| CA-G08 | Un grupo autenticado envía los cuatro datos válidos de un empleado nuevo con una clave de idempotencia. | Se crean un socio y una solicitud pendiente; la respuesta no indica una membresía habilitada. |
+| CA-G09 | Se repite la misma solicitud con la misma clave y el mismo grupo de origen. | Se devuelve el resultado original, con los mismos identificadores y sin duplicar el alta. |
+| CA-G10 | El DNI o email ya existe; la clave de idempotencia se reutiliza con otros datos; o el identificador del empleado se reutiliza con otro DNI. | Se informa el conflicto sin modificar datos ni crear una segunda solicitud. |
+| CA-G11 | El socio consulta la tienda y el proveedor responde conforme al contrato que se acuerde. | Se muestran los productos y el stock obtenidos del proveedor. El tratamiento de fallas queda pendiente de acordar para la integración. |
 
-Los tiempos de actualización del índice de búsqueda y la vigencia de la caché se definirán en sus ADR. Este alcance no establece valores numéricos que todavía no fueron acordados.
+La actualización transaccional del índice y la propuesta de vigencia de caché se documentan en D6/D7; la caché aún requiere validación de negocio y medición. Este alcance no establece valores numéricos que todavía no fueron acordados.
 
 ## Datos y persistencia preliminar
 
@@ -154,7 +198,7 @@ Condiciones:
 
 ## Caso de uso CU-01: reservar una clase
 
-**Estado:** reglas de negocio confirmadas por el grupo para la primera versión. Su implementación y coordinación técnica se definirán en las tareas de arquitectura.
+**Estado:** reglas confirmadas para la primera versión. Reservas, espera y recuperación están implementadas; la cancelación por cambios posteriores de membresía sigue pendiente. Ver D4/D5 en la arquitectura.
 
 ### Actor y objetivo
 
@@ -193,6 +237,7 @@ Las validaciones anteriores describen condiciones de negocio. Su implementación
 | RN-R09 | Una persona que ya no cumple las condiciones de membresía al evaluarse un cupo liberado se retira de la lista de espera y se evalúa a la siguiente en orden de inscripción. |
 | RN-R10 | Las nuevas reservas y los ingresos a la lista de espera solo se permiten antes del inicio de la clase. |
 | RN-R11 | Para la primera versión, cualquier membresía vigente y habilitada permite reservar cualquier clase y sede. No se establecen límites adicionales de cantidad de reservas ni validaciones por superposición de horarios; se mantienen el cupo por clase y la prohibición de duplicados. |
+| RN-R12 | Si Socios no responde al reasignar un cupo, la cancelación local se acepta, se conserva al primero de la espera y el cupo no se asigna a nuevas solicitudes. La reasignación se reintenta automáticamente cuando se recupera Socios. Un error de comunicación no equivale a perder la habilitación. |
 
 ### Criterios de aceptación
 
@@ -211,6 +256,9 @@ Los escenarios que esperan una nueva reserva confirmada presuponen que la clase 
 | CA-R07 | Se libera un cupo con personas en espera, incluso mientras llegan nuevas solicitudes. | Se confirma automáticamente al primero que cumple las condiciones, respetando el orden de inscripción. Se retira a quienes perdieron la habilitación y se evalúa al siguiente; no se excede la capacidad ni se generan duplicados o se desplaza la prioridad de espera. |
 | CA-R08 | El socio solicita nuevamente una clase cuya reserva había cancelado y cumple las condiciones vigentes. | La cancelación anterior no impide confirmar la nueva reserva si existe cupo para él. |
 | CA-R09 | Una membresía se suspende o pierde la habilitación para una clase futura ya reservada. | Se cancela la reserva afectada, se libera el cupo y se aplica la política de reasignación. |
+| CA-R10 | Se cancela antes del inicio y Socios está indisponible al evaluar al primero de la espera. | La reserva queda cancelada; no se elimina al candidato ni se adelanta a otro. Tras recuperarse Socios, se valida y reasigna respetando el orden y la capacidad. |
+
+**Cobertura actual:** se verifican reservas, cancelaciones y promociones; no todas las reglas del sistema objetivo están implementadas. RN-R08/CA-R09 requieren el evento de dominio ante cambios posteriores de membresía; su implementación sigue pendiente en D5 y no queda acreditada por estas pruebas.
 
 ## Fuera de alcance inicial
 
@@ -223,7 +271,7 @@ Para evitar ampliar innecesariamente el proyecto, inicialmente quedan fuera:
 - seguimiento de rutinas de entrenamiento;
 - nutrición;
 - progreso corporal;
-- tienda de productos;
+- compras, pedidos y reposición de productos de la tienda;
 - red social del gimnasio.
 
 Las ampliaciones deberán acordarse explícitamente y reflejarse en el alcance antes de incorporarse al sistema.

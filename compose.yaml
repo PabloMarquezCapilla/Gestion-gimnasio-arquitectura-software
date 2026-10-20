@@ -1,4 +1,4 @@
-name: gimnasio-e1
+name: gimnasio-e2
 
 services:
   postgres:
@@ -78,7 +78,7 @@ services:
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
     healthcheck:
-      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      test: ["CMD", "su-exec", "rabbitmq", "rabbitmq-diagnostics", "-q", "ping"]
       interval: 5s
       timeout: 5s
       retries: 20
@@ -93,6 +93,11 @@ services:
     environment:
       PORT: "3000"
       DATABASE_URL: postgres://socios:${SOCIOS_DB_PASSWORD:?Falta SOCIOS_DB_PASSWORD en .env}@postgres:5432/socios
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:?Falta AUTH_JWT_SECRET en .env}
+      SERVICIOS_API_KEY: ${SERVICIOS_API_KEY:?Falta SERVICIOS_API_KEY en .env}
+      AUTH_JWT_TTL_SECONDS: ${AUTH_JWT_TTL_SECONDS:-3600}
+      EMPLEADOS_API_KEY: ${EMPLEADOS_API_KEY:?Falta EMPLEADOS_API_KEY en .env}
+      EMPLEADOS_ORIGEN_ID: ${EMPLEADOS_ORIGEN_ID:?Falta EMPLEADOS_ORIGEN_ID en .env}
       RABBITMQ_URL: amqp://gimnasio:${RABBITMQ_PASSWORD:?Falta RABBITMQ_PASSWORD en .env}@rabbitmq:5672/gimnasio
     depends_on:
       postgres-init:
@@ -112,6 +117,8 @@ services:
       dockerfile: infra/node/Dockerfile
       args:
         SERVICE: clases-reservas
+    deploy:
+      replicas: 2
     environment:
       PORT: "3000"
       DATABASE_URL: postgres://clases:${CLASES_DB_PASSWORD:?Falta CLASES_DB_PASSWORD en .env}@postgres:5432/clases
@@ -119,6 +126,10 @@ services:
       SOCIOS_SERVICE_URL: http://socios-membresias:3000
       ACCESOS_SERVICE_URL: http://accesos-ocupacion:3000
       CAPACIDAD_API_KEY: ${CAPACIDAD_API_KEY:?Falta CAPACIDAD_API_KEY en .env}
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:?Falta AUTH_JWT_SECRET en .env}
+      SERVICIOS_API_KEY: ${SERVICIOS_API_KEY:?Falta SERVICIOS_API_KEY en .env}
+      AUTH_JWT_TTL_SECONDS: ${AUTH_JWT_TTL_SECONDS:-3600}
+      RESERVAS_REINTENTO_MS: ${RESERVAS_REINTENTO_MS:-5000}
     depends_on:
       postgres-init:
         condition: service_completed_successfully
@@ -151,19 +162,40 @@ services:
       retries: 12
       start_period: 5s
 
+  tienda:
+    build:
+      context: .
+      dockerfile: infra/node/Dockerfile
+      args:
+        SERVICE: tienda
+    environment:
+      PORT: "3000"
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:?Falta AUTH_JWT_SECRET en .env}
+      AUTH_JWT_TTL_SECONDS: ${AUTH_JWT_TTL_SECONDS:-3600}
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 5s
+
   gateway:
-    image: nginx:1.28-alpine
+    build:
+      context: .
+      dockerfile: infra/gateway/Dockerfile
+    image: gimnasio-gateway:latest
     ports:
       - "127.0.0.1:${GATEWAY_PORT:-8080}:80"
     volumes:
       - ./infra/gateway/nginx.conf:/etc/nginx/nginx.conf:ro
-      - ./infra/gateway/index.html:/usr/share/nginx/html/index.html:ro
     depends_on:
       socios-membresias:
         condition: service_healthy
       clases-reservas:
         condition: service_healthy
       accesos-ocupacion:
+        condition: service_healthy
+      tienda:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/health"]

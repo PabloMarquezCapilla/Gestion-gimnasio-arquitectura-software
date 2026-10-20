@@ -1,7 +1,7 @@
 import Fastify from 'fastify';
 
 // Estructura inicial: no implementa todavía sedes, movimientos ni ocupación.
-const app = Fastify({ logger: true, disableRequestLogging: true });
+const app = Fastify({ logger: true });
 app.get('/health', async () => ({ servicio: 'accesos-ocupacion', estado: 'estructura' }));
 
 for (const signal of ['SIGINT', 'SIGTERM'] as const) {

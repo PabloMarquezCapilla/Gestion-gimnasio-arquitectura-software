@@ -1,50 +1,40 @@
 # D3 - Persistencia
 
-**Estado:** propuesta inicial para la Entrega 1.  
-**Fecha:** 07/10/2026.
+**Estado:** decisión de motores conservada; PostgreSQL integrado y verificado. MongoDB configurado, sin flujo de negocio aún.
+**Fecha inicial:** 07/10/2026. **Validación:** 19/10/2026.
+**Enunciado:** §5 D3, página 6; §2.8, página 3; §6.2–6.3, página 8.
 
-## Requisito del enunciado
+## Contexto
 
-- **Sección 5, página 6:** D3 debe justificar el almacenamiento por servicio, sus patrones de acceso y las limitaciones aceptadas.
-- **Sección 6.2, página 8:** la Entrega 1 requiere una versión inicial de D3.
-- **Sección 2.8, página 3:** el sistema debe utilizar almacenamiento relacional y no relacional y proteger operaciones que no pueden duplicar ni perder información.
+Membresías, pagos y reservas requieren asociaciones, unicidad y operaciones atómicas. Accesos necesita historial por socio, sede y tiempo. Cada servicio administra sus datos; la consulta de stock externo no requiere una copia propia.
 
-El enunciado exige esos tipos y garantías; PostgreSQL y MongoDB son los productos propuestos en este diseño inicial para resolverlos. Todavía no hay mediciones de volumen o rendimiento que permitan afirmar una ventaja cuantitativa.
+## Decisión y patrones de acceso
 
-## Decisión propuesta
+| Servicio | Almacenamiento y patrones | Estado |
+|---|---|---|
+| Socios y Membresías | PostgreSQL, base `socios`: identidad por DNI/email, membresías por socio/fecha; pagos y habilitación previstos en una transacción local. | `socios`, `membresias`, `solicitudes_membresia`, `empleados_externos`, `altas_empleados_idempotencia` operativas; planes/pagos/comprobantes pendientes. |
+| Clases y Reservas | PostgreSQL, base `clases`: catálogo por sede/inicio, reservas por clase/socio y espera por orden. | `clases`, `reservas`, `lista_espera` operativas. |
+| Accesos y Ocupación | MongoDB, base `accesos`: sedes, movimientos e historial por identificador/tiempo, presencias abiertas y ocupación derivada. | Motor, replica set local y usuario configurados; colecciones de dominio y acceso desde el servicio pendientes. |
+| Tienda | Sin almacenamiento local; productos y stock pertenecen a la distribuidora. | Estructura preparada; integración externa pendiente. |
 
-Mantener la propiedad definida en [D1](ADR-001-limites-de-servicios.md), con almacenamiento separado por servicio:
+Las bases relacionales comparten una instancia local, con usuarios/credenciales separados y permisos por base. Esto separa propiedad, no recursos físicos ni disponibilidad. El servicio consumidor usa APIs y referencias por ID, sin claves foráneas entre bases. Límites vigentes en [D1](ADR-015-limites-con-tienda.md).
 
-| Servicio | Almacenamiento | Datos y patrones de acceso | Motivo |
-|---|---|---|---|
-| **Socios y Membresías** | PostgreSQL, base propia | Socios, planes, membresías, pagos y comprobantes. Consulta por socio y membresía; evaluación del estado y las fechas de vigencia; registro del pago y su efecto sobre la membresía. | Las asociaciones y restricciones requieren integridad relacional. Pago, comprobante y habilitación deben poder guardarse en una misma transacción local. |
-| **Clases y Reservas** | PostgreSQL, base propia | Clases por identificador, sede e inicio; reservas por clase y socio; lista de espera por clase y orden de inscripción. Lectura de capacidad y reservas confirmadas para calcular cupos. | Cupos, duplicados, cancelación y reasignación necesitan coordinar registros relacionados dentro del mismo servicio. |
-| **Accesos y Ocupación** | MongoDB, base propia | Sedes por identificador; presencia actual por socio y sede; historial de intentos y movimientos por socio, sede y fecha; conteo de presencias abiertas por sede. | Los movimientos se representan como documentos y se consultan principalmente por esos identificadores y por tiempo. Se separa el historial creciente del estado actual de presencia. |
+### Consistencia implementada
 
-Las dos bases PostgreSQL pueden compartir una instancia en el entorno local, con usuarios y permisos separados. Ningún servicio accede a la base de otro ni utiliza relaciones de base de datos que crucen sus límites.
+- **Identidad:** índices únicos sobre `LOWER(BTRIM(email))` y `BTRIM(dni)`, además del identificador primario. Los duplicados históricos incompatibles hacen fallar la inicialización; no se fusionan ni eliminan cuentas automáticamente.
+- **Membresía:** se consulta el historial y se selecciona el período aplicable a la fecha. Una renovación futura no oculta la vigente.
+- **Reservas:** transacciones con bloqueo primero sobre la clase e índices únicos parciales de reserva confirmada/espera pendiente. Los cupos se calculan con reservas confirmadas, sin contador redundante. La cancelación y la promoción son operaciones locales separadas; no se llama a Socios mientras se mantiene el bloqueo. [D4](ADR-017-consistencia-y-recuperacion-de-espera.md).
+- **Alta externa:** una transacción guarda socio, solicitud `PENDIENTE`, referencia externa y respuesta original JSONB. Bloqueos consultivos por origen/clave y origen/empleado serializan reintentos; índices únicos protegen DNI/email. Un fallo revierte todos los registros. El POST no crea membresía ni contraseña.
+- **Idempotencia durable:** el resultado se conserva entre reinicios e instancias, sin purga automática. Cambiar el origen cambia su ámbito; el replay devuelve el alta original, no el estado actual de una membresía.
 
-## Condiciones de consistencia del diseño
+Las definiciones físicas se mantienen en [repositorio de Socios](../../services/socios-membresias/src/repository.ts) y [repositorio de Clases](../../services/clases-reservas/src/repository.ts). La inicialización usa DDL idempotente y bloqueo para arranques concurrentes; no equivale a una estrategia completa de migraciones versionadas.
 
-- **Socios y Membresías:** conservar las asociaciones entre pago, comprobante y membresía y evitar repetir sus efectos. La evaluación de habilitación considera el estado y las fechas; un indicador almacenado por sí solo no demuestra vigencia.
-- **Clases y Reservas:** proteger el último cupo, la ausencia de reservas confirmadas duplicadas y la prioridad de espera. Elegir PostgreSQL no alcanza por sí solo: D4 precisará las restricciones y la coordinación de operaciones concurrentes.
-- **Accesos y Ocupación:** mantener un registro de presencia por pareja socio/sede. Un ingreso o egreso aceptado debe actualizar esa presencia y registrar el movimiento de manera atómica. Los movimientos rechazados se registran sin alterar la presencia.
+## Alternativas y consecuencias
 
-Para esa actualización de varios documentos, se propone utilizar transacciones de MongoDB. El entorno local deberá iniciarlo como **replica set**, condición de despliegue necesaria para esas transacciones. La configuración inicial no implica alta disponibilidad. Véanse [transacciones](https://www.mongodb.com/docs/manual/core/transactions/) y [condiciones de despliegue](https://www.mongodb.com/docs/manual/core/transactions-production-consideration/) en la documentación oficial.
+Se mantiene el modelo relacional para integridad y transacciones dentro de Socios/Clases. Usar documentos para esos registros trasladaría parte de las asociaciones y restricciones a la aplicación. MongoDB se conserva para el historial de Accesos; su integración deberá demostrar alternancia y ocupación sin duplicados.
 
-La ocupación se obtiene de las presencias abiertas. El historial se conserva en registros separados, evitando una lista indefinida de movimientos dentro de un único documento de socio o sede. Los índices sobre las claves y fechas de consulta se concretarán al implementar el modelo.
+El bloqueo por clase serializa escrituras sobre esa clase; su costo depende de la carga, sin latencia máxima garantizada. Las verificaciones por API son puntuales: no hay una transacción distribuida entre membresía y reserva. Una instancia PostgreSQL compartida y MongoDB de un nodo son límites del entorno local.
 
-## Datos derivados y controles de comunicación
+## Verificación
 
-El índice de búsqueda pertenece a Clases y Reservas y la caché de ocupación a Accesos y Ocupación. Sus productos, actualización y tiempos se resolverán en D6 y D7. La reserva de un cupo y la aceptación de un movimiento utilizan el almacenamiento propietario; los datos derivados no sustituyen esas validaciones.
-
-Los controles de [D5](ADR-005-comunicacion-entre-servicios.md) se guardarán en las bases de sus propietarios: avisos pendientes de publicación en Socios y Membresías; mensajes recibidos/procesados y reasignaciones pendientes en Clases y Reservas. Son registros técnicos para recuperar fallas y evitar duplicaciones.
-
-## Alternativas y limitaciones
-
-- Usar solo SQL o solo NoSQL no cubre los dos tipos exigidos por el enunciado. Se distribuyen según los patrones de cada servicio.
-- Guardar todo en una base compartida permitiría consultas directas, pero introduciría dependencia entre modelos y propiedad compartida de los datos; se mantiene la separación de D1.
-- MongoDB agrega otro motor y la configuración de replica set. Sus transacciones deben coordinar los cambios de presencia e historial; no se presume que todo documento independiente sea suficiente para mantener la ocupación.
-- Las transacciones locales no vuelven atómica una operación entre servicios. La validación de membresía y la reserva en otra base requieren coordinación adicional, a precisar en D4.
-- La estructura inicial levanta PostgreSQL 17 y MongoDB 8.0 mediante `compose.yaml`, con volúmenes, usuarios separados y replica set de un nodo. No crea todavía tablas ni colecciones del negocio. Esquemas, migraciones, índices y conexiones desde el código se concretarán al implementar. D3 se validará en la Entrega 2 contra la implementación y su comportamiento.
-
-Referencia técnica: [transacciones y aislamiento de PostgreSQL](https://www.postgresql.org/docs/current/transaction-iso.html).
+`npm run test:postgres` usa PostgreSQL 17 efímero, HTTP real e instancias con pools independientes: unicidad concurrente, alta externa/replay tras recrear app, rollback, último cupo, cancelación y recuperación FIFO. Los adaptadores en memoria no acreditan durabilidad. Pagos, flujos de Accesos y almacenamiento no relacional integrado al dominio siguen pendientes.
