@@ -1,5 +1,7 @@
 # D8 - Contrato de recepción de empleados
 
+**Estado actual:** reemplazado en el diseño de la integración con Car Cruds el 23/10/2026 por [ADR-018 - Integración de membresías con Car Cruds](ADR-018-integracion-car-cruds.md). El POST propio 1.0.1 sigue operativo localmente; se conservan su contrato, mock, persistencia y pruebas. El nuevo flujo todavía no está implementado. El registro siguiente conserva la decisión anterior y su evidencia.
+
 **Estado:** diseño confirmado e implementado con PostgreSQL y gateway localmente. Mock separado conservado; publicación accesible y prueba conjunta con el consumidor pendientes.
 **Fecha:** 19/10/2026.
 **Reemplaza:** [ADR-008 - Contrato de la capacidad propia](ADR-008-contrato-propio.md).

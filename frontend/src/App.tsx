@@ -3,6 +3,7 @@ import type { AuthResponse, AuthState } from './types/auth';
 import { setApiSession } from './services/api';
 import { AuthModal } from './components/AuthModal';
 import { UserPanel } from './components/UserPanel';
+import { CarCrudsPanel } from './components/CarCrudsPanel';
 
 // --- Interfaces ---
 export interface Member {
@@ -231,6 +232,7 @@ export default function App() {
             {[
               { path: 'panel-principal', label: 'Panel Principal', icon: 'dashboard' },
               { path: 'socios-y-membresias', label: 'Socios & Membresías', icon: 'badge' },
+              { path: 'empleados-car-cruds', label: 'Empleados Car Cruds', icon: 'link' },
               { path: 'cobros-y-caja', label: 'Cobros & Caja', icon: 'point_of_sale' },
               { path: 'planes-y-tarifas', label: 'Planes y Tarifas', icon: 'card_membership' },
               { path: 'clases-y-turnos', label: 'Clases & Turnos', icon: 'event_available' },
@@ -241,8 +243,8 @@ export default function App() {
               return (
                 <button
                   key={item.path}
-                  disabled={item.path !== 'socios-y-membresias'}
-                  title={item.path !== 'socios-y-membresias' ? 'Sección pendiente de integración.' : undefined}
+                  disabled={!['socios-y-membresias', 'empleados-car-cruds'].includes(item.path)}
+                  title={!['socios-y-membresias', 'empleados-car-cruds'].includes(item.path) ? 'Sección pendiente de integración.' : undefined}
                   onClick={() => setActiveNav(item.path)}
                   className={`flex items-center gap-2.5 px-3 py-1.5 rounded-lg transition-all text-xs font-semibold w-full text-left ${
                     isActive
@@ -387,8 +389,9 @@ export default function App() {
 
         {/* --- MAIN BODY VIEWPORT --- */}
         <main className="w-full pt-14 bg-background px-4 sm:px-6 min-h-screen">
+          {toastView}
+          {activeNav === 'empleados-car-cruds' ? <CarCrudsPanel onNuevoSocio={handleOpenRegister} /> : (
           <div className="flex flex-col w-full pb-6">
-            {toastView}
 
             {/* Top Banner / View Header */}
             <section className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-4 pt-3">
@@ -855,6 +858,7 @@ export default function App() {
               </div>
             </section>
           </div>
+          )}
         </main>
       </div>
 

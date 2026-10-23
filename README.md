@@ -12,7 +12,7 @@ Trabajo Práctico Integrador — Arquitectura de Software 2026
 
 ## Dominio
 
-Sistema integral de gestión de gimnasios orientado a membresías, pagos y comprobantes internos, reserva de clases, control de acceso y ocupación de sedes. Incluye la recepción de empleados de otro grupo y la consulta de productos y stock de una distribuidora.
+Sistema integral de gestión de gimnasios orientado a membresías, pagos y comprobantes internos, reserva de clases, control de acceso y ocupación de sedes. Incluye la vinculación de empleados de Car Cruds con socios y el envío de información de membresías, además de la consulta de productos y stock de FAV.
 
 ## Objetivo
 
@@ -32,7 +32,7 @@ El sistema contemplará inicialmente:
 - Control de acceso al gimnasio según el estado de la membresía.
 - Registro de ingresos y egresos por recepción desde la aplicación, sin dispositivos físicos y con validación de alternancia por socio y sede.
 - Consulta de ocupación actual de cada sede.
-- Recepción de empleados de otro grupo para crear socios con solicitud de membresía pendiente de pago.
+- Consulta de empleados de Car Cruds, vinculación manual con socios y envío de información mensual de membresía, uso y pagos conforme al contrato acordado.
 - Consulta de productos y stock de una distribuidora desde Tienda, sin compras ni reposición.
 
 ## Flujo principal
@@ -49,15 +49,17 @@ Las reglas de negocio, exclusiones y criterios de aceptación están en [ALCANCE
 
 | Componente | Disponible | Pendiente |
 |---|---|---|
-| Socios y Membresías | Login JWT, permisos, altas administrativas, consulta de membresías y POST persistente de empleados. | Planes/pagos/comprobantes, renovación/reactivación y resolución administrativa de solicitudes; acceso personal de empleados recibidos. |
+| Socios y Membresías | Login JWT, permisos, altas administrativas, membresías, lecturas/vinculación Car Cruds, vista previa y envío mensual manual con persistencia e historial; POST anterior de empleados. | Conexión conjunta Car Cruds; planes/pagos/comprobantes, renovación/reactivación y resolución de solicitudes. |
 | Clases y Reservas | Catálogo por sede/fechas, reservas, cancelación, espera FIFO y recuperación de promociones; PostgreSQL y dos réplicas. | Publicación administrativa de clases, consulta textual FTS y cancelación de reservas por cambios posteriores de membresía. |
 | Accesos y Ocupación | Estructura HTTP y MongoDB configurado. | Movimientos, ocupación, persistencia de negocio y caché. |
-| Tienda | Servicio y sección web con JWT; informa `503 INTEGRACION_PENDIENTE`. | Contrato, URL, autenticación y consumo real de la distribuidora. |
+| Tienda | Servicio y sección web con JWT; informa `503 INTEGRACION_PENDIENTE`. | Acordar con FAV la consulta externa de stock, conexión y consumo real. |
 | Gateway y portal | NGINX, rutas, portal React, balanceo y logs de destinos. | Despliegue público y frontend completo de los flujos pendientes. |
 
-La capacidad ofrecida es **POST `/api/v1/integraciones/empleados`**, de Socios y Membresías. El consumidor envía ID externo, DNI, nombre y email; se crea un socio y una solicitud `PENDIENTE`, sin membresía ni contraseña. `X-API-Key` identifica el origen e `Idempotency-Key` evita duplicar el alta. Contrato **1.0.1**, ejemplos y mock en [docs/contracts/README.md](docs/contracts/README.md). Reemplaza a clases como capacidad compartida; sus consultas siguen disponibles para el gimnasio.
+La integración con **Car Cruds** cambia la dirección del intercambio por indicación del profesor: Socios consulta empleados/estado y el ADMIN los vincula manualmente con socios. Desde el panel elige el mes, guarda/revisa una fotografía y confirma su envío; los reintentos conservan contenido, referencia, versión y fecha. Corregir o quitar el vínculo conserva el historial y no modifica membresías. El recorrido se verificó localmente; faltan URL/token operativos y prueba conjunta. Contrato externo **0.3.0**, configuración y uso en [la guía](docs/contracts/README.md#integracion-con-car-cruds) y [ADR-018](docs/adr/ADR-018-integracion-car-cruds.md).
 
-**Acceso desplegado:** todavía no hay URL pública acordada ni prueba conjunta con los otros grupos. La implementación está verificada localmente. La publicación accesible requerida en §4.1 y el despliegue de la presentación final siguen pendientes; no se considera completa la integración entre grupos.
+El **POST anterior `/api/v1/integraciones/empleados`**, contrato propio **1.0.1**, sigue disponible localmente con su mock y pruebas. Su funcionamiento no acredita la nueva integración; se conserva durante la transición.
+
+**Acceso desplegado:** faltan URL accesible, token de Car Cruds por canal privado y prueba conjunta. Las verificaciones locales cubren el flujo propio, las APIs anteriores, lecturas/envíos con un proveedor controlado y persistencia/concurrencia. La publicación accesible requerida en §4.1 y el despliegue de la presentación final siguen pendientes.
 
 ## Arquitectura y estructura
 
@@ -65,7 +67,7 @@ Se utiliza Node.js 22, TypeScript y Fastify; React/Vite para el portal y NGINX c
 
 ```text
 services/
-  socios-membresias/     # Cuentas, habilitación y recepción de empleados
+  socios-membresias/     # Cuentas, habilitación e integración de empleados
   clases-reservas/       # Catálogo, reservas y espera
   accesos-ocupacion/     # Estructura; dominio pendiente
   tienda/               # Estructura; proveedor pendiente
@@ -136,11 +138,13 @@ Ingresar DNI, nombre, email, contraseña y confirmación. Para acceder después,
 | Elegir entrar a la espera de una clase llena | Espera registrada solo por elección del socio; no se confirma sin cupo. |
 | Reservar como Pedro o Ana | Rechazo por membresía vencida/suspendida. |
 | Crear socio como ADMIN | Cuenta SOCIO sin membresía; se conserva la sesión del administrador. DNI/email repetidos se rechazan. |
+| Abrir «Empleados Car Cruds» como ADMIN | Con URL/token configurados, elegir empleado, buscar socio por DNI/email exacto y revisar antes de confirmar. Vínculo uno a uno, corrección/desvinculación con historial; membresía sin cambios. Sin proveedor se mantienen las consultas locales y la desvinculación. |
+| Preparar y enviar información mensual de un vínculo | Elegir mes, guardar/revisar vista previa y confirmar envío aparte. Sin datos fiables se muestra null; una respuesta incierta queda pendiente y el reintento usa la misma fotografía. [Guía](docs/contracts/README.md#preparar-y-enviar-desde-el-panel). |
 | Abrir Tienda o consultar pagos/reactivación | Se muestran los pendientes; no se simulan productos, pagos ni habilitaciones. |
 
 El JWT se guarda en memoria: recargar la página o recibir un 401 requiere nuevo login. En una base nueva, Yoga del 12/11/2026 tiene tres cupos y Pilates del mismo día está llena; los movimientos cambian esos valores. Las fechas de demostración son fijas: las clases iniciadas rechazan nuevas reservas, espera y cancelaciones.
 
-Para probar el POST de empleados, usar el [ejemplo operativo PowerShell](docs/contracts/README.md#ejemplo-operativo-en-powershell): alta nueva 201, misma clave/cuerpo mismos IDs, clave reutilizada con otros datos 409 y credencial inválida 401. Ese POST no habilita membresías ni permite iniciar sesión por el empleado.
+Para probar el **POST del diseño anterior** de empleados, usar el [ejemplo operativo PowerShell](docs/contracts/README.md#ejemplo-operativo-en-powershell): alta nueva 201, misma clave/cuerpo mismos IDs, clave reutilizada con otros datos 409 y credencial inválida 401. Ese POST no habilita membresías ni permite iniciar sesión por el empleado; tampoco consulta ni envía datos a Car Cruds.
 
 ### Estado, logs y detención
 
@@ -174,6 +178,13 @@ SELECT socio_id, dni, nombre, email, rol, estado FROM socios;
 SELECT membresia_id, socio_id, tipo_plan, estado, fecha_inicio, fecha_fin FROM membresias;
 SELECT solicitud_id, socio_id, estado FROM solicitudes_membresia;
 SELECT origen, empleado_externo_id, socio_id FROM empleados_externos;
+SELECT employee_id, socio_id, version, actualizado_en FROM car_cruds_vinculos;
+SELECT employee_id, version, socio_anterior, socio_nuevo, administrador_id, created_at
+FROM car_cruds_vinculos_historial ORDER BY employee_id, version;
+SELECT employee_id, period, source_reference, ultima_version FROM car_cruds_evidencias_series;
+SELECT fotografia_id, employee_id, period, version, socio_id, estado, intentos,
+       ultimo_intento_en, recibida_en, applied, codigo_error
+FROM car_cruds_evidencias ORDER BY employee_id, period, version;
 ```
 
 Cambiar a la base propia de Clases:
@@ -203,10 +214,11 @@ npm --prefix frontend ci --ignore-scripts
 
 | Comando | Qué comprueba |
 |---|---|
-| `npm test` | Compilación de los cuatro servicios y reglas/contratos con adaptadores en memoria; incluye API del frontend. Última verificación: 68/68, sin omitidas, 19/10/2026. |
+| `npm test` | Compilación de los cuatro servicios y reglas/contratos; incluye HTTP externo controlado y API del frontend. Última verificación: 173/173, sin omitidas, 23/10/2026. |
 | `npm run frontend:build` | TypeScript y bundle de producción del portal. |
 | `npm run test:contrato-empleados` | Contrato y mock separado de empleados (11 pruebas). |
-| `npm run test:postgres` | HTTP real, PostgreSQL efímero, dos instancias por servicio, permisos, reintentos/rollback de empleados, último cupo, FIFO con fallas, traza y línea base de carga. |
+| `npm run test:car-cruds` | Contrato externo 0.3.0, lecturas, permisos, vinculación, vista previa/envío, resultado incierto y reenvío exacto sin duplicar con proveedor controlado. |
+| `npm run test:postgres` | HTTP real, PostgreSQL efímero, dos instancias, permisos, reintentos/rollback de empleados, vínculos/fotografías Car Cruds, cuerpo inmutable, recuperación y concurrencia; último cupo, FIFO con fallas, traza y línea base de carga. |
 | `npm run test:balanceo` | Compose completo aislado, dos réplicas, distribución, escrituras concurrentes y caída/reemplazo sin reiniciar el gateway. |
 
 Los dos últimos requieren Docker, usan recursos temporales propios, no cargan `.env` y los retiran al terminar. Los tests en memoria no acreditan durabilidad. Para desarrollar solo el portal: `npm run frontend:dev`, manteniendo el backend iniciado.
@@ -227,4 +239,4 @@ Los cambios de esta entrega se preparan en `entrega-2` y se revisan mediante PR 
 | [Contrato e integración](docs/contracts/README.md) | Capacidad ofrecida, versión, ejemplos, errores, autenticación e idempotencia (§4.1). |
 | [Postmortem](docs/POSTMORTEM.md) | Ensayo local de caída: impacto, secuencia, detección, respuesta, causa y mejoras (§2.9 y §3). |
 
-E1 (§6.2) queda representada por alcance, arquitectura/diagramas, límites, estructura y contrato/mock; E2 (§6.3), por el flujo operativo, capacidad ofrecida local, PostgreSQL, logs/traza y ADR actualizados. D9 conserva pendientes de contrato externo y la publicación compartida aún debe coordinarse. La implementación completa de búsqueda, caché, mensajería, Accesos y frontend, además del despliegue y la integración real, sigue pendiente para los requisitos generales y la presentación final (§6, páginas 8–9).
+E1 (§6.2) queda representada por alcance, arquitectura/diagramas, límites, estructura y contratos/mocks conservados. Para E2 (§6.3) hay flujo propio operativo, PostgreSQL, logs/traza y ADR; Car Cruds cuenta con contrato, lecturas, vinculación y envío manual verificados localmente, con conexión y prueba conjunta pendientes. D9 mantiene abierta la consulta de stock de FAV. La implementación completa de búsqueda, caché, mensajería, Accesos y frontend, además del despliegue y la integración real, sigue pendiente para los requisitos generales y la presentación final (§6, páginas 8–9).
