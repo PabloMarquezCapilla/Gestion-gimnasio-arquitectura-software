@@ -1,10 +1,19 @@
 import { Pool } from 'pg';
+import { randomUUID } from 'node:crypto';
 import { Socio, Membresia } from './types';
 import { IdentidadDuplicadaError, SociosError } from './errors';
 import type { AltaEmpleado, EmpleadosRepository, RegistroEmpleado } from './empleados.service';
+import type {
+  CarCrudsVinculosRepository, CambioVinculoCarCruds, HistorialVinculoCarCruds,
+  PaginaVinculosCarCruds, VinculoCarCruds,
+} from './car-cruds-vinculos.repository';
 import { hashPassword } from './security';
+import type {
+  CarCrudsEvidenciasRepository, CambioPreparacionFotografia, CambioReclamoFotografia, CambioFinalizacionFotografia,
+} from './car-cruds-evidencias.repository';
+import { CAR_CRUDS_EVIDENCIAS_DDL, MemoryCarCrudsEvidenciasRepository, PostgresCarCrudsEvidenciasRepository } from './car-cruds-evidencias.storage';
 
-export interface ISociosRepository extends EmpleadosRepository {
+export interface ISociosRepository extends EmpleadosRepository, CarCrudsVinculosRepository, CarCrudsEvidenciasRepository {
   obtenerSocio(socioId: string): Promise<Socio | null>;
   buscarPorEmailODni(identificador: string): Promise<Socio | null>;
   obtenerMembresias(socioId: string): Promise<Membresia[]>;
@@ -133,15 +142,31 @@ export class MemorySociosRepository implements ISociosRepository {
   private altasEmpleados = new Map<string, { contenido: string; respuesta: AltaEmpleado }>();
   private empleadosExternos = new Map<string, string>();
   private solicitudes = new Map<string, { socioId: string; estado: 'PENDIENTE'; createdAt: string }>();
+  private vinculosCarCruds = new Map<string, VinculoCarCruds>();
+  private historialCarCruds: HistorialVinculoCarCruds[] = [];
+  private readonly fotografiasCarCruds: MemoryCarCrudsEvidenciasRepository;
 
-  constructor(socios: readonly Socio[] = SEED_SOCIOS, membresias: readonly Membresia[] = SEED_MEMBRESIAS) {
+  constructor(socios: readonly Socio[] = SEED_SOCIOS, membresias: readonly Membresia[] = SEED_MEMBRESIAS, clock: () => Date = () => new Date()) {
     for (const s of socios) {
       this.socios.set(s.socioId, { ...s });
     }
     for (const m of membresias) {
       this.membresias.set(m.membresiaId, { ...m });
     }
+    this.fotografiasCarCruds = new MemoryCarCrudsEvidenciasRepository((employeeId) => {
+      const vinculo = { ...(this.vinculosCarCruds.get(employeeId) ?? vinculoCarCrudsAusente(employeeId)) };
+      const socio = vinculo.socioId ? this.socios.get(vinculo.socioId) : undefined;
+      return {
+        vinculo, socio: socio ? { ...socio } : null,
+        membresias: [...this.membresias.values()].filter(m => m.socioId === vinculo.socioId).map(m => ({ ...m })),
+      };
+    }, clock);
   }
+
+  obtenerFotografias(employeeId: string, period: string) { return this.fotografiasCarCruds.obtenerFotografias(employeeId, period); }
+  prepararFotografia(cambio: CambioPreparacionFotografia) { return this.fotografiasCarCruds.prepararFotografia(cambio); }
+  reclamarFotografia(cambio: CambioReclamoFotografia) { return this.fotografiasCarCruds.reclamarFotografia(cambio); }
+  finalizarFotografia(cambio: CambioFinalizacionFotografia) { return this.fotografiasCarCruds.finalizarFotografia(cambio); }
 
   async inicializarEsquema(): Promise<void> {
     // No-op for in-memory
@@ -168,6 +193,62 @@ export class MemorySociosRepository implements ISociosRepository {
       }
     }
     return null;
+  }
+
+  async buscarSociosParaVincular(identificador: string): Promise<Socio[]> {
+    const clean = identificador.trim();
+    return [...this.socios.values()]
+      .filter((socio) => socio.dni.trim() === clean || socio.email.trim().toLowerCase() === clean.toLowerCase())
+      .sort((a, b) => a.socioId.localeCompare(b.socioId))
+      .slice(0, 2)
+      .map((socio) => ({ ...socio }));
+  }
+
+  async obtenerVinculoCarCruds(employeeId: string): Promise<VinculoCarCruds> {
+    return { ...(this.vinculosCarCruds.get(employeeId) ?? vinculoCarCrudsAusente(employeeId)) };
+  }
+
+  async cambiarVinculoCarCruds(cambio: CambioVinculoCarCruds): Promise<VinculoCarCruds> {
+    const anterior = this.vinculosCarCruds.get(cambio.employeeId) ?? vinculoCarCrudsAusente(cambio.employeeId);
+    if (anterior.socioId === cambio.socioId) return { ...anterior };
+    if (anterior.version !== cambio.versionEsperada) throw vinculoDesactualizado();
+    if (cambio.socioId !== null) {
+      if (!this.socios.has(cambio.socioId)) throw socioNoEncontrado();
+      if ([...this.vinculosCarCruds.values()].some((vinculo) => vinculo.socioId === cambio.socioId)) {
+        throw socioYaVinculado();
+      }
+    }
+    if (!this.socios.has(cambio.administradorId)) throw new Error('No existe el administrador del cambio de vínculo.');
+    const fecha = new Date(cambio.fecha).toISOString();
+    const siguiente: VinculoCarCruds = {
+      employeeId: cambio.employeeId, socioId: cambio.socioId,
+      version: anterior.version + 1, actualizadoEn: fecha,
+    };
+    const historial: HistorialVinculoCarCruds = {
+      historialId: randomUUID(), employeeId: cambio.employeeId, version: siguiente.version,
+      socioAnteriorId: anterior.socioId, socioNuevoId: cambio.socioId,
+      administradorId: cambio.administradorId, createdAt: fecha,
+    };
+    // Sin await: las comprobaciones, el vínculo y la auditoría cambian juntos en memoria.
+    this.vinculosCarCruds.set(cambio.employeeId, siguiente);
+    this.historialCarCruds.push(historial);
+    return { ...siguiente };
+  }
+
+  async getHistorialVinculoCarCruds(employeeId: string): Promise<HistorialVinculoCarCruds[]> {
+    return this.historialCarCruds.filter((entrada) => entrada.employeeId === employeeId)
+      .sort((a, b) => a.version - b.version)
+      .map((entrada) => ({ ...entrada }));
+  }
+
+  async listarVinculosCarCruds(page: number, pageSize: number): Promise<PaginaVinculosCarCruds> {
+    const actuales = [...this.vinculosCarCruds.values()]
+      .filter((vinculo) => vinculo.socioId !== null)
+      .sort((a, b) => a.employeeId.localeCompare(b.employeeId));
+    const desde = (BigInt(page) - 1n) * BigInt(pageSize);
+    const items = desde >= BigInt(actuales.length) ? [] : actuales
+      .slice(Number(desde), Number(desde) + pageSize).map((vinculo) => ({ ...vinculo }));
+    return { items, page, pageSize, total: actuales.length };
   }
 
   async obtenerMembresias(socioId: string): Promise<Membresia[]> {
@@ -230,7 +311,14 @@ export class MemorySociosRepository implements ISociosRepository {
 }
 
 export class PostgresSociosRepository implements ISociosRepository {
-  constructor(private pool: Pool) {}
+  private readonly fotografiasCarCruds: PostgresCarCrudsEvidenciasRepository;
+
+  constructor(private pool: Pool) { this.fotografiasCarCruds = new PostgresCarCrudsEvidenciasRepository(pool); }
+
+  obtenerFotografias(employeeId: string, period: string) { return this.fotografiasCarCruds.obtenerFotografias(employeeId, period); }
+  prepararFotografia(cambio: CambioPreparacionFotografia) { return this.fotografiasCarCruds.prepararFotografia(cambio); }
+  reclamarFotografia(cambio: CambioReclamoFotografia) { return this.fotografiasCarCruds.reclamarFotografia(cambio); }
+  finalizarFotografia(cambio: CambioFinalizacionFotografia) { return this.fotografiasCarCruds.finalizarFotografia(cambio); }
 
   conexionesActivas(): number {
     return this.pool.totalCount - this.pool.idleCount;
@@ -303,7 +391,28 @@ export class PostgresSociosRepository implements ISociosRepository {
           created_at TIMESTAMPTZ NOT NULL,
           PRIMARY KEY (origen, clave)
         );
+
+        CREATE TABLE IF NOT EXISTS car_cruds_vinculos (
+          employee_id TEXT PRIMARY KEY,
+          socio_id VARCHAR(50) REFERENCES socios(socio_id),
+          version INTEGER NOT NULL CHECK (version >= 1),
+          actualizado_en TIMESTAMPTZ NOT NULL
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS uq_car_cruds_vinculos_socio
+          ON car_cruds_vinculos (socio_id) WHERE socio_id IS NOT NULL;
+        CREATE TABLE IF NOT EXISTS car_cruds_vinculos_historial (
+          id UUID PRIMARY KEY,
+          employee_id TEXT NOT NULL REFERENCES car_cruds_vinculos(employee_id),
+          version INTEGER NOT NULL CHECK (version >= 1),
+          socio_anterior VARCHAR(50) REFERENCES socios(socio_id),
+          socio_nuevo VARCHAR(50) REFERENCES socios(socio_id),
+          administrador_id VARCHAR(50) NOT NULL REFERENCES socios(socio_id),
+          created_at TIMESTAMPTZ NOT NULL,
+          UNIQUE (employee_id, version)
+        );
       `);
+
+      await client.query(CAR_CRUDS_EVIDENCIAS_DDL);
 
       // Seed if empty or upsert seeded users
       for (const s of SEED_SOCIOS) {
@@ -376,6 +485,113 @@ export class PostgresSociosRepository implements ISociosRepository {
       estado: row.estado,
       createdAt: row.created_at.toISOString(),
     };
+  }
+
+  async buscarSociosParaVincular(identificador: string): Promise<Socio[]> {
+    const res = await this.pool.query(
+      `SELECT socio_id, dni, nombre, email, password_hash, rol, telefono, estado, created_at
+       FROM socios WHERE LOWER(BTRIM(email)) = LOWER($1) OR BTRIM(dni) = $1
+       ORDER BY socio_id LIMIT 2`,
+      [identificador.trim()],
+    );
+    return res.rows.map((row) => ({
+      socioId: row.socio_id, dni: row.dni, nombre: row.nombre, email: row.email,
+      passwordHash: row.password_hash ?? undefined, rol: row.rol ?? 'SOCIO',
+      telefono: row.telefono ?? undefined, estado: row.estado, createdAt: row.created_at.toISOString(),
+    }));
+  }
+
+  async obtenerVinculoCarCruds(employeeId: string): Promise<VinculoCarCruds> {
+    const res = await this.pool.query(
+      'SELECT employee_id, socio_id, version, actualizado_en FROM car_cruds_vinculos WHERE employee_id = $1',
+      [employeeId],
+    );
+    return res.rowCount ? vinculoCarCrudsDeFila(res.rows[0]) : vinculoCarCrudsAusente(employeeId);
+  }
+
+  async cambiarVinculoCarCruds(cambio: CambioVinculoCarCruds): Promise<VinculoCarCruds> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [
+        JSON.stringify(['car-cruds-vinculo', cambio.employeeId]),
+      ]);
+      const actual = await client.query(
+        'SELECT employee_id, socio_id, version, actualizado_en FROM car_cruds_vinculos WHERE employee_id = $1 FOR UPDATE',
+        [cambio.employeeId],
+      );
+      const anterior = actual.rowCount ? vinculoCarCrudsDeFila(actual.rows[0]) : vinculoCarCrudsAusente(cambio.employeeId);
+      if (anterior.socioId === cambio.socioId) {
+        await client.query('COMMIT');
+        return anterior;
+      }
+      if (anterior.version !== cambio.versionEsperada) throw vinculoDesactualizado();
+      if (cambio.socioId !== null) {
+        const socio = await client.query('SELECT socio_id FROM socios WHERE socio_id = $1 FOR KEY SHARE', [cambio.socioId]);
+        if (!socio.rowCount) throw socioNoEncontrado();
+        const ocupado = await client.query(
+          'SELECT employee_id FROM car_cruds_vinculos WHERE socio_id = $1 AND employee_id <> $2',
+          [cambio.socioId, cambio.employeeId],
+        );
+        if (ocupado.rowCount) throw socioYaVinculado();
+      }
+      const siguiente = await client.query(
+        `INSERT INTO car_cruds_vinculos (employee_id, socio_id, version, actualizado_en)
+         VALUES ($1, $2, $3, $4)
+         ON CONFLICT (employee_id) DO UPDATE SET socio_id = EXCLUDED.socio_id,
+           version = EXCLUDED.version, actualizado_en = EXCLUDED.actualizado_en
+         RETURNING employee_id, socio_id, version, actualizado_en`,
+        [cambio.employeeId, cambio.socioId, anterior.version + 1, cambio.fecha],
+      );
+      await client.query(
+        `INSERT INTO car_cruds_vinculos_historial
+         (id, employee_id, version, socio_anterior, socio_nuevo, administrador_id, created_at)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [randomUUID(), cambio.employeeId, anterior.version + 1, anterior.socioId,
+          cambio.socioId, cambio.administradorId, cambio.fecha],
+      );
+      await client.query('COMMIT');
+      return vinculoCarCrudsDeFila(siguiente.rows[0]);
+    } catch (error) {
+      await client.query('ROLLBACK');
+      const sqlError = error as { code?: string; constraint?: string };
+      if (sqlError.code === '23505' && sqlError.constraint === 'uq_car_cruds_vinculos_socio') throw socioYaVinculado();
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async getHistorialVinculoCarCruds(employeeId: string): Promise<HistorialVinculoCarCruds[]> {
+    const res = await this.pool.query(
+      `SELECT id, employee_id, version, socio_anterior, socio_nuevo, administrador_id, created_at
+       FROM car_cruds_vinculos_historial WHERE employee_id = $1 ORDER BY version`,
+      [employeeId],
+    );
+    return res.rows.map((row) => ({
+      historialId: row.id, employeeId: row.employee_id, version: row.version,
+      socioAnteriorId: row.socio_anterior, socioNuevoId: row.socio_nuevo,
+      administradorId: row.administrador_id, createdAt: row.created_at.toISOString(),
+    }));
+  }
+
+  async listarVinculosCarCruds(page: number, pageSize: number): Promise<PaginaVinculosCarCruds> {
+    // El total y la página comparten el snapshot de una única sentencia.
+    const res = await this.pool.query(
+      `WITH activos AS MATERIALIZED (
+         SELECT employee_id, socio_id, version, actualizado_en FROM car_cruds_vinculos WHERE socio_id IS NOT NULL
+       ), pagina AS (
+         SELECT employee_id, socio_id, version, actualizado_en FROM activos
+         ORDER BY employee_id LIMIT $1 OFFSET $2
+       )
+       SELECT (SELECT COUNT(*)::text FROM activos) total,
+         COALESCE((SELECT jsonb_agg(to_jsonb(pagina) ORDER BY employee_id) FROM pagina), '[]'::jsonb) items`,
+      [pageSize, ((BigInt(page) - 1n) * BigInt(pageSize)).toString()],
+    );
+    const row = res.rows[0];
+    const total = Number(row.total);
+    if (!Number.isSafeInteger(total)) throw new Error('La cantidad de vínculos supera el rango admitido.');
+    return { items: row.items.map(vinculoCarCrudsDeFila), page, pageSize, total };
   }
 
   async obtenerMembresias(socioId: string): Promise<Membresia[]> {
@@ -495,4 +711,29 @@ function conflictoEmpleado(codigo: string) {
     EMAIL_EXISTENTE: 'El email ya pertenece a un socio.',
   };
   return new SociosError(409, codigo, mensajes[codigo]);
+}
+
+function vinculoCarCrudsAusente(employeeId: string): VinculoCarCruds {
+  return { employeeId, socioId: null, version: 0, actualizadoEn: null };
+}
+
+function vinculoCarCrudsDeFila(row: {
+  employee_id: string; socio_id: string | null; version: number; actualizado_en: Date | string;
+}): VinculoCarCruds {
+  return {
+    employeeId: row.employee_id, socioId: row.socio_id, version: row.version,
+    actualizadoEn: new Date(row.actualizado_en).toISOString(),
+  };
+}
+
+function vinculoDesactualizado() {
+  return new SociosError(409, 'VINCULO_DESACTUALIZADO', 'El vínculo cambió; consulte su versión actual antes de modificarlo.');
+}
+
+function socioNoEncontrado() {
+  return new SociosError(404, 'SOCIO_NO_ENCONTRADO', 'No se encontró el socio solicitado.');
+}
+
+function socioYaVinculado() {
+  return new SociosError(409, 'SOCIO_YA_VINCULADO', 'El socio ya está vinculado con otro empleado de Car Cruds.');
 }

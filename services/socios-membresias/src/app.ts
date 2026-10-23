@@ -9,6 +9,10 @@ import { AuthService, SociosService, resolverFechaReferencia } from './services'
 import { IdentidadDuplicadaError, SociosError } from './errors';
 import { EmpleadosService } from './empleados.service';
 import { CredencialEmpleados, registerEmpleadosHttp } from './empleados.http';
+import { CarCrudsClient, CarCrudsService } from './car-cruds.service';
+import { CarCrudsError } from './clients/car-cruds.client';
+import { CarCrudsVinculosService } from './car-cruds-vinculos.service';
+import { CarCrudsEvidenciasService } from './car-cruds-evidencias.service';
 
 export interface SociosAppOptions {
   repository?: ISociosRepository;
@@ -18,15 +22,19 @@ export interface SociosAppOptions {
   jwtTtlSeconds?: number;
   clock?: () => Date;
   empleadosCredenciales?: readonly CredencialEmpleados[];
+  carCrudsClient?: CarCrudsClient;
 }
 
 export function buildSociosApp(options: SociosAppOptions = {}): FastifyInstance {
   const { jwtSecret, internalApiKey, jwtTtlSeconds } = configuracionAuth(options);
   const clock = options.clock ?? (() => new Date());
-  const app = Fastify({ logger: options.logger ?? false });
+  const app = Fastify({ logger: options.logger ?? false, routerOptions: { maxParamLength: 4096 } });
   const repository = options.repository ?? new MemorySociosRepository();
   const sociosService = new SociosService(repository, clock);
   const authService = new AuthService(repository, sociosService, clock);
+  const carCrudsService = new CarCrudsService(options.carCrudsClient);
+  const vinculosCarCrudsService = new CarCrudsVinculosService(repository, carCrudsService, clock);
+  const evidenciasCarCrudsService = new CarCrudsEvidenciasService(repository, options.carCrudsClient, clock);
   const identidades = new WeakMap<FastifyRequest, Identidad>();
   const solicitudesInternas = new WeakSet<FastifyRequest>();
   const instanceId = hostname();
@@ -170,8 +178,81 @@ export function buildSociosApp(options: SociosAppOptions = {}): FastifyInstance 
     async (request) => sociosService.solicitarMembresia(identidad(request), request.params.socioId),
   );
 
+  const controlesCarCruds = [
+    async (_request: FastifyRequest, reply: import('fastify').FastifyReply) => { reply.header('Cache-Control', 'no-store'); },
+    autenticar, administrador,
+  ];
+  app.get('/api/v1/integraciones/car-cruds/empleados', { onRequest: controlesCarCruds }, async (request) => {
+    const resultado = await carCrudsService.listarEmpleados(request.query, request.traceContext);
+    request.log.info({ proveedor: 'car-cruds', operacion: 'listar-empleados', pagina: resultado.page, cantidad: resultado.items.length },
+      'Consulta externa de empleados completada');
+    return resultado;
+  });
+  app.get<{ Params: { employeeId: string } }>(
+    '/api/v1/integraciones/car-cruds/empleados/:employeeId/estado',
+    { onRequest: controlesCarCruds },
+    async (request) => {
+      const resultado = await carCrudsService.consultarEstado(request.params.employeeId, request.query, request.traceContext);
+      request.log.info({ proveedor: 'car-cruds', operacion: 'consultar-estado' }, 'Consulta externa de estado completada');
+      return resultado;
+    },
+  );
+
+  app.get('/api/v1/integraciones/car-cruds/vinculos', { onRequest: controlesCarCruds }, async (request) =>
+    vinculosCarCrudsService.listar(identidad(request), request.query));
+  app.post('/api/v1/integraciones/car-cruds/socios/buscar', { onRequest: controlesCarCruds }, async (request) =>
+    vinculosCarCrudsService.buscarSocios(identidad(request), request.body, request.query));
+  app.get<{ Params: { employeeId: string } }>(
+    '/api/v1/integraciones/car-cruds/empleados/:employeeId/vinculo',
+    { onRequest: controlesCarCruds },
+    async (request) => vinculosCarCrudsService.consultar(identidad(request), request.params.employeeId, request.query),
+  );
+  app.get<{ Params: { employeeId: string } }>(
+    '/api/v1/integraciones/car-cruds/empleados/:employeeId/vinculo/historial',
+    { onRequest: controlesCarCruds },
+    async (request) => vinculosCarCrudsService.historial(identidad(request), request.params.employeeId, request.query),
+  );
+  app.put<{ Params: { employeeId: string } }>(
+    '/api/v1/integraciones/car-cruds/empleados/:employeeId/vinculo',
+    { onRequest: controlesCarCruds },
+    async (request) => {
+      const resultado = await vinculosCarCrudsService.cambiar(
+        identidad(request), request.params.employeeId, request.body, request.query, request.traceContext,
+      );
+      request.log.info({ proveedor: 'car-cruds', operacion: 'vinculo-manual', version: resultado.version },
+        'Vínculo administrativo resuelto sin modificar membresías');
+      return resultado;
+    },
+  );
+
+  app.get<{ Params: { employeeId: string } }>(
+    '/api/v1/integraciones/car-cruds/empleados/:employeeId/fotografias',
+    { onRequest: controlesCarCruds },
+    async (request) => evidenciasCarCrudsService.consultar(identidad(request), request.params.employeeId, request.query),
+  );
+  app.post<{ Params: { employeeId: string } }>(
+    '/api/v1/integraciones/car-cruds/empleados/:employeeId/fotografias',
+    { onRequest: controlesCarCruds },
+    async (request, reply) => reply.code(201).send(await evidenciasCarCrudsService.preparar(
+      identidad(request), request.params.employeeId, request.body, request.query,
+    )),
+  );
+  app.post<{ Params: { fotografiaId: string } }>(
+    '/api/v1/integraciones/car-cruds/fotografias/:fotografiaId/enviar',
+    { onRequest: controlesCarCruds },
+    async (request) => {
+      const resultado = await evidenciasCarCrudsService.enviar(
+        identidad(request), request.params.fotografiaId, request.body, request.query, request.traceContext,
+      );
+      request.log.info({ proveedor: 'car-cruds', operacion: 'enviar-evidencia', periodo: resultado.payload.period,
+        version: resultado.payload.version, estado: resultado.estado, applied: resultado.applied }, 'Envío de fotografía registrado');
+      return resultado;
+    },
+  );
+
   app.setErrorHandler((error, request, reply) => {
     if (error instanceof SociosError) {
+      if (error instanceof CarCrudsError) request.log.warn({ proveedor: 'car-cruds', codigo: error.codigo }, 'Consulta externa no completada');
       if (error.statusCode === 401) reply.header('WWW-Authenticate', 'Bearer realm="gimnasio"');
       return reply.code(error.statusCode).send({ codigo: error.codigo, mensaje: error.message });
     }

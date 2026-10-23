@@ -22,6 +22,7 @@ COPY --from=build --chown=node:node /app/services/${SERVICE}/package.json ./serv
 COPY --from=build --chown=node:node /app/services/${SERVICE}/dist ./services/${SERVICE}/dist
 COPY --chown=node:node docs/contracts/openapi-v1.yaml ./docs/contracts/openapi-v1.yaml
 COPY --chown=node:node docs/contracts/openapi-empleados-v1.yaml ./docs/contracts/openapi-empleados-v1.yaml
+COPY --chown=node:node docs/contracts/car-cruds-employees-0.3.0.openapi.json ./docs/contracts/car-cruds-employees-0.3.0.openapi.json
 USER node
 EXPOSE 3000
 CMD ["sh", "-c", "exec node services/$SERVICE_NAME/dist/server.js"]

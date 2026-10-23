@@ -13,6 +13,7 @@
     "build": "npm run build --workspaces",
     "test": "npm run build && node --test",
     "test:contrato-empleados": "npm run build --workspace=@gimnasio/socios-membresias && node --test services/socios-membresias/test/empleados-contract.test.mjs",
+    "test:car-cruds": "npm run build --workspace=@gimnasio/socios-membresias && node --test services/socios-membresias/test/car-cruds-client.test.mjs services/socios-membresias/test/car-cruds-http.test.mjs services/socios-membresias/test/car-cruds-vinculos.test.mjs services/socios-membresias/test/car-cruds-evidence-client.test.mjs services/socios-membresias/test/car-cruds-evidencias.test.mjs",
     "mock:empleados": "npm run build --workspace=@gimnasio/socios-membresias && node services/socios-membresias/dist/empleados.mock.js",
     "crear-admin": "node scripts/crear-admin.mjs",
     "test:frontend": "node --test frontend/src/services/api.test.mjs",

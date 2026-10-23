@@ -6,7 +6,9 @@
 
 ## Contexto
 
-La asignación comunicada por el equipo requiere consultar productos y stock de una distribuidora. La capacidad es conocida, pero faltan identificación operativa del proveedor, contrato, URL y autenticación. El alcance es solo consulta, sin compras ni reposición.
+La asignación comunicada por el equipo requiere consultar productos y stock de **FAV**, repositorio [Fav-del-universo](https://github.com/JuanHernandez-99/Fav-del-universo/tree/feature-inventario), rama `feature-inventario` confirmada por el equipo el 23/10/2026. El alcance sigue siendo solo consulta, sin compras, consignación ni reposición.
+
+La revisión de su contrato y código identificó un catálogo público con variantes/precios desde un mock y stock persistido en Inventario, cuya consulta pertenece a administración. El contrato público no incluye stock. Falta acordar su exposición de solo lectura para consumidores, la URL y la credencial; conocer el repositorio no cierra esos pendientes. El supuesto de consignación documentado por FAV no fue adoptado por el gimnasio. Esto actualiza la identificación del proveedor sin cambiar el diseño de adaptación.
 
 ## Decisión
 
@@ -23,7 +25,7 @@ El catálogo y las existencias pertenecen a la distribuidora. No se incorpora ba
 
 ### Adaptación y resiliencia pendientes
 
-Al recibir el contrato se fijarán rutas, campos, filtros/paginación, validación de respuestas, traducción de errores, autenticación y test de contrato capaz de detectar incompatibilidades. Se conserva el diseño general de timeout, reintentos de lecturas seguras, circuit breaker y degradación controlada; sus valores dependen del contrato y todavía no están implementados para Tienda.
+Al acordar el contrato que incluya stock se fijarán rutas, campos, filtros/paginación, validación de respuestas, traducción de errores, autenticación y test de contrato capaz de detectar incompatibilidades. Se conserva el diseño general de timeout, reintentos de lecturas seguras, circuit breaker y degradación controlada; sus valores dependen del contrato y todavía no están implementados para Tienda.
 
 Los ejemplos anteriores de otros dominios (pagos, clima o biometría) eran hipótesis previas a la asignación; no pertenecen al alcance vigente. Los parámetros numéricos orientativos de esa propuesta no se presentan como políticas acordadas con la distribuidora.
 
@@ -33,4 +35,4 @@ La integración real debe incorporarse al flujo de consulta del socio y demostra
 
 Consumir desde el navegador expondría la integración al cliente y contradice §4.1; hacerlo desde nuestro gateway desplazaría una responsabilidad de negocio. Duplicar stock convertiría al gimnasio en otro propietario de datos que solo debe consultar.
 
-El adaptador concentra cambios del proveedor, pero un cambio incompatible aún puede exigir revisar tipos y comportamiento propios; no se garantiza que baste con cambiar una URL. La estructura se verifica con `npm test` y el arranque de Compose; no hay consumo externo, test de contrato del proveedor ni ensayo de su caída mientras no se disponga del contrato.
+El adaptador concentra cambios del proveedor, pero un cambio incompatible aún puede exigir revisar tipos y comportamiento propios; no se garantiza que baste con cambiar una URL. La estructura se verifica con `npm test` y el arranque de Compose; no hay consumo externo, test de contrato del proveedor ni ensayo de su caída. La documentación de Car Cruds se mantiene separada en [D8 vigente](ADR-018-integracion-car-cruds.md).

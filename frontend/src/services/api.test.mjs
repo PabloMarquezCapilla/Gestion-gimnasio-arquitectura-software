@@ -184,3 +184,273 @@ test('Tienda participa del cierre de sesión ante un JWT rechazado', async () =>
   assert.equal(expired, 1);
   await assert.rejects(api.apiConsultarTienda(), { codigo: 'SESION_REQUERIDA' });
 });
+
+const employeeId = 'empleado / con?caracteres';
+const carCrudsPath = '/api/v1/integraciones/car-cruds';
+const employeePath = `${carCrudsPath}/empleados/${encodeURIComponent(employeeId)}`;
+const link = { employeeId, socioId: 'socio-real', version: 1, actualizadoEn: '2026-10-23T12:30:00.000Z' };
+const publicSocio = {
+  socioId: 'socio-real', dni: '12345678', nombre: 'Socio real', email: 'socio@example.test',
+  rol: 'SOCIO', estado: 'ACTIVO', createdAt: '2026-10-23T12:00:00.000Z',
+};
+const historyItem = {
+  historialId: 'historial-1', employeeId, version: 1, socioAnteriorId: null,
+  socioNuevoId: publicSocio.socioId, administradorId: 'admin-real', createdAt: link.actualizadoEn,
+};
+
+test('Car Cruds usa solo JWT propio y codifica IDs al consultar lista, estado, vínculo e historial', async () => {
+  api.setApiSession('jwt-admin-car-cruds');
+  const paths = [];
+  globalThis.fetch = async (url, options) => {
+    paths.push(url);
+    assert.equal(options.headers.get('Authorization'), 'Bearer jwt-admin-car-cruds');
+    assert.equal(options.headers.has('X-API-Key'), false);
+    if (url.endsWith('/estado')) return json({ employeeId, active: false });
+    if (url.endsWith('/historial')) return json({ items: [historyItem] });
+    if (url.endsWith('/vinculo')) return json(link);
+    if (url.startsWith(`${carCrudsPath}/vinculos?`)) return json({ items: [link], page: 2, pageSize: 5, total: 8 });
+    return json({ items: [{ employeeId, displayName: 'Nombre provisto por Car Cruds' }], page: 2, pageSize: 5, total: 8 });
+  };
+  assert.equal((await api.apiCarCrudsEmpleados(2, 5)).items[0].displayName, 'Nombre provisto por Car Cruds');
+  assert.deepEqual(await api.apiCarCrudsEstado(employeeId), { employeeId, active: false });
+  assert.deepEqual(await api.apiCarCrudsVinculos(2, 5), { items: [link], page: 2, pageSize: 5, total: 8 });
+  assert.deepEqual(await api.apiCarCrudsVinculo(employeeId), link);
+  assert.deepEqual(await api.apiCarCrudsHistorial(employeeId), { items: [historyItem] });
+  assert.deepEqual(paths, [
+    `${carCrudsPath}/empleados?page=2&pageSize=5`, `${employeePath}/estado`,
+    `${carCrudsPath}/vinculos?page=2&pageSize=5`, `${employeePath}/vinculo`, `${employeePath}/vinculo/historial`,
+  ]);
+});
+
+test('Car Cruds busca por cuerpo privado y conserva solo campos públicos del socio', async () => {
+  api.setApiSession('jwt-admin-car-cruds');
+  globalThis.fetch = async (url, options) => {
+    assert.equal(url, `${carCrudsPath}/socios/buscar`);
+    assert.equal(options.method, 'POST');
+    assert.equal(options.headers.get('Content-Type'), 'application/json');
+    assert.deepEqual(JSON.parse(options.body), { identificador: 'socio@example.test' });
+    return json({ items: [{ ...publicSocio, passwordHash: 'no-debe-propagarse', membresia: { estado: 'HABILITADA' } }] });
+  };
+  assert.deepEqual(await api.apiCarCrudsBuscarSocios('  socio@example.test  '), { items: [publicSocio] });
+});
+
+test('Car Cruds confirma vínculo y desvinculación con la versión leída, sin modificar membresías', async () => {
+  api.setApiSession('jwt-admin-car-cruds');
+  for (const socioId of [publicSocio.socioId, null]) {
+    globalThis.fetch = async (url, options) => {
+      assert.equal(url, `${employeePath}/vinculo`);
+      assert.equal(options.method, 'PUT');
+      assert.deepEqual(JSON.parse(options.body), { socioId, versionEsperada: 3 });
+      return json({ ...link, socioId, version: 4 });
+    };
+    assert.deepEqual(await api.apiCarCrudsGuardarVinculo(employeeId, socioId, 3), { ...link, socioId, version: 4 });
+  }
+  globalThis.fetch = async () => json({ employeeId, socioId: null, version: 0, actualizadoEn: null });
+  assert.deepEqual(await api.apiCarCrudsVinculo(employeeId), { employeeId, socioId: null, version: 0, actualizadoEn: null });
+});
+
+test('Car Cruds conserva conflicto de versión e indisponibilidad sin cerrar la sesión ni fingir éxito', async () => {
+  api.setApiSession('jwt-admin-car-cruds');
+  const operations = [
+    () => api.apiCarCrudsEmpleados(), () => api.apiCarCrudsEstado(employeeId),
+    () => api.apiCarCrudsVinculos(), () => api.apiCarCrudsVinculo(employeeId),
+    () => api.apiCarCrudsHistorial(employeeId), () => api.apiCarCrudsBuscarSocios('12345678'),
+    () => api.apiCarCrudsGuardarVinculo(employeeId, publicSocio.socioId, 1),
+  ];
+  for (const status of [409, 503]) {
+    const codigo = status === 409 ? 'VINCULO_DESACTUALIZADO' : 'CAR_CRUDS_NO_DISPONIBLE';
+    globalThis.fetch = async (_url, options) => {
+      assert.equal(options.headers.get('Authorization'), 'Bearer jwt-admin-car-cruds');
+      return json({ codigo, mensaje: 'Error informado por backend' }, status);
+    };
+    for (const operation of operations) await assert.rejects(operation(), { codigo, status, message: 'Error informado por backend' });
+  }
+  globalThis.fetch = async () => json({ items: [], page: 1, pageSize: 20, total: 0 });
+  assert.deepEqual(await api.apiCarCrudsVinculos(), { items: [], page: 1, pageSize: 20, total: 0 });
+});
+
+test('Car Cruds cierra la sesión ante 401 propio y no vuelve a enviar el JWT', async () => {
+  let expired = 0;
+  let calls = 0;
+  api.setApiSession('jwt-admin-car-cruds', () => { expired++; });
+  globalThis.fetch = async () => { calls++; return json({ codigo: 'NO_AUTENTICADO', mensaje: 'Sesión vencida' }, 401); };
+  await assert.rejects(api.apiCarCrudsBuscarSocios('12345678'), { status: 401 });
+  assert.equal(expired, 1);
+  await assert.rejects(api.apiCarCrudsGuardarVinculo(employeeId, null, 1), { codigo: 'SESION_REQUERIDA' });
+  assert.equal(calls, 1);
+});
+
+test('Car Cruds no convierte respuestas incompletas, de otro empleado o fallas de red en datos válidos', async () => {
+  api.setApiSession('jwt-admin-car-cruds');
+  const cases = [
+    [() => api.apiCarCrudsEmpleados(), { items: [{ employeeId }], page: 1, pageSize: 20, total: 1 }],
+    [() => api.apiCarCrudsEmpleados(), { items: [], page: 0, pageSize: 20, total: 0 }],
+    [() => api.apiCarCrudsVinculos(), { items: [link], page: 1, pageSize: 20, total: 0 }],
+    [() => api.apiCarCrudsEstado(employeeId), { employeeId, active: 'false' }],
+    [() => api.apiCarCrudsEstado(employeeId), { employeeId: 'otra-persona', active: true }],
+    [() => api.apiCarCrudsVinculo(employeeId), { ...link, version: -1 }],
+    [() => api.apiCarCrudsVinculo(employeeId), { ...link, employeeId: 'otra-persona' }],
+    [() => api.apiCarCrudsVinculo(employeeId), { ...link, version: 0 }],
+    [() => api.apiCarCrudsHistorial(employeeId), { items: [{ ...historyItem, administradorId: null }] }],
+    [() => api.apiCarCrudsBuscarSocios('12345678'), { items: [{ ...publicSocio, dni: null }] }],
+    [() => api.apiCarCrudsGuardarVinculo(employeeId, publicSocio.socioId, 1), {}],
+    [() => api.apiCarCrudsGuardarVinculo(employeeId, publicSocio.socioId, 1), { ...link, socioId: 'socio-distinto' }],
+  ];
+  for (const [operation, payload] of cases) {
+    globalThis.fetch = async () => json(payload);
+    await assert.rejects(operation(), { codigo: 'RESPUESTA_INVALIDA' });
+  }
+  globalThis.fetch = async () => { throw new TypeError('Network error'); };
+  for (const operation of [() => api.apiCarCrudsEmpleados(), () => api.apiCarCrudsGuardarVinculo(employeeId, null, 1)]) {
+    await assert.rejects(operation(), { codigo: 'ERROR_RED' });
+  }
+});
+
+const photograph = {
+  fotografiaId: 'fotografia / guardada', socioId: publicSocio.socioId, versionVinculo: 3,
+  administradorId: 'admin-real', creadaEn: '2026-10-23T13:00:00.000Z',
+  payload: {
+    employeeId, period: '2026-10', sourceReference: 'referencia-estable', version: 1,
+    observedAt: '2026-10-23T13:00:00.000Z', member: null, used: null, costMinor: null, spendingMinor: null,
+  },
+  estado: 'PREPARADA', intentos: 0, ultimoIntentoEn: null, recibidaEn: null,
+  applied: null, codigoError: null, leaseId: null, leaseHasta: null,
+};
+const prepareOptions = { period: '2026-10', versionVinculoEsperada: 3, versionAnteriorEsperada: 0 };
+
+test('fotografías usa JWT propio y consulta el mes con ID opaco sin exponer token de Car Cruds', async () => {
+  api.setApiSession('jwt-admin-fotografias');
+  globalThis.fetch = async (url, options) => {
+    assert.equal(url, `${employeePath}/fotografias?period=2026-10`);
+    assert.equal(options.headers.get('Authorization'), 'Bearer jwt-admin-fotografias');
+    assert.equal(options.headers.has('X-API-Key'), false);
+    assert.equal(options.body, undefined);
+    return json({ items: [photograph] });
+  };
+  assert.deepEqual(await api.apiCarCrudsFotografias(employeeId, '2026-10'), { items: [photograph] });
+});
+
+test('preparación envía solo mes, revisiones esperadas y confirmación del cambio; nunca hechos del cliente', async () => {
+  api.setApiSession('jwt-admin-fotografias');
+  for (const confirmation of [undefined, false, true]) {
+    globalThis.fetch = async (url, options) => {
+      assert.equal(url, `${employeePath}/fotografias`);
+      assert.equal(options.method, 'POST');
+      assert.equal(options.headers.get('Content-Type'), 'application/json');
+      assert.deepEqual(JSON.parse(options.body), {
+        ...prepareOptions, ...(confirmation === undefined ? {} : { confirmarCambioVinculo: confirmation }),
+      });
+      return json(photograph, 201);
+    };
+    assert.deepEqual(await api.apiCarCrudsPrepararFotografia(employeeId, {
+      ...prepareOptions, confirmarCambioVinculo: confirmation, member: true, costMinor: 100,
+      administradorId: 'actor-inventado', sourceReference: 'referencia-cliente', observedAt: 'fecha-cliente',
+    }), photograph);
+  }
+});
+
+test('enviar o reintentar identifica la fotografía guardada y no vuelve a calcular ni transmite sus hechos', async () => {
+  api.setApiSession('jwt-admin-fotografias');
+  for (const confirmation of [undefined, false, true]) {
+    globalThis.fetch = async (url, options) => {
+      assert.equal(url, `${carCrudsPath}/fotografias/${encodeURIComponent(photograph.fotografiaId)}/enviar`);
+      assert.equal(options.method, 'POST');
+      assert.deepEqual(JSON.parse(options.body), {
+        versionVinculoEsperada: 3, ...(confirmation === undefined ? {} : { confirmarRevision: confirmation }),
+      });
+      return json({ ...photograph, estado: 'PENDIENTE', intentos: 1, codigoError: 'CAR_CRUDS_NO_DISPONIBLE', ultimoIntentoEn: photograph.creadaEn });
+    };
+    const result = await api.apiCarCrudsEnviarFotografia(photograph.fotografiaId, {
+      versionVinculoEsperada: 3, confirmarRevision: confirmation, payload: { ...photograph.payload, member: true },
+      period: '2020-01', fotografiaId: 'otra-fotografia', version: 5,
+    });
+    assert.equal(result.estado, 'PENDIENTE');
+    assert.deepEqual(result.payload, photograph.payload);
+  }
+});
+
+test('fotografías conserva null, cero y applied false sin inferir hechos ni vigencia remota', async () => {
+  api.setApiSession('jwt-admin-fotografias');
+  const received = {
+    ...photograph, estado: 'RECIBIDA', intentos: 1, ultimoIntentoEn: photograph.creadaEn,
+    recibidaEn: photograph.creadaEn, applied: false,
+    payload: { ...photograph.payload, member: false, used: null, costMinor: 0, currency: 'ARS' },
+  };
+  globalThis.fetch = async () => json({ ...received, token: 'no-propagar', payload: { ...received.payload, password: 'no-propagar' } });
+  const result = await api.apiCarCrudsEnviarFotografia(photograph.fotografiaId, { versionVinculoEsperada: 3 });
+  assert.deepEqual(result, received);
+  assert.equal(result.applied, false);
+  assert.equal(result.payload.used, null);
+  assert.equal(result.payload.costMinor, 0);
+});
+
+test('fotografías rechaza datos incompletos, cantidades inseguras y respuesta de otro empleado, mes o registro', async () => {
+  api.setApiSession('jwt-admin-fotografias');
+  const invalidRecords = [
+    { ...photograph, intentos: -1 }, { ...photograph, versionVinculo: 0 },
+    { ...photograph, leaseHasta: 'fecha-invalida' }, { ...photograph, estado: 'EXITO' },
+    { ...photograph, applied: 'false' }, { ...photograph, administradorId: null },
+    { ...photograph, payload: { ...photograph.payload, used: undefined } },
+    { ...photograph, payload: { ...photograph.payload, costMinor: -1 } },
+    { ...photograph, payload: { ...photograph.payload, spendingMinor: Number.MAX_SAFE_INTEGER + 1, currency: 'ARS' } },
+    { ...photograph, payload: { ...photograph.payload, costMinor: 1 } },
+    { ...photograph, payload: { ...photograph.payload, currency: 'USD' } },
+    { ...photograph, payload: { ...photograph.payload, period: '2026-13' } },
+    { ...photograph, payload: { ...photograph.payload, employeeId: 'otra-persona' } },
+    { ...photograph, payload: { ...photograph.payload, period: '2026-09' } },
+  ];
+  for (const record of invalidRecords) {
+    globalThis.fetch = async () => json({ items: [record] });
+    await assert.rejects(api.apiCarCrudsFotografias(employeeId, '2026-10'), { codigo: 'RESPUESTA_INVALIDA' });
+  }
+  for (const items of [[photograph, photograph], [photograph, { ...photograph, fotografiaId: 'otra' }]]) {
+    globalThis.fetch = async () => json({ items });
+    await assert.rejects(api.apiCarCrudsFotografias(employeeId, '2026-10'), { codigo: 'RESPUESTA_INVALIDA' });
+  }
+  globalThis.fetch = async () => json({ items: [photograph, {
+    ...photograph, fotografiaId: 'otra', payload: { ...photograph.payload, version: 2, sourceReference: 'referencia-distinta' },
+  }] });
+  await assert.rejects(api.apiCarCrudsFotografias(employeeId, '2026-10'), { codigo: 'RESPUESTA_INVALIDA' });
+  globalThis.fetch = async () => json({ ...photograph, versionVinculo: 4 });
+  await assert.rejects(api.apiCarCrudsPrepararFotografia(employeeId, prepareOptions), { codigo: 'RESPUESTA_INVALIDA' });
+  globalThis.fetch = async () => json({ ...photograph, estado: 'RECIBIDA' });
+  await assert.rejects(api.apiCarCrudsPrepararFotografia(employeeId, prepareOptions), { codigo: 'RESPUESTA_INVALIDA' });
+  globalThis.fetch = async () => json({ ...photograph, payload: { ...photograph.payload, version: 4 } });
+  await assert.rejects(api.apiCarCrudsPrepararFotografia(employeeId, prepareOptions), { codigo: 'RESPUESTA_INVALIDA' });
+  globalThis.fetch = async () => json({ ...photograph, fotografiaId: 'otra' });
+  await assert.rejects(api.apiCarCrudsEnviarFotografia(photograph.fotografiaId, { versionVinculoEsperada: 3 }), { codigo: 'RESPUESTA_INVALIDA' });
+});
+
+test('fotografías conserva conflictos y fallas de red; no repite POST ni cierra sesión por errores de integración', async () => {
+  api.setApiSession('jwt-admin-fotografias');
+  const operations = [
+    () => api.apiCarCrudsFotografias(employeeId, '2026-10'),
+    () => api.apiCarCrudsPrepararFotografia(employeeId, prepareOptions),
+    () => api.apiCarCrudsEnviarFotografia(photograph.fotografiaId, { versionVinculoEsperada: 3 }),
+  ];
+  let calls = 0;
+  globalThis.fetch = async (_url, options) => {
+    calls++;
+    assert.equal(options.headers.get('Authorization'), 'Bearer jwt-admin-fotografias');
+    return json({ codigo: 'VINCULO_DESACTUALIZADO', mensaje: 'Revisar el vínculo' }, 409);
+  };
+  for (const operation of operations) await assert.rejects(operation(), { status: 409, codigo: 'VINCULO_DESACTUALIZADO' });
+  assert.equal(calls, 3);
+  globalThis.fetch = async () => { calls++; throw new TypeError('Sin red'); };
+  for (const operation of operations) await assert.rejects(operation(), { status: 0, codigo: 'ERROR_RED' });
+  assert.equal(calls, 6);
+  globalThis.fetch = async () => json({ items: [] });
+  assert.deepEqual(await api.apiCarCrudsFotografias(employeeId, '2026-10'), { items: [] });
+});
+
+test('fotografías usa el manejo central de 401 propio sin volver a enviar la sesión vencida', async () => {
+  let expired = 0;
+  let calls = 0;
+  api.setApiSession('jwt-admin-fotografias', () => { expired++; });
+  globalThis.fetch = async () => { calls++; return json({ codigo: 'NO_AUTENTICADO', mensaje: 'Sesión vencida' }, 401); };
+  await assert.rejects(api.apiCarCrudsFotografias(employeeId, '2026-10'), { status: 401 });
+  await assert.rejects(api.apiCarCrudsPrepararFotografia(employeeId, prepareOptions), { codigo: 'SESION_REQUERIDA' });
+  await assert.rejects(api.apiCarCrudsEnviarFotografia(photograph.fotografiaId, { versionVinculoEsperada: 3 }), { codigo: 'SESION_REQUERIDA' });
+  assert.equal(expired, 1);
+  assert.equal(calls, 1);
+});

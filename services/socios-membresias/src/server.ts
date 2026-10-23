@@ -3,10 +3,13 @@ import { buildSociosApp } from './app';
 import { PostgresSociosRepository, MemorySociosRepository, ISociosRepository } from './repository';
 import { configuracionAuth } from './security';
 import { credencialesEmpleadosDesdeEntorno } from './empleados.http';
+import { carCrudsConfigDesdeEntorno, HttpCarCrudsClient } from './clients/car-cruds.client';
 
 async function start() {
   // Validar secretos antes de inicializar el almacenamiento o abrir el puerto.
   const auth = configuracionAuth();
+  const carCrudsConfig = carCrudsConfigDesdeEntorno();
+  const carCrudsClient = carCrudsConfig ? new HttpCarCrudsClient(carCrudsConfig) : undefined;
   const empleadosCredenciales = credencialesEmpleadosDesdeEntorno();
   if (!empleadosCredenciales.length) throw new Error('Configurar EMPLEADOS_API_KEY y EMPLEADOS_ORIGEN_ID para la capacidad externa.');
   const databaseUrl = process.env.DATABASE_URL;
@@ -44,6 +47,7 @@ async function start() {
     repository,
     ...auth,
     empleadosCredenciales,
+    carCrudsClient,
     logger: { redact: ['req.headers.authorization', 'req.headers.x-service-key', 'req.headers.x-api-key', 'req.headers.idempotency-key'] },
   });
   if (pool) {

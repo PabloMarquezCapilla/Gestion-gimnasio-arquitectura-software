@@ -29,4 +29,14 @@ La cancelación automática de reservas por una suspensión posterior de membres
 
 Sin modificar la política de reservas, se concreta otra operación consistente dentro de Socios: el alta externa guarda socio, solicitud pendiente, referencia externa y resultado de idempotencia en una transacción PostgreSQL. Bloqueos consultivos por clave/empleado e índices únicos impiden duplicados entre instancias. Un replay se resuelve antes de comprobar duplicados de negocio; una solicitud nueva en conflicto revierte la transacción sin sobrescribir datos. La estructura y comprobaciones están en [D3](ADR-003-persistencia.md) y [D8](ADR-014-contrato-empleados.md). Se conserva esta decisión; no se reemplaza la política FIFO.
 
+### Vinculación administrativa con Car Cruds
+
+La nueva relación uno a uno se conserva en tablas separadas del alta anterior. El vínculo y su auditoría se escriben en una transacción; un índice único parcial impide compartir socio y el bloqueo por empleado con revisión esperada evita cambios perdidos entre instancias. Quitar el vínculo conserva revisión e historial. La consulta remota ocurre antes de la transacción y la desvinculación no depende de ella. `npm run test:postgres` comprueba carreras, durabilidad y rollback de asociación/auditoría. Detalle en [ADR-018](ADR-018-integracion-car-cruds.md). Esta operación no altera la política FIFO.
+
+### Fotografías Car Cruds
+
+Las fotografías Car Cruds agregan otra operación local en Socios: preparación con fuente y revisión del vínculo bajo transacción, cuerpo inmutable y un reclamo durable antes de HTTP. El lease y su UUID permiten recuperar el mismo mensaje y descartar respuestas tardías entre réplicas. Cambiar un vínculo conserva los recibos y exige revisión explícita para una nueva fotografía. Se verifican rollback de cabecera/fotografía, concurrencia y recuperación en PostgreSQL. La entrega manual de esta integración no utiliza el trabajador FIFO ni altera sus reglas; [ADR-018](ADR-018-integracion-car-cruds.md).
+
+### Reservas y recuperación
+
 Pruebas de aplicación y repositorio en `services/clases-reservas/test/reservas.test.mjs`, concurrencia del último cupo en `test/concurrencia.test.mjs` y flujo en `test/flujo-principal.test.mjs`. `npm run test:postgres` ejecuta HTTP real y dos instancias con pools independientes, comprueba el último cupo y la cancelación con caída/recuperación de Socios, y retira únicamente su contenedor efímero. La reproducción se documenta en README; los resultados de caída y carga están en POSTMORTEM y D13.

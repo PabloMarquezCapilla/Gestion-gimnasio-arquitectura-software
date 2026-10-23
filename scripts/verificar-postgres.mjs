@@ -13,6 +13,8 @@ import adminModule from '../services/socios-membresias/dist/crear-admin.js';
 import clasesModule from '../services/clases-reservas/dist/app.js';
 import clasesRepository from '../services/clases-reservas/dist/repository.js';
 import sociosClientModule from '../services/clases-reservas/dist/clients/socios.client.js';
+import { verificarVinculosCarCruds } from './verificar-vinculos-car-cruds.mjs';
+import { verificarEvidenciasCarCruds } from './verificar-evidencias-car-cruds.mjs';
 
 const container = 'codex-p4-pg-' + randomBytes(6).toString('hex');
 const label = 'codex.verificacion=' + container;
@@ -115,6 +117,12 @@ try {
     return result.body.token;
   }
   const adminToken = await login(adminData.email, adminData.password);
+  await verificarVinculosCarCruds({
+    repositoryA: sociosRepo, repositoryB: secondSociosRepo, pool: sociosPool, administradorId: initialAdmin.socioId,
+  });
+  await verificarEvidenciasCarCruds({
+    repositoryA: sociosRepo, repositoryB: secondSociosRepo, pool: sociosPool, administradorId: initialAdmin.socioId,
+  });
 
   // Capacidad externa: dos instancias de Socios, con pools independientes.
   let secondSociosApp = await startSocios(secondSociosRepo);
