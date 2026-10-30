@@ -283,3 +283,9 @@ Para evitar ampliar innecesariamente el proyecto, inicialmente quedan fuera:
 - red social del gimnasio.
 
 Las ampliaciones deberán acordarse explícitamente y reflejarse en el alcance antes de incorporarse al sistema.
+
+## Estado de implementación de etapa 3 (30/10/2026)
+
+RF-01–03, RN-G01–04 y CA-G01–03 se concretan para planes administrados, solicitudes y confirmación manual de pago completo con comprobante interno y habilitación transaccional. El alta de cuenta sigue sin membresía. El socio consulta sus solicitudes/estado; Clases valida cobertura mediante el contrato vigente. Esta anotación informa implementación, no sustituye ni reduce los requisitos anteriores.
+
+No se agregan precios o duraciones comerciales al alcance: ADMIN configura tarifas y fechas explícitas. Como protección ante reglas no definidas, las superposiciones se bloquean para revisión; renovación sin superposición requiere otra solicitud y pago. Acumulación, sustitución, reactivación de suspensiones, prorrateos, cuotas, devoluciones y política de vencimiento administrativo de solicitudes siguen sin definición/implementación. CA-R09 continúa pendiente de RabbitMQ. La imputación mensual Car Cruds no se deduce de los nuevos cobros. [Matriz y evidencia de límites](EVIDENCIA-MEMBRESIAS.md).

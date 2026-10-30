@@ -42,3 +42,7 @@ Las fotografías Car Cruds agregan otra operación local en Socios: preparación
 ### Reservas y recuperación
 
 Pruebas de aplicación y repositorio en `services/clases-reservas/test/reservas.test.mjs`, concurrencia del último cupo en `test/concurrencia.test.mjs` y flujo en `test/flujo-principal.test.mjs`. `npm run test:postgres` ejecuta HTTP real y dos instancias con pools independientes, comprueba el último cupo y la cancelación con caída/recuperación de Socios, y retira únicamente su contenedor efímero. La reproducción se documenta en README; los resultados de caída y carga están en POSTMORTEM y D13.
+
+### Planes y pagos manuales — etapa 3
+
+[ADR-021](ADR-021-planes-pagos-membresias.md) serializa por socio dentro de Socios y confirma pago, comprobante, membresía y resultado idempotente juntos. No modifica los bloqueos/FIFO de Clases ni introduce transacción distribuida. Se verifica habilitación de nuevas membresías por HTTP y se conserva la dependencia pendiente de eventos para suspensiones posteriores.

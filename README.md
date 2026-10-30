@@ -49,7 +49,7 @@ Las reglas de negocio, exclusiones y criterios de aceptación están en [ALCANCE
 
 | Componente | Disponible | Pendiente |
 |---|---|---|
-| Socios y Membresías | Login JWT, permisos, altas administrativas, membresías, lecturas/vinculación Car Cruds, vista previa y envío mensual manual con persistencia e historial; POST anterior de empleados. | Conexión conjunta Car Cruds; planes/pagos/comprobantes, renovación/reactivación y resolución de solicitudes. |
+| Socios y Membresías | Login JWT, permisos, altas administrativas, planes, solicitudes, pagos manuales/comprobantes y membresías, lecturas/vinculación Car Cruds, vista previa y envío mensual manual con persistencia e historial; POST anterior de empleados. | Conexión conjunta Car Cruds; políticas de reactivación, superposición/prorrateos y automatización de cambios de membresía. |
 | Clases y Reservas | Catálogo por sede/fechas, reservas, cancelación, espera FIFO y recuperación de promociones; PostgreSQL y dos réplicas. | Publicación administrativa de clases, consulta textual FTS y cancelación de reservas por cambios posteriores de membresía. |
 | Accesos y Ocupación | Recepción ADMIN: ingresos/egresos, historial y ocupación real; MongoDB transaccional, Redis medido e idempotencia durable. | Integración de hechos de uso con Car Cruds. |
 | Tienda | Servicio y sección web con JWT; informa `503 INTEGRACION_PENDIENTE`. | Acordar con FAV la consulta externa de stock, conexión y consumo real. |
@@ -140,7 +140,8 @@ Ingresar DNI, nombre, email, contraseña y confirmación. Para acceder después,
 | Crear socio como ADMIN | Cuenta SOCIO sin membresía; se conserva la sesión del administrador. DNI/email repetidos se rechazan. |
 | Abrir «Empleados Car Cruds» como ADMIN | Con URL/token configurados, elegir empleado, buscar socio por DNI/email exacto y revisar antes de confirmar. Vínculo uno a uno, corrección/desvinculación con historial; membresía sin cambios. Sin proveedor se mantienen las consultas locales y la desvinculación. |
 | Preparar y enviar información mensual de un vínculo | Elegir mes, guardar/revisar vista previa y confirmar envío aparte. Sin datos fiables se muestra null; una respuesta incierta queda pendiente y el reintento usa la misma fotografía. [Guía](docs/contracts/README.md#preparar-y-enviar-desde-el-panel). |
-| Abrir Tienda o consultar pagos/reactivación | Se muestran los pendientes; no se simulan productos, pagos ni habilitaciones. |
+| Abrir gestión de membresías como ADMIN | Definir plan, elegir socio y fechas, crear solicitud, registrar cobro y confirmar después de verificarlo. Comprobante interno y habilitación atómicos. |
+| Abrir Tienda o reactivar períodos superpuestos | Integración y política pendientes respectivamente; no se simulan sus resultados. |
 
 El JWT se guarda en memoria: recargar la página o recibir un 401 requiere nuevo login. En una base nueva, Yoga del 12/11/2026 tiene tres cupos y Pilates del mismo día está llena; los movimientos cambian esos valores. Las fechas de demostración son fijas: las clases iniciadas rechazan nuevas reservas, espera y cancelaciones.
 
@@ -263,3 +264,15 @@ E1 (§6.2) queda representada por alcance, arquitectura/diagramas, límites, est
 Compose incorpora Redis 8.2.11 sin puerto público ni persistencia, con límite de memoria 64 MiB y evicción LRU. Accesos recibe `REDIS_URL`; fuera de Compose, omitirla desactiva la caché. Variables opcionales: `OCUPACION_CACHE_TTL_MS=30000` (50–30000), `REDIS_TIMEOUT_MS=100` (1–1000) y `OCUPACION_CACHE_NAMESPACE=pulse:ocupacion:v1`. Usar namespace distinto por entorno/fuente MongoDB y configuración idéntica en todas las réplicas. Cambiar TTL/namespace de forma coordinada, con reinicio de caché, para no dejar réplicas invalidando claves diferentes. No se modificó `.env`.
 
 Redis no autoriza ingresos: sólo acelera el agregado por sede. Si falla, se consulta MongoDB; puede existir información anterior hasta 30 s si una invalidación falla. La interfaz y las rutas del gateway conservan sus contratos. `npm run test:cache` usa MongoDB y Redis reales aislados (Docker por defecto); modo nativo y medición antes/después en [EVIDENCIA-CACHE](docs/EVIDENCIA-CACHE.md). Diseño: [ADR-020](docs/adr/ADR-020-cache-ocupacion-redis.md).
+
+## Etapa 3: planes, pagos manuales y membresías
+
+Socios requiere PostgreSQL para esta capacidad. Iniciar con las instrucciones Compose anteriores; el esquema aditivo se aplica en el arranque, sin recrear volúmenes ni borrar registros. No hay planes ni tarifas predeterminadas: ADMIN crea el plan con nombre, importe entero en la unidad mínima de la moneda y código reconocido, y registra las fechas exactas al solicitar. No se calculan mensualidades ni se convierten monedas.
+
+Desde «Socios & Membresías» o «Planes y Tarifas»: dar de alta o elegir socio → configurar/elegir plan → crear solicitud → registrar pago pendiente con referencia única → verificar el cobro por el procedimiento administrativo → confirmar pago. Sólo entonces se registra comprobante interno no fiscal y membresía habilitada según sus fechas. El socio consulta estado/solicitudes/comprobantes en «Membresía y Pagos» y reserva si la cobertura incluye ahora y la clase. Para nuevo período, ADMIN registra fechas no superpuestas y confirma un nuevo pago; acumulación, reactivación y prorrateo quedan bloqueados para revisión. No se cobra al socio mediante el portal ni se integra una pasarela.
+
+Las respuestas inciertas conservan una única operación por administrador en sessionStorage, sin JWT, para repetir con la misma clave. No borres ese registro para volver a enviar como otro pago. La referencia identifica el cobro manual y no se puede reutilizar. El modo `USE_MEMORY_DB` conserva las capacidades anteriores, pero esta gestión responde 503: no existe una simulación financiera en memoria.
+
+`npm run test:membresias` usa PostgreSQL 17 efímero exclusivo en Docker, con contraseñas sintéticas y limpieza por identidad. `npm test`, `npm run frontend:build`, `npm run test:postgres`, `npm run test:cache`, `npm run test:accesos` y `npm run test:balanceo` conservan sus comandos. El frontend limita tipos ambientales a React/Vite para no incorporar carpetas ajenas como `node 2` del entorno local.
+
+Ver [contrato propio](docs/contracts/openapi-membresias-v1.yaml), [ADR-021](docs/adr/ADR-021-planes-pagos-membresias.md) y [evidencia, reproducción y matriz](docs/EVIDENCIA-MEMBRESIAS.md). La validación de esta etapa incluye PostgreSQL real, navegador y Compose/balanceo aislados; no sustituye pruebas de producción ni la integración conjunta con proveedores.

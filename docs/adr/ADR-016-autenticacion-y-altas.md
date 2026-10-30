@@ -1,5 +1,7 @@
 # Autenticación y altas administradas
 
+**Extensión 30/10/2026:** [ADR-021](ADR-021-planes-pagos-membresias.md) implementa pagos manuales sólo ADMIN y habilitación transaccional. La exclusión de pagos siguiente describe el alcance histórico; la ruta antigua de activación directa permanece rechazada. No cambian JWT, altas ni propiedad de datos.
+
 **Estado:** aceptada e implementada, 19/10/2026.
 
 ## Origen y contexto

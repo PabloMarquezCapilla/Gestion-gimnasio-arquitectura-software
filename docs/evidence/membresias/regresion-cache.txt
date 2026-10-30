@@ -1,0 +1,77 @@
+TAP version 13
+# Subtest: Caché: Redis y MongoDB reales; invalidación, carreras, fallas y recuperación
+    # Subtest: Miss/hit reales y aislamiento entre sedes y réplicas
+    ok 1 - Miss/hit reales y aislamiento entre sedes y réplicas
+      ---
+      duration_ms: 47.3295
+      type: 'test'
+      ...
+    # Subtest: Ingreso y egreso invalidan después del commit; replay tardío no reaplica
+    ok 2 - Ingreso y egreso invalidan después del commit; replay tardío no reaplica
+      ---
+      duration_ms: 28.001375
+      type: 'test'
+      ...
+    # Subtest: Dos ingresos/dos egresos concurrentes preservan MongoDB y el agregado tras invalidar
+    ok 3 - Dos ingresos/dos egresos concurrentes preservan MongoDB y el agregado tras invalidar
+      ---
+      duration_ms: 31.830875
+      type: 'test'
+      ...
+    # Subtest: Lectura antigua termina tras invalidación: CAS impide reponer valor obsoleto
+    ok 4 - Lectura antigua termina tras invalidación: CAS impide reponer valor obsoleto
+      ---
+      duration_ms: 11.526125
+      type: 'test'
+      ...
+    # Subtest: Expiración y lectura lenta no renuevan el plazo original
+    ok 5 - Expiración y lectura lenta no renuevan el plazo original
+      ---
+      duration_ms: 234.100167
+      type: 'test'
+      ...
+    # Subtest: Evicción del token no permite ABA ni repone el resultado anterior
+    ok 6 - Evicción del token no permite ABA ni repone el resultado anterior
+      ---
+      duration_ms: 609.129792
+      type: 'test'
+      ...
+    # Subtest: Redis pausado: ingreso/egreso funcionan, invalidación falla visiblemente y lectura usa Mongo
+    ok 7 - Redis pausado: ingreso/egreso funcionan, invalidación falla visiblemente y lectura usa Mongo
+      ---
+      duration_ms: 1445.866917
+      type: 'test'
+      ...
+    # Subtest: Reinicio Redis rechaza ticket previo; reconexión recupera hit sin estado persistido viejo
+    ok 8 - Reinicio Redis rechaza ticket previo; reconexión recupera hit sin estado persistido viejo
+      ---
+      duration_ms: 792.421916
+      type: 'test'
+      ...
+    # Subtest: Redis ausente al iniciar permite leer MongoDB; fallo conjunto no inventa cero
+    ok 9 - Redis ausente al iniciar permite leer MongoDB; fallo conjunto no inventa cero
+      ---
+      duration_ms: 478.255542
+      type: 'test'
+      ...
+    # Subtest: Autorización se ejecuta antes de consultar caché y métricas no contienen IDs personales
+    ok 10 - Autorización se ejecuta antes de consultar caché y métricas no contienen IDs personales
+      ---
+      duration_ms: 2.895917
+      type: 'test'
+      ...
+    1..10
+ok 1 - Caché: Redis y MongoDB reales; invalidación, carreras, fallas y recuperación
+  ---
+  duration_ms: 6317.636125
+  type: 'test'
+  ...
+1..1
+# tests 11
+# suites 0
+# pass 11
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 6827.83975
