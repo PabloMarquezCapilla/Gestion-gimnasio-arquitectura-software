@@ -19,6 +19,8 @@
     "test:frontend": "node --test frontend/src/services/api.test.mjs",
     "test:postgres": "npm run build && node scripts/verificar-postgres.mjs",
     "test:balanceo": "node scripts/verificar-balanceo.mjs",
+    "test:accesos": "npm run build && node --test scripts/verificar-accesos.mjs",
+    "test:cache": "npm run build && node --test scripts/verificar-cache-ocupacion.mjs",
     "frontend:dev": "npm --prefix frontend run dev",
     "frontend:build": "npm --prefix frontend run build",
     "iniciar": "node scripts/iniciar.mjs"

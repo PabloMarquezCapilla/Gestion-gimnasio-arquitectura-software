@@ -84,6 +84,16 @@ services:
       retries: 20
       start_period: 10s
 
+  redis:
+    image: redis:8.2.11-alpine
+    # Caché prescindible, sin puerto publicado ni persistencia de valores antiguos.
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "64mb", "--maxmemory-policy", "allkeys-lru"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 2s
+      retries: 5
+
   socios-membresias:
     build:
       context: .
@@ -155,6 +165,15 @@ services:
       PORT: "3000"
       MONGODB_URL: mongodb://accesos:${ACCESOS_DB_PASSWORD:?Falta ACCESOS_DB_PASSWORD en .env}@mongodb:27017/accesos?authSource=accesos&replicaSet=rs0
       SOCIOS_SERVICE_URL: http://socios-membresias:3000
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:?Falta AUTH_JWT_SECRET en .env}
+      AUTH_JWT_TTL_SECONDS: ${AUTH_JWT_TTL_SECONDS:-3600}
+      SERVICIOS_API_KEY: ${SERVICIOS_API_KEY:?Falta SERVICIOS_API_KEY en .env}
+      # Catálogo ficticio inicial, alineado con los IDs de clases. Se inserta sin sobrescribir sedes existentes.
+      ACCESOS_SEDES_JSON: '[{"sedeId":"sede-demo-01","nombre":"Sede demo 01"},{"sedeId":"sede-demo-02","nombre":"Sede demo 02"}]'
+      REDIS_URL: redis://redis:6379
+      OCUPACION_CACHE_NAMESPACE: ${OCUPACION_CACHE_NAMESPACE:-pulse:ocupacion:v1}
+      OCUPACION_CACHE_TTL_MS: ${OCUPACION_CACHE_TTL_MS:-30000}
+      REDIS_TIMEOUT_MS: ${REDIS_TIMEOUT_MS:-100}
     depends_on:
       mongo-init:
         condition: service_completed_successfully

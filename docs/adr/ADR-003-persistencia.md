@@ -1,6 +1,6 @@
 # D3 - Persistencia
 
-**Estado:** decisión de motores conservada; PostgreSQL integrado y verificado. MongoDB configurado, sin flujo de negocio aún.
+**Estado:** decisión de motores conservada; PostgreSQL integrado y verificado. MongoDB integrado en recepción (actualización 30/10/2026, [ADR-019](ADR-019-accesos-mongodb-recepcion.md)).
 **Fecha inicial:** 07/10/2026. **Validación:** 23/10/2026.
 **Enunciado:** §5 D3, página 6; §2.8, página 3; §6.2–6.3, página 8.
 
@@ -14,7 +14,7 @@ Membresías, pagos y reservas requieren asociaciones, unicidad y operaciones at�
 |---|---|---|
 | Socios y Membresías | PostgreSQL, base `socios`: identidad por DNI/email, membresías por socio/fecha, vinculación y fotografías Car Cruds por empleado/mes/versión; pagos y habilitación previstos en una transacción local. | `socios`, `membresias`, `solicitudes_membresia`, `empleados_externos`, `altas_empleados_idempotencia`, `car_cruds_vinculos`, `car_cruds_vinculos_historial`, `car_cruds_evidencias_series` y `car_cruds_evidencias` operativas; planes/pagos/comprobantes pendientes. |
 | Clases y Reservas | PostgreSQL, base `clases`: catálogo por sede/inicio, reservas por clase/socio y espera por orden. | `clases`, `reservas`, `lista_espera` operativas. |
-| Accesos y Ocupación | MongoDB, base `accesos`: sedes, movimientos e historial por identificador/tiempo, presencias abiertas y ocupación derivada. | Motor, replica set local y usuario configurados; colecciones de dominio y acceso desde el servicio pendientes. |
+| Accesos y Ocupación | MongoDB, base `accesos`: sedes, movimientos e historial por identificador/tiempo, presencias abiertas y ocupación derivada. | Recepción transaccional, presencias, movimientos, sedes e idempotencia durable implementados; caché pendiente. |
 | Tienda | Sin almacenamiento local; productos y stock pertenecen a la distribuidora. | Estructura preparada; integración externa pendiente. |
 
 Las bases relacionales comparten una instancia local, con usuarios/credenciales separados y permisos por base. Esto separa propiedad, no recursos físicos ni disponibilidad. El servicio consumidor usa APIs y referencias por ID, sin claves foráneas entre bases. Límites vigentes en [D1](ADR-015-limites-con-tienda.md).
@@ -34,10 +34,10 @@ Las definiciones físicas se mantienen en [repositorio de Socios](../../services
 
 ## Alternativas y consecuencias
 
-Se mantiene el modelo relacional para integridad y transacciones dentro de Socios/Clases. Usar documentos para esos registros trasladaría parte de las asociaciones y restricciones a la aplicación. MongoDB se conserva para el historial de Accesos; su integración deberá demostrar alternancia y ocupación sin duplicados.
+Se mantiene el modelo relacional para integridad y transacciones dentro de Socios/Clases. Usar documentos para esos registros trasladaría parte de las asociaciones y restricciones a la aplicación. MongoDB se conserva para el historial de Accesos; la prueba real de ADR-019 verifica alternancia, concurrencia y ocupación sin duplicados.
 
 El bloqueo por clase serializa escrituras sobre esa clase; su costo depende de la carga, sin latencia máxima garantizada. Las verificaciones por API son puntuales: no hay una transacción distribuida entre membresía y reserva. Una instancia PostgreSQL compartida y MongoDB de un nodo son límites del entorno local.
 
 ## Verificación
 
-`npm run test:postgres` usa PostgreSQL 17 efímero, HTTP real e instancias con pools independientes: unicidad concurrente, alta externa/replay tras recrear app, rollback, último cupo, cancelación y recuperación FIFO. Para Car Cruds verifica carreras de vínculo/preparación/reclamo, historial, versiones/referencia, prueba positiva del mismo socio/mes, cuerpo inmutable, recuperación por lease/UUID y rollback de cabecera/fotografía. Los adaptadores en memoria no acreditan durabilidad. Pagos, flujos de Accesos y almacenamiento no relacional integrado al dominio siguen pendientes.
+`npm run test:postgres` usa PostgreSQL 17 efímero, HTTP real e instancias con pools independientes: unicidad concurrente, alta externa/replay tras recrear app, rollback, último cupo, cancelación y recuperación FIFO. Para Car Cruds verifica carreras de vínculo/preparación/reclamo, historial, versiones/referencia, prueba positiva del mismo socio/mes, cuerpo inmutable, recuperación por lease/UUID y rollback de cabecera/fotografía. Los adaptadores en memoria no acreditan durabilidad. Pagos siguen pendientes. Accesos utiliza MongoDB real; pruebas y límites en [EVIDENCIA-ACCESOS](../EVIDENCIA-ACCESOS.md).

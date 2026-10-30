@@ -1,5 +1,7 @@
 # D5 - Comunicación entre servicios
 
+**Actualización Accesos, 30/10/2026:** ingreso → Socios con clave técnica, contexto W3C y 3000 ms totales incluido cuerpo; hasta un reintento GET de red/502/503/504. Egreso y replay no consultan membresía. Ver [ADR-019](ADR-019-accesos-mongodb-recepcion.md); RabbitMQ sigue sin eventos de dominio.
+
 **Estado:** estrategia HTTP y mensajería conservada; lecturas, vinculación y envío manual Car Cruds y POST anterior operativos localmente. Eventos de dominio y conexión conjunta pendientes.
 **Fecha inicial:** 07/10/2026. **Validación:** 23/10/2026.
 **Enunciado:** §2.5, página 2; §4.1, páginas 5–6; §5 D5, página 6; §6.2–6.3, página 8.
@@ -16,7 +18,8 @@ Se utiliza HTTP/JSON cuando el resultado de una operación necesita una respuest
 | Consumidor externo → gateway → Socios: POST de empleados anterior | API anterior operativa localmente. `X-API-Key`, `Idempotency-Key` y transacción. Se conserva, pero no representa el nuevo flujo con Car Cruds. [ADR-014](ADR-014-contrato-empleados.md). |
 | Socios → Car Cruds: empleados, estado laboral y evidencia de membresía | Lecturas GET y POST de evidencia implementados, con contrato externo 0.3.0 y Bearer gym. Presupuesto total de 3000 ms configurable, cuerpo incluido. Lectura: un reintento máximo de red/502/503/504. Envío: un solo POST, desde un mensaje durable confirmado por ADMIN; recuperación manual con el mismo cuerpo. URL/token reales y prueba conjunta pendientes. Salida directa desde Socios. [D8 vigente](ADR-018-integracion-car-cruds.md). |
 | Tienda → distribuidora: productos/stock | Pendiente de contrato, URL y autenticación. La ruta interna autenticada ya informa `503 INTEGRACION_PENDIENTE`; no llama al proveedor. [D9](ADR-009-consumo-del-proveedor.md). |
-| Accesos → Socios: habilitación al ingresar; Clases → Accesos: sede al publicar | Colaboraciones previstas, sin flujo implementado. |
+| Accesos → Socios: habilitación al ingresar | Implementada en ADR-019; egreso/replay no consultan membresía. |
+| Clases → Accesos: sede al publicar | Prevista, sin flujo implementado en esta etapa. |
 
 ### Tiempo, errores y reintentos internos
 

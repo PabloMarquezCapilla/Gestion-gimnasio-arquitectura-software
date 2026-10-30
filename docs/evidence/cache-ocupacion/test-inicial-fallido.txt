@@ -1,0 +1,120 @@
+
+> gestion-gimnasio@0.1.0 test:cache
+> npm run build && node --test scripts/verificar-cache-ocupacion.mjs
+
+
+> gestion-gimnasio@0.1.0 build
+> npm run build --workspaces
+
+
+> @gimnasio/socios-membresias@0.1.0 build
+> tsc -p tsconfig.json
+
+
+> @gimnasio/clases-reservas@0.1.0 build
+> tsc -p tsconfig.json
+
+
+> @gimnasio/accesos-ocupacion@0.1.0 build
+> tsc -p tsconfig.json
+
+
+> @gimnasio/tienda@0.1.0 build
+> tsc -p tsconfig.json
+
+TAP version 13
+# Subtest: Caché: Redis y MongoDB reales; invalidación, carreras, fallas y recuperación
+    # Subtest: Miss/hit reales y aislamiento entre sedes y réplicas
+    ok 1 - Miss/hit reales y aislamiento entre sedes y réplicas
+      ---
+      duration_ms: 110.385791
+      type: 'test'
+      ...
+    # Subtest: Ingreso y egreso invalidan después del commit; replay tardío no reaplica
+    ok 2 - Ingreso y egreso invalidan después del commit; replay tardío no reaplica
+      ---
+      duration_ms: 71.346583
+      type: 'test'
+      ...
+    # Subtest: Dos ingresos/dos egresos concurrentes preservan MongoDB y el agregado tras invalidar
+    ok 3 - Dos ingresos/dos egresos concurrentes preservan MongoDB y el agregado tras invalidar
+      ---
+      duration_ms: 71.003167
+      type: 'test'
+      ...
+    # Subtest: Lectura antigua termina tras invalidación: CAS impide reponer valor obsoleto
+    ok 4 - Lectura antigua termina tras invalidación: CAS impide reponer valor obsoleto
+      ---
+      duration_ms: 28.08625
+      type: 'test'
+      ...
+    # Subtest: Expiración y lectura lenta no renuevan el plazo original
+    ok 5 - Expiración y lectura lenta no renuevan el plazo original
+      ---
+      duration_ms: 230.09125
+      type: 'test'
+      ...
+    # Subtest: Evicción del token no permite ABA ni repone el resultado anterior
+    ok 6 - Evicción del token no permite ABA ni repone el resultado anterior
+      ---
+      duration_ms: 603.431917
+      type: 'test'
+      ...
+    # Subtest: Redis pausado: ingreso/egreso funcionan, invalidación falla visiblemente y lectura usa Mongo
+    ok 7 - Redis pausado: ingreso/egreso funcionan, invalidación falla visiblemente y lectura usa Mongo
+      ---
+      duration_ms: 1281.957708
+      type: 'test'
+      ...
+    # Subtest: Reinicio Redis rechaza ticket previo; reconexión recupera hit sin estado persistido viejo
+    not ok 8 - Reinicio Redis rechaza ticket previo; reconexión recupera hit sin estado persistido viejo
+      ---
+      duration_ms: 10.094209
+      type: 'test'
+      location: '/Users/pablomarquezcapilla/Desktop/gestion-gimnasio-arquitectura-software/scripts/verificar-cache-ocupacion.mjs:89:13'
+      failureType: 'cancelledByParent'
+      error: 'test did not finish before its parent and was cancelled'
+      code: 'ERR_TEST_FAILURE'
+      ...
+    1..8
+not ok 1 - Caché: Redis y MongoDB reales; invalidación, carreras, fallas y recuperación
+  ---
+  duration_ms: 4543.852667
+  type: 'test'
+  location: '/Users/pablomarquezcapilla/Desktop/gestion-gimnasio-arquitectura-software/scripts/verificar-cache-ocupacion.mjs:12:1'
+  failureType: 'uncaughtException'
+  error: "Cannot read properties of undefined (reading 'reject')"
+  code: 'ERR_TEST_FAILURE'
+  name: 'TypeError'
+  stack: |-
+    RedisCommandsQueue._RedisCommandsQueue_flushQueue (/Users/pablomarquezcapilla/Desktop/gestion-gimnasio-arquitectura-software/node_modules/@redis/client/dist/lib/client/commands-queue.js:176:22)
+    RedisCommandsQueue.flushAll (/Users/pablomarquezcapilla/Desktop/gestion-gimnasio-arquitectura-software/node_modules/@redis/client/dist/lib/client/commands-queue.js:171:77)
+    RedisSocket.<anonymous> (/Users/pablomarquezcapilla/Desktop/gestion-gimnasio-arquitectura-software/node_modules/@redis/client/dist/lib/client/index.js:427:67)
+    RedisSocket.emit (node:events:519:28)
+    RedisSocket._RedisSocket_onSocketError (/Users/pablomarquezcapilla/Desktop/gestion-gimnasio-arquitectura-software/node_modules/@redis/client/dist/lib/client/socket.js:218:10)
+    Socket.<anonymous> (/Users/pablomarquezcapilla/Desktop/gestion-gimnasio-arquitectura-software/node_modules/@redis/client/dist/lib/client/socket.js:194:107)
+    Object.onceWrapper (node:events:634:26)
+    Socket.emit (node:events:519:28)
+    TCP.<anonymous> (node:net:347:12)
+  ...
+# Subtest: Autorización se ejecuta antes de consultar caché y métricas no contienen IDs personales
+not ok 2 - Autorización se ejecuta antes de consultar caché y métricas no contienen IDs personales
+  ---
+  duration_ms: 1.889709
+  type: 'test'
+  location: '/Users/pablomarquezcapilla/Desktop/gestion-gimnasio-arquitectura-software/scripts/verificar-cache-ocupacion.mjs:97:13'
+  failureType: 'parentAlreadyFinished'
+  error: 'test could not be started because its parent finished'
+  code: 'ERR_TEST_FAILURE'
+  stack: |-
+    TestContext.<anonymous> (file:///Users/pablomarquezcapilla/Desktop/gestion-gimnasio-arquitectura-software/scripts/verificar-cache-ocupacion.mjs:97:13)
+  ...
+1..2
+# tests 10
+# suites 0
+# pass 7
+# fail 2
+# cancelled 1
+# skipped 0
+# todo 0
+# duration_ms 77237.964625

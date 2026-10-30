@@ -1,5 +1,7 @@
 # D10 - Resiliencia
 
+**Actualización Accesos, 30/10/2026:** [ADR-019](ADR-019-accesos-mongodb-recepcion.md) implementa timeout GET a Socios, validación y reintento seguro. Un ingreso desconocido no se acepta; egreso y replay son independientes de Socios. MongoDB real fue detenido/reiniciado en prueba aislada, sin éxito ficticio ante falla. No cambia la política de otros servicios.
+
 **Estado:** timeouts, reintento interno, cancelación recuperable y detección de réplica verificados; protección completa pendiente.
 **Fecha inicial:** 12/10/2026. **Validación:** 19/10/2026.
 **Enunciado:** §2.5, página 2; §2.9, página 3; §5 D10, página 7; §6.3, página 8.
@@ -18,7 +20,7 @@ Una dependencia lenta o caída no debe producir reservas sin validar membresía,
 | Una réplica de Clases deja de responder | NGINX usa DNS dinámico y fallos pasivos; puede haber errores durante detección. Se comprobó operación estable con la superviviente y reemplazo sin reiniciar gateway. [D12](ADR-012-balanceo-de-carga.md). |
 | Configuración/almacenamiento ausente al iniciar | Los servidores operativos exigen configuración; no convierten una caída en un mock habilitado. Memoria requiere modo explícito de desarrollo/prueba. |
 | Distribuidora | Todavía no se invoca. Tienda informa integración pendiente. Las políticas reales y el ensayo de caída requieren contrato. |
-| RabbitMQ/MongoDB/Redis | RabbitMQ y MongoDB están configurados pero sin sus flujos de dominio; Redis no está incorporado. No se acredita recuperación de esos flujos ni fallback de caché. |
+| RabbitMQ/MongoDB/Redis | MongoDB está integrado en Accesos: salud/operaciones responden 503 ante falla, sin fallback ficticio; reintento conserva clave durable. RabbitMQ sigue sin flujo y Redis no está incorporado. Ensayo Mongo real en ADR-019. |
 
 El gateway usa conexión 3 s, lectura 10 s y presupuesto para pasar al siguiente upstream de 5 s, hasta tres intentos, sin habilitar reenvío de POST ya enviado mediante `non_idempotent`. No se promete un timeout global para todo el recorrido ni cero errores.
 
@@ -31,3 +33,7 @@ La propuesta inicial contempla circuit breaker y aislamiento adicional; faltan i
 ## Verificación y ensayo de caída
 
 `npm run test:postgres` reproduce la caída/recuperación de Socios y la reasignación FIFO. `npm run test:balanceo` construye un entorno completo aislado y detiene/reemplaza una réplica. El [postmortem](../POSTMORTEM.md) documenta impacto, secuencia, detección y mejoras del ensayo local; no sustituye la futura jornada con el proveedor. No se declaran probados escenarios sin un ensayo equivalente.
+
+## Extensión 30/10/2026: dependencia Redis
+
+La caché de ocupación es opcional: conexión en segundo plano, sin cola offline, máximo 1000 comandos pendientes y timeout por operación de 100 ms (configurable 1–1000). El plazo HTTP deja de esperar aunque un comando ya enviado pueda terminar después. Los scripts siguen siendo seguros con esa ejecución tardía. Un fallo de invalidación se registra sin revertir el movimiento confirmado. MongoDB conserva sus límites existentes y los errores de fuente nunca se convierten en cero. [ADR-020](ADR-020-cache-ocupacion-redis.md) y [ensayos reales](../EVIDENCIA-CACHE.md).

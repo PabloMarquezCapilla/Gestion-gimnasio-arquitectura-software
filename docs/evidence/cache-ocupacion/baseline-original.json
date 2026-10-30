@@ -1,0 +1,94 @@
+{
+  "version": 1,
+  "scenario": "sin-cache-original",
+  "fecha": "2026-10-30T20:20:48.086Z",
+  "commit": "a8fdd8e54b6009436b89259fa8b7de54fec93a32",
+  "requests": 2000,
+  "concurrency": 20,
+  "warmup": 100,
+  "dataset": {
+    "sedes": 10,
+    "presencias": 100000,
+    "abiertasPorSede": 3000,
+    "distribution": "round-robin uniforme, 30% abiertas por sede",
+    "syntheticReadFixture": true
+  },
+  "endpoint": "/api/v1/accesos/sedes/{sedeId}/ocupacion",
+  "http": "HTTP real directo a Accesos; JWT ADMIN; JSON completo; conexiones reutilizables; sin gateway",
+  "p50Ms": 7.88149999999996,
+  "p95Ms": 11.379500000000007,
+  "p99Ms": 13.954041999999845,
+  "elapsedMs": 822.776167,
+  "requestsPerSecond": 2430.7947655951,
+  "errors": 0,
+  "mongoCommands": {
+    "find": 2000,
+    "aggregate": 2000,
+    "getMore": 0
+  },
+  "indexes": [
+    {
+      "v": 2,
+      "key": {
+        "_id": 1
+      },
+      "name": "_id_"
+    },
+    {
+      "v": 2,
+      "key": {
+        "sedeId": 1,
+        "socioId": 1
+      },
+      "name": "uq_presencia_socio_sede",
+      "unique": true
+    },
+    {
+      "v": 2,
+      "key": {
+        "sedeId": 1,
+        "abierta": 1
+      },
+      "name": "ocupacion_sede"
+    }
+  ],
+  "environment": {
+    "node": "v22.23.3",
+    "mongodb": "8.0.28",
+    "mode": "native",
+    "platform": "darwin",
+    "arch": "arm64",
+    "cpu": "Apple M2",
+    "logicalCpus": 8,
+    "memoryBytes": 8589934592,
+    "processCpuMicroseconds": {
+      "user": 1405571,
+      "system": 79587
+    },
+    "processMemoryBefore": {
+      "rss": 123155440,
+      "heapTotal": 66109440,
+      "heapUsed": 34970880,
+      "external": 22257799,
+      "arrayBuffers": 18523642
+    },
+    "processMemoryAfter": {
+      "rss": 147275568,
+      "heapTotal": 94683136,
+      "heapUsed": 55970472,
+      "external": 24287706,
+      "arrayBuffers": 20553509
+    },
+    "hostLoadBefore": [
+      2.32275390625,
+      3.44482421875,
+      4.9365234375
+    ],
+    "hostLoadAfter": [
+      2.6171875,
+      3.48681640625,
+      4.9423828125
+    ]
+  },
+  "limitations": "Generador y servicios comparten host. Sin escrituras durante carga. Volumen/demanda sintéticos, no capacidad o necesidad de producción confirmada. MongoDB caliente después de 100 lecturas."
+}

@@ -1,6 +1,6 @@
 # D2 - Arquitectura interna de los servicios
 
-**Estado:** patrones conservados e implementados en Socios/Clases. Tienda tiene estructura propia; su cliente externo y el dominio de Accesos siguen pendientes.
+**Estado:** patrones conservados e implementados en Socios/Clases. Tienda tiene estructura propia; su cliente externo sigue pendiente. Accesos concreta Capas con lectura derivada (30/10/2026, ADR-019).
 **Fecha:** 12/10/2026; validación de estructura 19/10/2026.
 
 **Referencia:** sección 2.1, página 2 (al menos dos servicios con patrones internos diferentes), D2 en sección 5 y actualización documental en sección 3, página 4. Se mantienen Hexagonal y Capas; no se sustituye la decisión inicial.
@@ -19,7 +19,7 @@ Para cumplir con el requisito de la sección 2.1 del enunciado (*"Al menos dos s
 |---|---|---|
 | **`Clases y Reservas`** | **Arquitectura Hexagonal (Ports & Adapters)** | `ReservasService` concentra reservas, espera, validación remota y recuperación. Depende de puertos propios; HTTP, PostgreSQL y memoria son adaptadores. Conserva las consultas de clases, que ya no son la capacidad ofrecida al otro grupo. |
 | **`Socios y Membresías`** | **Arquitectura en Capas (Layered Architecture)** | HTTP en `app.ts`/`empleados.http.ts` → casos de uso `AuthService`, `SociosService` y `EmpleadosService` → persistencia en `repository.ts`; `security.ts` ofrece operaciones criptográficas. El POST externo utiliza las mismas capas y PostgreSQL; el mock separado se conserva. |
-| **`Accesos y Ocupación`** | **Arquitectura Orientada a Eventos / Proyección de Lectura (CQRS-lite), prevista** | Diseño para separar registro de movimientos y lectura de ocupación. Actualmente solo tiene estructura HTTP; sus reglas y proyección siguen pendientes. |
+| **`Accesos y Ocupación`** | **Capas con lectura derivada, concretada en ADR-019** | HTTP → aplicación/reglas → repositorio MongoDB, con transacciones para presencia, movimiento e idempotencia y ocupación derivada de presencias abiertas. ADR-019 revisa la propuesta previa de eventos; no implementa Event Sourcing ni broker. |
 | **`Tienda`** | **Estructura en Capas, integración pendiente** | `app.ts` controla transporte/autenticación, `services.ts` representa la consulta no habilitada y `server.ts` arranca el proceso. Sin repositorio ni cliente externo mientras no exista contrato; no se incorpora un patrón nuevo distinto de los ya elegidos. |
 
 ### 1. Detalle de `Clases y Reservas`: Arquitectura Hexagonal (Ports & Adapters)
