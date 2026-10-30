@@ -2,6 +2,7 @@
 
 **Estado:** diseño confirmado; estructura de Tienda ejecutable. Consulta externa pendiente del contrato del proveedor.
 **Fecha:** 19/10/2026.
+**Concreción de Accesos, 30/10/2026:** [ADR-019](ADR-019-accesos-mongodb-recepcion.md) mantiene estos límites y concreta recepción ADMIN, sedes, movimientos, presencias e idempotencia en MongoDB. Caché pendiente; no se comparten colecciones con Socios.
 **Reemplaza:** [ADR-001 - Límites de servicios y propiedad de los datos](ADR-001-limites-de-servicios.md).
 
 ## Contexto y requisitos

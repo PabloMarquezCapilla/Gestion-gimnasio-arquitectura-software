@@ -78,6 +78,8 @@ Cada intento de ingreso validará el estado de la membresía. Recepción registr
 
 Los ingresos y egresos deben alternarse por socio y sede: no se admite un segundo ingreso sin una salida intermedia ni una salida sin un ingreso abierto. La ocupación de una sede corresponde a la cantidad de socios con un ingreso aceptado que todavía no tiene una salida asociada. Un movimiento rechazado no modifica esa ocupación.
 
+**Implementación de etapa 1, 30/10/2026:** recepción en panel ADMIN existente, sin rol nuevo ni operaciones para SOCIO. MongoDB guarda movimientos, presencias e idempotencia. CA-G05–G07 conservan sus reglas; el egreso no vuelve a validar membresía. ADR-019 justifica la restricción de acceso y la vigencia local del JWT. Caché y consumo de uso desde Car Cruds quedan para otra etapa.
+
 No se incluyen lectores, molinetes ni otros dispositivos físicos en esta versión.
 
 ### Integración: membresías para empleados

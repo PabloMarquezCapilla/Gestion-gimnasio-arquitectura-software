@@ -17,6 +17,27 @@ export class ApiError extends Error {
   }
 }
 
+export interface AccesosMovimiento {
+  movimientoId: string; sedeId: string; socioId: string; actorId: string;
+  tipo: 'INGRESO' | 'EGRESO'; fecha: string; aceptado: boolean; codigo: string;
+}
+export interface AccesosOrden { sedeId: string; socioId: string; tipo: 'INGRESO' | 'EGRESO' }
+export const apiAccesosSedes = () => request<{ items: { sedeId: string; nombre: string }[] }>('/api/v1/accesos/sedes');
+export const apiAccesosOcupacion = (sedeId: string) => request<{ sedeId: string; ocupacion: number; consultadoEn: string }>(
+  '/api/v1/accesos/sedes/' + encodeURIComponent(sedeId) + '/ocupacion');
+export const apiAccesosHistorial = (sedeId: string, pagina = 1, socioId = '') => request<{ items: AccesosMovimiento[]; pagina: number; tamanio: number }>(
+  '/api/v1/accesos/movimientos?' + new URLSearchParams({ sedeId, pagina: String(pagina), tamanio: '20', ...(socioId ? { socioId } : {}) }));
+export async function apiAccesosRegistrar(body: AccesosOrden, clave: string) {
+  const result = await request<{ movimiento: AccesosMovimiento }>('/api/v1/accesos/movimientos', {
+    method: 'POST', headers: { 'Idempotency-Key': clave }, body: JSON.stringify(body),
+  });
+  if (!result.movimiento?.aceptado || !result.movimiento.movimientoId || result.movimiento.sedeId !== body.sedeId
+    || result.movimiento.socioId !== body.socioId || result.movimiento.tipo !== body.tipo) {
+    throw new ApiError('Respuesta no válida. Conservá la operación para reintentar.', 502, 'RESPUESTA_INVALIDA');
+  }
+  return result;
+}
+
 async function request<T>(path: string, options: RequestInit = {}, privateRequest = true): Promise<T> {
   const tokenUsed = sessionToken;
   if (privateRequest && !tokenUsed) {
@@ -39,7 +60,15 @@ async function request<T>(path: string, options: RequestInit = {}, privateReques
       setApiSession(null);
       callback?.();
     }
-    const error = data as { mensaje?: string; codigo?: string } | undefined;
+    const error = data as { mensaje?: string; codigo?: string; movimiento?: { codigo?: string } } | undefined;
+    const accesosMessages: Record<string, string> = {
+      INGRESO_YA_ABIERTO: 'El socio ya tiene un ingreso abierto en esta sede.',
+      SIN_INGRESO_ABIERTO: 'No hay un ingreso abierto para registrar la salida.',
+      MEMBRESIA_NO_HABILITADA: 'La membresía no habilita el ingreso.',
+    };
+    if (path.startsWith('/api/v1/accesos/') && error?.movimiento?.codigo) {
+      throw new ApiError(accesosMessages[error.movimiento.codigo] ?? 'Movimiento rechazado.', response.status, error.movimiento.codigo);
+    }
     throw new ApiError(error?.mensaje || (response.status === 401
       ? 'La sesión venció o no es válida. Iniciá sesión nuevamente.'
       : 'El servidor no pudo completar la operación (' + response.status + ').'), response.status, error?.codigo);

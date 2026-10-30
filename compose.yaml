@@ -155,6 +155,11 @@ services:
       PORT: "3000"
       MONGODB_URL: mongodb://accesos:${ACCESOS_DB_PASSWORD:?Falta ACCESOS_DB_PASSWORD en .env}@mongodb:27017/accesos?authSource=accesos&replicaSet=rs0
       SOCIOS_SERVICE_URL: http://socios-membresias:3000
+      AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:?Falta AUTH_JWT_SECRET en .env}
+      AUTH_JWT_TTL_SECONDS: ${AUTH_JWT_TTL_SECONDS:-3600}
+      SERVICIOS_API_KEY: ${SERVICIOS_API_KEY:?Falta SERVICIOS_API_KEY en .env}
+      # Catálogo ficticio inicial, alineado con los IDs de clases. Se inserta sin sobrescribir sedes existentes.
+      ACCESOS_SEDES_JSON: '[{"sedeId":"sede-demo-01","nombre":"Sede demo 01"},{"sedeId":"sede-demo-02","nombre":"Sede demo 02"}]'
     depends_on:
       mongo-init:
         condition: service_completed_successfully

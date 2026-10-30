@@ -10,7 +10,7 @@
 |---|---|---|
 | **Socios y Membresías** | Socios, planes, membresías, pagos, comprobantes, referencias externas, solicitudes, vínculos Car Cruds, auditoría y registro de fotografías/envíos. | Capas; JWT, altas, habilitación, lecturas/vinculación/envío manual Car Cruds para ADMIN y POST anterior. PostgreSQL: `socios`, `membresias`, `solicitudes_membresia`, `empleados_externos`, `altas_empleados_idempotencia`, `car_cruds_vinculos`, `car_cruds_vinculos_historial`, `car_cruds_evidencias_series` y `car_cruds_evidencias`. Conexión conjunta, pagos y planes pendientes. |
 | **Clases y Reservas** | Clases, capacidad, reservas, espera e índice de búsqueda derivado. | Hexagonal; catálogo, reservas/cancelación y recuperación FIFO. PostgreSQL: `clases`, `reservas`, `lista_espera`. Publicación administrativa y consulta textual pendientes. |
-| **Accesos y Ocupación** | Sedes, intentos y movimientos de acceso, presencias y ocupación/caché derivadas. | Estructura HTTP. MongoDB configurado; persistencia y reglas de negocio pendientes. |
+| **Accesos y Ocupación** | Sedes, intentos y movimientos de acceso, presencias y ocupación/caché derivadas. | Capas; recepción ADMIN, ingresos/egresos, historial y ocupación con transacciones MongoDB. Caché pendiente; ver ADR-019. |
 | **Tienda** | Integrar la consulta de productos y stock. El catálogo y las existencias pertenecen a la distribuidora. | Estructura en Capas, JWT y pantalla. Sin base propia ni cliente externo; devuelve `503 INTEGRACION_PENDIENTE`. |
 
 Socios y Clases usan bases y usuarios PostgreSQL separados en una instancia local compartida; no hay acceso de un servicio a tablas ajenas. MongoDB tiene un replica set de un solo nodo, sin redundancia. El diseño de motores y restricciones se justifica en [D3](adr/ADR-003-persistencia.md); los límites vigentes, en [D1](adr/ADR-015-limites-con-tienda.md).
@@ -21,10 +21,16 @@ NGINX sirve el portal React y enruta las solicitudes por un único puerto local 
 
 - **Clases, Hexagonal:** `app.ts` adapta HTTP; `application/reservas.service.ts` contiene casos de uso; `ports.ts` declara las interfaces; PostgreSQL, memoria y cliente HTTP de Socios son adaptadores. `server.ts` compone y arranca el trabajador de promociones.
 - **Socios, Capas:** HTTP (`app.ts`, `empleados.http.ts`) → servicios de aplicación (`services.ts`, `empleados.service.ts`, `car-cruds.service.ts`, `car-cruds-vinculos.service.ts`, `car-cruds-evidencias.service.ts`) → repositorio o cliente externo `clients/car-cruds.client.ts`. Los puertos de vínculos/evidencias tienen adaptadores PostgreSQL y memoria; `car-cruds-evidencias.storage.ts` aplica las transacciones y el almacenamiento del mensaje. `server.ts` compone el cliente con configuración opcional. Criptografía y JWT están en `security.ts`.
-- **Tienda, Capas:** HTTP/autenticación → servicio de consulta pendiente; todavía no tiene adaptador externo. Accesos conserva su diseño por eventos/proyección, sin implementarlo.
+- **Tienda, Capas:** HTTP/autenticación → servicio de consulta pendiente; todavía no tiene adaptador externo. Accesos concreta Capas con lectura derivada de presencias abiertas; ADR-019 revisa su propuesta previa por eventos, sin introducir broker.
 - **Identidad:** JWT HS256 firmado con vencimiento configurable (una hora por defecto), rol y controles de propietario. Alta interna solo ADMIN; bootstrap local sin contraseña administrativa predeterminada nueva. El portal mantiene la sesión en memoria. [D2](adr/ADR-002-arquitectura-interna-de-servicios.md), [autenticación](adr/ADR-016-autenticacion-y-altas.md).
 
 ## Comunicaciones y operaciones consistentes
+
+### Recepción y ocupación (30/10/2026)
+
+ADMIN → panel React → NGINX `/api/v1/accesos/*` → Accesos. El ingreso consulta Socios con clave técnica antes de la transacción; el egreso usa estado local. MongoDB rs0 guarda presencia, movimiento y resultado idempotente juntos. Ocupación deriva de presencias abiertas; historial filtra sede/socio y pagina. La UI conserva operaciones inciertas en sessionStorage por actor, sin JWT, para repetir el mismo cuerpo/clave incluso tras recarga. No hay caché ni acceso directo a colecciones ajenas.
+
+[ADR-019](adr/ADR-019-accesos-mongodb-recepcion.md), [contrato interno](contracts/openapi-accesos-v1.yaml) y [evidencia](EVIDENCIA-ACCESOS.md). La autorización JWT es local hasta su vencimiento, como Clases/Tienda, sin revocación inmediata. MongoDB sigue siendo un nodo sin redundancia.
 
 ### Flujo principal: reservar una clase
 
@@ -44,7 +50,7 @@ En ese panel, ADMIN elige el mes y prepara una fotografía durable antes de revi
 
 Las llamadas parten directamente del backend con Bearer de aplicación `gym`. El cliente valida el contrato fijado y aplica un presupuesto total configurable de 3000 ms por defecto, incluido cuerpo. Las lecturas permiten un reintento máximo ante red/502/503/504; cada envío hace un solo POST. Rechaza redirecciones, cuerpos mayores a 1 MiB, números inseguros y respuestas incompatibles. Una credencial externa rechazada conserva la sesión JWT: las lecturas responden 502 y el envío queda en revisión. Sin URL/token, consultar al proveedor o enviar responde `503 CAR_CRUDS_NO_CONFIGURADO`; las vistas previas, historial y resto del portal continúan.
 
-Car Cruds es propietario de empleados, estado laboral e informe receptor. El gimnasio conserva socios/membresías, vínculos, auditoría y fotografías/envíos. Accesos será la fuente de ingresos efectivos cuando se implemente; no se leen sus tablas desde Socios. Pagos, ingresos e historia insuficientes se informan como desconocidos. La fuente actual comprueba afiliación positiva al observar el mes actual y conserva pruebas positivas anteriores del mismo socio/mes; no inventa negativos. Consultar/vincular no habilita una membresía, y una baja laboral no la cancela automáticamente.
+Car Cruds es propietario de empleados, estado laboral e informe receptor. El gimnasio conserva socios/membresías, vínculos, auditoría y fotografías/envíos. Accesos registra ingresos efectivos; su consumo por Car Cruds queda para otra etapa y no se leen sus tablas desde Socios. Pagos, ingresos e historia insuficientes se informan como desconocidos. La fuente actual comprueba afiliación positiva al observar el mes actual y conserva pruebas positivas anteriores del mismo socio/mes; no inventa negativos. Consultar/vincular no habilita una membresía, y una baja laboral no la cancela automáticamente.
 
 El [contrato externo 0.3.0 y el perfil mensual](contracts/README.md#integracion-con-car-cruds) y [D8 vigente](adr/ADR-018-integracion-car-cruds.md) documentan el diseño y las rutas propias. Se verificaron lecturas/envíos con HTTP controlado, persistencia/recuperación con PostgreSQL real y pantalla con datos ficticios; faltan URL/token y prueba conjunta. El POST receptor pertenece a Car Cruds: las verificaciones locales todavía no acreditan la conexión operativa entre grupos de §4.1.
 
@@ -103,13 +109,13 @@ flowchart TB
         gateway -->|GET /api/v1/socios/:id<br/>POST /api/v1/auth/*| socios["Socios y Membresías<br/>Fastify + TypeScript · Capas"]
         gateway -->|API anterior: POST /api/v1/integraciones/empleados<br/>X-API-Key e Idempotency-Key| socios
         gateway -->|/api/v1/integraciones/car-cruds/* · JWT ADMIN<br/>Lecturas, búsqueda y vínculos con historial| socios
-        gateway -->|Comprobación de salud| accesos["Accesos y Ocupación<br/>Estructura HTTP · negocio pendiente"]
+        gateway -->|Recepción ADMIN · JWT| accesos["Accesos y Ocupación<br/>Ingresos, egresos, historial y ocupación"]
         gateway -->|GET /api/v1/tienda/productos · JWT<br/>503: integración pendiente| tienda["Tienda · estructura ejecutable<br/>Sin base de datos<br/>Cliente externo pendiente"]
         
         clases -->|HTTP: consulta de habilitación<br/>Ahora y fecha de clase · X-Service-Key| socios
         clases --> dbClases[("Base de Datos Clases<br/>PostgreSQL 17<br/>clases, reservas, lista_espera")]
         socios --> dbSocios[("Base de Datos Socios<br/>PostgreSQL 17<br/>socios, membresias, solicitudes y alta externa<br/>vínculos, historial y fotografías Car Cruds")]
-        accesos -.->|Persistencia prevista| dbAccesos[("Base de Datos Accesos<br/>MongoDB 8.0 replica set configurado")]
+        accesos -->|Transacciones · propiedad exclusiva| dbAccesos[("Base de Datos Accesos<br/>MongoDB 8.0 · presencias y movimientos")]
         
         socios -.->|Diseño pendiente: Outbox y publicación| rabbitmq["RabbitMQ 4.1 configurado"]
         rabbitmq -.->|Diseño pendiente: consumo e Inbox| clases
@@ -162,7 +168,7 @@ sequenceDiagram
 
 ## Limitaciones conocidas y deuda técnica aceptada
 
-- **Dominio pendiente:** pagos/comprobantes, planes, renovación/reactivación, resolución de solicitudes, credenciales de empleados, publicación de clases, movimientos y ocupación de Accesos. El frontend no simula éxito de esas funciones.
+- **Dominio pendiente:** pagos/comprobantes, planes, renovación/reactivación, resolución de solicitudes, credenciales de empleados, publicación de clases. Accesos ya implementa movimientos y ocupación; su caché y consumo desde Car Cruds quedan pendientes. El frontend no simula éxito de esas funciones.
 - **Integración externa:** Car Cruds tiene contrato fijado, lecturas, vínculo y envío durable probados localmente; faltan datos fiables de pagos/ingresos y prueba conjunta con conexión operativa. Tienda no consume productos/stock de FAV y aún carece de su test de contrato. La conexión accesible y las pruebas entre grupos siguen pendientes (§4.1).
 - **Búsqueda y caché:** FTS/GIN creado pero sin consulta textual; Redis/caché de negocio pendiente de implementación y medición comparativa.
 - **Mensajería:** broker configurado sin evento publicado/consumido, Inbox/Outbox ni DLQ; reservas futuras no se cancelan automáticamente por una suspensión posterior.

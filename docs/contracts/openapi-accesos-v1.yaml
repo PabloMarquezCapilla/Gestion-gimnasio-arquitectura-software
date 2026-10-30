@@ -1,0 +1,163 @@
+openapi: 3.1.1
+info:
+  title: Recepción y ocupación del gimnasio
+  version: 1.0.0
+  description: API interna ADMIN. No reemplaza contratos externos. Reglas CA-G05 a CA-G07 y ADR-019.
+servers:
+  - url: /
+security:
+  - Sesion: []
+paths:
+  /api/v1/accesos/sedes:
+    get:
+      operationId: listarSedesRecepcion
+      responses:
+        '200':
+          description: Catálogo persistido de sedes; objeto con items de Sede.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Sede' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /api/v1/accesos/sedes/{sedeId}/ocupacion:
+    get:
+      operationId: consultarOcupacion
+      parameters:
+        - { name: sedeId, in: path, required: true, schema: { $ref: '#/components/schemas/Id' } }
+      responses:
+        '200':
+          description: Cantidad real de presencias abiertas; no se reemplaza indisponibilidad por cero.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sedeId, ocupacion, consultadoEn]
+                properties:
+                  sedeId: { $ref: '#/components/schemas/Id' }
+                  ocupacion: { type: integer, minimum: 0 }
+                  consultadoEn: { type: string, format: date-time }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+  /api/v1/accesos/movimientos:
+    post:
+      operationId: registrarMovimiento
+      description: >-
+        ADMIN registra INGRESO o EGRESO. Idempotencia por actor y clave, conservada sin TTL.
+        Misma clave/cuerpo devuelve resultado original; contenido diferente devuelve 409.
+        Error 5xx o respuesta perdida exige reintentar misma clave/cuerpo.
+        Rechazos de negocio quedan en historial y no modifican ocupación.
+        Una caída de Socios no es un rechazo de membresía; egreso/replay no consultan membresía.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, minLength: 8, maxLength: 128, pattern: '^[A-Za-z0-9_-]+$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [sedeId, socioId, tipo]
+              properties:
+                sedeId: { $ref: '#/components/schemas/Id' }
+                socioId: { $ref: '#/components/schemas/Id' }
+                tipo: { type: string, enum: [INGRESO, EGRESO] }
+            example: { sedeId: sede-demo-01, socioId: socio-demo-01, tipo: INGRESO }
+      responses:
+        '201': { $ref: '#/components/responses/Movimiento' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '409':
+          description: INGRESO_YA_ABIERTO/SIN_INGRESO_ABIERTO con movimiento, o IDEMPOTENCIA_EN_CONFLICTO con codigo/mensaje.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - { $ref: '#/components/schemas/Resultado' }
+                  - { $ref: '#/components/schemas/Error' }
+        '422': { $ref: '#/components/responses/Movimiento' }
+        '503': { $ref: '#/components/responses/Error' }
+    get:
+      operationId: consultarHistorialAccesos
+      description: Orden fecha descendente e ID descendente; no garantiza snapshot entre páginas concurrentes.
+      parameters:
+        - { name: sedeId, in: query, required: true, schema: { $ref: '#/components/schemas/Id' } }
+        - { name: socioId, in: query, schema: { $ref: '#/components/schemas/Id' } }
+        - { name: pagina, in: query, schema: { type: integer, minimum: 1, maximum: 1000000, default: 1 } }
+        - { name: tamanio, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        '200':
+          description: Página de intentos aceptados y rechazados persistidos.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items, pagina, tamanio]
+                properties:
+                  items: { type: array, items: { $ref: '#/components/schemas/Movimiento' } }
+                  pagina: { type: integer }
+                  tamanio: { type: integer }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+        '404': { $ref: '#/components/responses/Error' }
+        '503': { $ref: '#/components/responses/Error' }
+components:
+  securitySchemes:
+    Sesion: { type: http, scheme: bearer, bearerFormat: JWT }
+  responses:
+    Error:
+      description: Error controlado con codigo/mensaje. 503 conserva incertidumbre y clave para reintentar; 500 inesperado usa mismo esquema.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Movimiento:
+      description: Resultado original del movimiento o su replay; 201 aceptado, 422 membresía no habilitada.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Resultado' }
+  schemas:
+    Id: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$', maxLength: 100 }
+    Sede:
+      type: object
+      required: [sedeId, nombre]
+      properties:
+        sedeId: { $ref: '#/components/schemas/Id' }
+        nombre: { type: string }
+    Error:
+      type: object
+      required: [codigo, mensaje]
+      properties:
+        codigo: { type: string }
+        mensaje: { type: string }
+    Resultado:
+      type: object
+      required: [movimiento]
+      properties:
+        movimiento: { $ref: '#/components/schemas/Movimiento' }
+    Movimiento:
+      type: object
+      required: [movimientoId, sedeId, socioId, tipo, actorId, fecha, aceptado, codigo]
+      properties:
+        movimientoId: { type: string, format: uuid }
+        sedeId: { $ref: '#/components/schemas/Id' }
+        socioId: { $ref: '#/components/schemas/Id' }
+        tipo: { type: string, enum: [INGRESO, EGRESO] }
+        actorId: { $ref: '#/components/schemas/Id' }
+        fecha: { type: string, format: date-time }
+        aceptado: { type: boolean }
+        codigo: { type: string, enum: [INGRESO_REGISTRADO, EGRESO_REGISTRADO, INGRESO_YA_ABIERTO, SIN_INGRESO_ABIERTO, MEMBRESIA_NO_HABILITADA] }

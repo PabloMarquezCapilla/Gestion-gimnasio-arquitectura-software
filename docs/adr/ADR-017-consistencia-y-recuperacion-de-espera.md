@@ -1,5 +1,7 @@
 # D4 - Consistencia y recuperación de la lista de espera
 
+**Ampliación independiente, 30/10/2026:** [ADR-019](ADR-019-accesos-mongodb-recepcion.md) concreta consistencia de Accesos: serialización por socio/sede y transacción MongoDB de presencia, movimiento e idempotencia. No cambia la política FIFO ni PostgreSQL. Un replay tardío no reabre presencias; ocupación deriva de presencias confirmadas.
+
 **Estado:** aceptada e implementada, 19/10/2026. Reemplaza [ADR-004](ADR-004-consistencia-y-concurrencia.md).
 
 **Referencias:** consistencia en sección 2.8, página 3; fallas de comunicación en sección 2.5, página 2; D4 e historia de decisiones en sección 5, páginas 6–7. El equipo confirmó que una cancelación debe aceptarse aunque Socios esté caído y que debe conservarse la prioridad FIFO.

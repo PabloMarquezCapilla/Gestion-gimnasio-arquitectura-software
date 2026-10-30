@@ -1,5 +1,7 @@
 # Contratos e integraciones entre grupos
 
+**API interna de recepción, 30/10/2026:** [OpenAPI Accesos 1.0.0](openapi-accesos-v1.yaml), [ADR-019](../adr/ADR-019-accesos-mongodb-recepcion.md) y [evidencia](../EVIDENCIA-ACCESOS.md). Requiere JWT ADMIN, pasa por el gateway y no reemplaza ningún contrato externo. POST con Idempotency-Key; consultar/registrar ocupación e historial no concede permisos a SOCIO.
+
 **Estado:** 23/10/2026. Lecturas, vinculación administrativa y envío manual de fotografías implementados y verificados localmente. URL/token operativos y prueba conjunta pendientes. El POST anterior del gimnasio continúa disponible durante la transición.
 
 El inicio, los usuarios de prueba y la consulta de bases se mantienen en el [README principal](../../README.md). Esta guía reúne contratos, reglas de intercambio y estados verificables; no registra una conexión externa que todavía no se probó.

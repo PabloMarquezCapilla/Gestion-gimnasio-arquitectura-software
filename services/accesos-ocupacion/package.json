@@ -3,6 +3,13 @@
   "version": "0.1.0",
   "private": true,
   "type": "commonjs",
-  "scripts": { "build": "tsc -p tsconfig.json", "start": "node dist/server.js" },
-  "dependencies": { "fastify": "5.12.5" }
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js"
+  },
+  "dependencies": {
+    "@fastify/jwt": "10.2.5",
+    "fastify": "5.12.5",
+    "mongodb": "6.21.0"
+  }
 }

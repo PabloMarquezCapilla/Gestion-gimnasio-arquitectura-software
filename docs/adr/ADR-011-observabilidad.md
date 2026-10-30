@@ -1,5 +1,7 @@
 # D11 - Observabilidad
 
+**Actualización Accesos, 30/10/2026:** [ADR-019](ADR-019-accesos-mongodb-recepcion.md) agrega logs correlacionados y métricas de solicitudes, errores, dependencia y respuestas de movimientos por código, más `/metrics/accesos` en gateway. Los contadores incluyen replays, no son movimientos únicos. Tablero, alerta y exportador de spans quedan pendientes.
+
 **Estado:** primera versión implementada para E2: logs JSON, correlación W3C, métricas básicas y primera traza HTTP verificada. Tableros y alertas pendientes.
 **Fecha original:** 12/10/2026. **Validación:** 19/10/2026.
 **Enunciado:** §2.10, página 3; §6.3, página 8, exige logs correlacionados y primera traza; §5, D11, página 7, pide estrategia, objetivos y alertas.

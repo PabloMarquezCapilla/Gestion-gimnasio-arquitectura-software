@@ -15,6 +15,43 @@ const registro = { dni: '12345678', nombre: 'Socio de prueba', email: 'socio@exa
 const json = (data, status = 200) => new Response(JSON.stringify(data), {
   status, headers: { 'Content-Type': 'application/json' },
 });
+
+test('Accesos envía JWT, clave idempotente y cuerpo sin modificar al gateway', async () => {
+  api.setApiSession('jwt-ficticio');
+  const body = { sedeId: 'sede-1', socioId: 'socio-1', tipo: 'INGRESO' };
+  globalThis.fetch = async (url, options) => {
+    assert.equal(url, '/api/v1/accesos/movimientos'); assert.equal(options.headers.get('Authorization'), 'Bearer jwt-ficticio');
+    assert.equal(options.headers.get('Idempotency-Key'), 'clave-estable'); assert.deepEqual(JSON.parse(options.body), body);
+    return json({ movimiento: { ...body, movimientoId: 'm-1', aceptado: true } }, 201);
+  };
+  assert.equal((await api.apiAccesosRegistrar(body, 'clave-estable')).movimiento.movimientoId, 'm-1');
+});
+test('Accesos no interpreta error de red ni un cuerpo ajeno como éxito', async () => {
+  api.setApiSession('jwt-ficticio');
+  const body = { sedeId: 'sede-1', socioId: 'socio-1', tipo: 'EGRESO' };
+  globalThis.fetch = async () => { throw new TypeError('offline'); };
+  await assert.rejects(api.apiAccesosRegistrar(body, 'clave-estable'), { status: 0 });
+  globalThis.fetch = async () => json({ movimiento: { ...body, socioId: 'otro', movimientoId: 'm-1', aceptado: true } });
+  await assert.rejects(api.apiAccesosRegistrar(body, 'clave-estable'), { status: 502 });
+});
+test('Accesos muestra rechazo de membresía y conserva sesión ante falla de dependencia', async () => {
+  api.setApiSession('jwt-ficticio');
+  globalThis.fetch = async () => json({ movimiento: { codigo: 'MEMBRESIA_NO_HABILITADA' } }, 422);
+  await assert.rejects(api.apiAccesosRegistrar({ sedeId: 'sede-1', socioId: 'socio-1', tipo: 'INGRESO' }, 'clave'), { codigo: 'MEMBRESIA_NO_HABILITADA', status: 422 });
+  globalThis.fetch = async () => json({ codigo: 'SOCIOS_NO_DISPONIBLE', mensaje: 'Dependencia caída' }, 503);
+  await assert.rejects(api.apiAccesosRegistrar({ sedeId: 'sede-1', socioId: 'socio-1', tipo: 'INGRESO' }, 'clave'), { status: 503 });
+  globalThis.fetch = async (_url, options) => { assert.equal(options.headers.get('Authorization'), 'Bearer jwt-ficticio'); return json({ items: [] }); };
+  await api.apiAccesosSedes();
+});
+test('Accesos pagina historial con filtros enviados al backend', async () => {
+  api.setApiSession('jwt-ficticio');
+  globalThis.fetch = async (url) => {
+    const u = new URL(url, 'http://prueba.local'); assert.equal(u.searchParams.get('sedeId'), 'sede-1');
+    assert.equal(u.searchParams.get('pagina'), '2'); assert.equal(u.searchParams.get('socioId'), 'socio-1');
+    return json({ items: [], pagina: 2, tamanio: 20 });
+  };
+  await api.apiAccesosHistorial('sede-1', 2, 'socio-1');
+});
 beforeEach(() => api.setApiSession(null));
 afterEach(() => { globalThis.fetch = originalFetch; api.setApiSession(null); });
 

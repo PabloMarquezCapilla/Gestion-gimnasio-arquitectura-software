@@ -51,7 +51,7 @@ Las reglas de negocio, exclusiones y criterios de aceptación están en [ALCANCE
 |---|---|---|
 | Socios y Membresías | Login JWT, permisos, altas administrativas, membresías, lecturas/vinculación Car Cruds, vista previa y envío mensual manual con persistencia e historial; POST anterior de empleados. | Conexión conjunta Car Cruds; planes/pagos/comprobantes, renovación/reactivación y resolución de solicitudes. |
 | Clases y Reservas | Catálogo por sede/fechas, reservas, cancelación, espera FIFO y recuperación de promociones; PostgreSQL y dos réplicas. | Publicación administrativa de clases, consulta textual FTS y cancelación de reservas por cambios posteriores de membresía. |
-| Accesos y Ocupación | Estructura HTTP y MongoDB configurado. | Movimientos, ocupación, persistencia de negocio y caché. |
+| Accesos y Ocupación | Recepción ADMIN: ingresos/egresos, historial y ocupación real; MongoDB transaccional e idempotencia durable. | Caché medida y eventual integración de hechos de uso con Car Cruds. |
 | Tienda | Servicio y sección web con JWT; informa `503 INTEGRACION_PENDIENTE`. | Acordar con FAV la consulta externa de stock, conexión y consumo real. |
 | Gateway y portal | NGINX, rutas, portal React, balanceo y logs de destinos. | Despliegue público y frontend completo de los flujos pendientes. |
 
@@ -63,7 +63,7 @@ El **POST anterior `/api/v1/integraciones/empleados`**, contrato propio **1.0.1*
 
 ## Arquitectura y estructura
 
-Se utiliza Node.js 22, TypeScript y Fastify; React/Vite para el portal y NGINX como entrada. Clases aplica Hexagonal y Socios, Capas. PostgreSQL 17 está integrado; MongoDB 8.0 y RabbitMQ 4.1 están configurados, sin flujo de Accesos ni eventos de dominio operativos. Redis es una propuesta pendiente.
+Se utiliza Node.js 22, TypeScript y Fastify; React/Vite para el portal y NGINX como entrada. Clases aplica Hexagonal y Socios, Capas. PostgreSQL 17 está integrado; MongoDB 8.0 está integrado en Accesos; RabbitMQ 4.1 continúa configurado sin eventos de dominio operativos. Redis es una propuesta pendiente.
 
 ```text
 services/
@@ -100,7 +100,7 @@ El script conserva `.env`. Si ya existen volúmenes pero falta ese archivo, recu
 | [http://localhost:8080](http://localhost:8080) | Portal del socio y administración. |
 | [http://localhost:8080/consola.html](http://localhost:8080/consola.html) | Consola técnica de clases, reservas y trazas. |
 | `/health/socios`, `/health/clases` | Salud del proceso y conectividad con PostgreSQL. |
-| `/health/accesos`, `/health/tienda` | Salud de las estructuras HTTP; no acredita negocio ni proveedor conectado. |
+| `/health/accesos`, `/health/tienda` | Accesos verifica MongoDB; Tienda informa estructura sin proveedor conectado. |
 | `/metrics/socios`, `/metrics/clases` | Métricas básicas compatibles con Prometheus. |
 
 Las rutas de salud son decisiones operativas para comprobar disponibilidad, no reglas de negocio. La configuración local usa HTTP; HTTPS y la URL compartida deben resolverse al publicar.
@@ -201,7 +201,24 @@ SELECT reserva_id, clase_id, socio_id, estado FROM reservas;
 SELECT espera_id, clase_id, socio_id, orden, estado FROM lista_espera;
 ```
 
-Al reservar y luego cancelar desde la web, el registro pasa de `CONFIRMADA` a `CANCELADA`; no se borra. Para salir de psql, escribir `\q`. MongoDB está preparado, pero Accesos aún no persiste movimientos. Tienda no tiene base propia.
+Al reservar y luego cancelar desde la web, el registro pasa de `CONFIRMADA` a `CANCELADA`; no se borra. Para salir de psql, escribir `\q`. Accesos persiste movimientos, presencias, sedes y resultados idempotentes en MongoDB; guía en [ADR-019](docs/adr/ADR-019-accesos-mongodb-recepcion.md). Tienda no tiene base propia.
+
+## Recepción y ocupación — etapa 1
+
+Con el inicio habitual, ingresar como ADMIN y abrir **Recepción y Ocupación**. Elegir sede, ingresar el ID del socio y seleccionar Ingreso o Egreso. Se consultan ocupación e historial reales; los rechazos quedan visibles y no cambian la ocupación. Las sedes iniciales de Compose son ficticias (`sede-demo-01`/`sede-demo-02`), alineadas con las clases existentes. El catálogo se inserta sin sobrescribir registros; no hay CRUD nuevo de sedes.
+
+El ingreso consulta habilitación en Socios; el egreso cierra una presencia sin depender de esa consulta. Una respuesta incierta conserva clave/cuerpo en sessionStorage por actor para reintentar sin duplicar; recargar exige login nuevamente, pero conserva la operación. No borrar el almacenamiento del navegador mientras haya una operación incierta. La autorización usa JWT ADMIN hasta su vencimiento, sin nuevo rol ni revocación inmediata.
+
+Contrato interno y errores: [OpenAPI Accesos](docs/contracts/openapi-accesos-v1.yaml). Colecciones, índices, transacciones y límites: [ADR-019](docs/adr/ADR-019-accesos-mongodb-recepcion.md). Comandos y resultados ejecutados: [EVIDENCIA-ACCESOS](docs/EVIDENCIA-ACCESOS.md).
+
+```sh
+# Docker: MongoDB exclusivo, sin .env ni volúmenes del grupo.
+npm run test:accesos
+# Alternativa con mongod instalado: crea un replica set exclusivo en un directorio temporal.
+ACCESOS_TEST_MODE=native MONGOD_BIN=/ruta/al/mongod npm run test:accesos
+```
+
+El ensayo verifica pertenencia antes de limpiar sus recursos temporales. No usar bases existentes como destino. Accesos no incorpora caché ni modifica el cálculo/envío de Car Cruds en esta etapa.
 
 ## Pruebas y evidencia
 
@@ -214,7 +231,7 @@ npm --prefix frontend ci --ignore-scripts
 
 | Comando | Qué comprueba |
 |---|---|
-| `npm test` | Compilación de los cuatro servicios y reglas/contratos; incluye HTTP externo controlado y API del frontend. Última verificación: 173/173, sin omitidas, 23/10/2026. |
+| `npm test` | Compilación de los cuatro servicios y reglas/contratos; incluye HTTP externo controlado y API del frontend. Referencia anterior: 173/173 el 23/10/2026. Etapa Accesos: 187/187 el 30/10/2026; detalle y límites en EVIDENCIA-ACCESOS. |
 | `npm run frontend:build` | TypeScript y bundle de producción del portal. |
 | `npm run test:contrato-empleados` | Contrato y mock separado de empleados (11 pruebas). |
 | `npm run test:car-cruds` | Contrato externo 0.3.0, lecturas, permisos, vinculación, vista previa/envío, resultado incierto y reenvío exacto sin duplicar con proveedor controlado. |
@@ -239,4 +256,4 @@ Los cambios de esta entrega se preparan en `entrega-2` y se revisan mediante PR 
 | [Contrato e integración](docs/contracts/README.md) | Capacidad ofrecida, versión, ejemplos, errores, autenticación e idempotencia (§4.1). |
 | [Postmortem](docs/POSTMORTEM.md) | Ensayo local de caída: impacto, secuencia, detección, respuesta, causa y mejoras (§2.9 y §3). |
 
-E1 (§6.2) queda representada por alcance, arquitectura/diagramas, límites, estructura y contratos/mocks conservados. Para E2 (§6.3) hay flujo propio operativo, PostgreSQL, logs/traza y ADR; Car Cruds cuenta con contrato, lecturas, vinculación y envío manual verificados localmente, con conexión y prueba conjunta pendientes. D9 mantiene abierta la consulta de stock de FAV. La implementación completa de búsqueda, caché, mensajería, Accesos y frontend, además del despliegue y la integración real, sigue pendiente para los requisitos generales y la presentación final (§6, páginas 8–9).
+E1 (§6.2) queda representada por alcance, arquitectura/diagramas, límites, estructura y contratos/mocks conservados. Para E2 (§6.3) hay flujo propio operativo, PostgreSQL, logs/traza y ADR; Car Cruds cuenta con contrato, lecturas, vinculación y envío manual verificados localmente, con conexión y prueba conjunta pendientes. D9 mantiene abierta la consulta de stock de FAV. La implementación completa de búsqueda, caché, mensajería y frontend de las funciones restantes, además del despliegue y la integración real, sigue pendiente para los requisitos generales y la presentación final (§6, páginas 8–9).
