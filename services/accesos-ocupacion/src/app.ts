@@ -4,10 +4,12 @@ import Fastify from 'fastify';
 import jwt from '@fastify/jwt';
 import { MongoError } from 'mongodb';
 import { AccesosError, AccesosRepository, AccesosService, Contexto, identificador, orden, parametros, SociosClient } from './domain';
+import { OcupacionCache, OcupacionReader } from './ocupacion';
 
 export interface AccesosOptions {
   repository: AccesosRepository; socios: SociosClient; jwtSecret: string;
   jwtTtlSeconds?: number; clock?: () => Date; logger?: boolean | Record<string, unknown>;
+  ocupacionCache?: OcupacionCache;
 }
 export function buildAccesosApp(options: AccesosOptions) {
   const ttl = options.jwtTtlSeconds ?? 3600;
@@ -20,6 +22,13 @@ export function buildAccesosApp(options: AccesosOptions) {
   } });
   const repo = options.repository;
   const service = new AccesosService(repo, options.socios, clock);
+  const ocupacion = new OcupacionReader(async sedeId => {
+    ocupacion.metrics.mongoQueries++;
+    await service.exigirSede(sedeId);
+    ocupacion.metrics.mongoQueries++;
+    return repo.ocupacion(sedeId);
+  }, options.ocupacionCache);
+  if (options.ocupacionCache) app.addHook('onClose', async () => { await options.ocupacionCache!.close(); });
   const actores = new WeakMap<object, string>(); const trazas = new WeakMap<object, Contexto>();
   const instanceId = hostname();
   let solicitudes = 0; let errores = 0; let dependencia = 0;
@@ -63,6 +72,7 @@ export function buildAccesosApp(options: AccesosOptions) {
       '# TYPE accesos_dependency_errors_total counter', `accesos_dependency_errors_total{${labels}} ${dependencia}`,
       '# TYPE accesos_operations_total counter', ...Object.entries(operaciones).map(([codigo, n]) => `accesos_operations_total{${labels},codigo="${codigo}"} ${n}`),
       '# TYPE process_uptime_seconds gauge', `process_uptime_seconds{${labels}} ${process.uptime()}`,
+      ocupacion.metrics.text(labels),
     ].join('\n') + '\n';
   });
   app.get('/api/v1/accesos/sedes', async () => ({ items: await repo.sedes() }));
@@ -72,14 +82,15 @@ export function buildAccesosApp(options: AccesosOptions) {
     if (typeof clave !== 'string' || !/^[A-Za-z0-9_-]{8,128}$/.test(clave)) throw parametros();
     const result = await service.registrar({ ...body, clave, actorId: actores.get(request)! }, trazas.get(request));
     const m = result.movimiento;
+    if (m.aceptado) await ocupacion.invalidate(m.sedeId, codigo => request.log.warn({ codigo }, 'Falló invalidación de caché; vigencia acotada por TTL'));
     operaciones[m.codigo] = (operaciones[m.codigo] ?? 0) + 1;
     request.log.info({ movimientoId: m.movimientoId, tipo: m.tipo, sedeId: m.sedeId, aceptado: m.aceptado, codigo: m.codigo }, 'Movimiento de recepción resuelto');
     return reply.code(m.aceptado ? 201 : m.codigo === 'MEMBRESIA_NO_HABILITADA' ? 422 : 409).send(result);
   });
   app.get<{ Params: { sedeId: string } }>('/api/v1/accesos/sedes/:sedeId/ocupacion', async request => {
     if (!identificador(request.params.sedeId)) throw parametros();
-    await service.exigirSede(request.params.sedeId);
-    return { sedeId: request.params.sedeId, ocupacion: await repo.ocupacion(request.params.sedeId), consultadoEn: clock().toISOString() };
+    const cantidad = await ocupacion.read(request.params.sedeId, codigo => request.log.warn({ codigo }, 'Caché no disponible; se consulta MongoDB'));
+    return { sedeId: request.params.sedeId, ocupacion: cantidad, consultadoEn: clock().toISOString() };
   });
   app.get<{ Querystring: Record<string, unknown> }>('/api/v1/accesos/movimientos', async request => {
     const q = request.query;
@@ -108,5 +119,5 @@ export function buildAccesosApp(options: AccesosOptions) {
     return reply.code(mongo ? 503 : 500).send({ codigo: mongo ? 'ALMACENAMIENTO_NO_DISPONIBLE' : 'ERROR_INTERNO',
       mensaje: 'No se pudo confirmar la operación. Conservá la misma clave para reintentar.' });
   });
-  return app;
+  return Object.assign(app, { ocupacionMetrics: ocupacion.metrics });
 }

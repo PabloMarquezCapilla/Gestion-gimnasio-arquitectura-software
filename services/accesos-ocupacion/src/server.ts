@@ -3,6 +3,7 @@ import { buildAccesosApp } from './app';
 import { identificador, Sede } from './domain';
 import { MongoAccesosRepository } from './repository';
 import { HttpSociosClient } from './socios.client';
+import { RedisOcupacionCache } from './redis.cache';
 
 async function start() {
   const url = process.env.MONGODB_URL;
@@ -24,8 +25,16 @@ async function start() {
     await client.connect();
     const repository = new MongoAccesosRepository(client);
     await repository.inicializar(sedes);
+    const redisUrl = process.env.REDIS_URL?.trim();
+    const cache = redisUrl ? new RedisOcupacionCache({ url: redisUrl,
+      namespace: process.env.OCUPACION_CACHE_NAMESPACE ?? 'pulse:ocupacion:v1',
+      ttlMs: Number(process.env.OCUPACION_CACHE_TTL_MS ?? 30000), timeoutMs: Number(process.env.REDIS_TIMEOUT_MS ?? 100),
+      onConnectionError: () => { console.warn(JSON.stringify({ service: 'accesos-ocupacion', codigo: 'REDIS_CONEXION_FALLIDA', mensaje: 'Caché no disponible; MongoDB sigue siendo la fuente.' })); },
+    }) : undefined;
     const app = buildAccesosApp({ repository, socios, jwtSecret, jwtTtlSeconds: ttl,
+      ocupacionCache: cache,
       logger: { redact: ['req.headers.authorization', 'req.headers["x-service-key"]', 'req.headers["idempotency-key"]'] } });
+    cache?.start();
     app.addHook('onClose', async () => { await client.close(); });
     for (const signal of ['SIGINT', 'SIGTERM'] as const) process.once(signal, () => { void app.close().catch(() => { process.exitCode = 1; }); });
     try { await app.listen({ host: '0.0.0.0', port }); }

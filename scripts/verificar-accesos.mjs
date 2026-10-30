@@ -190,7 +190,21 @@ test('Accesos: MongoDB real, HTTP, concurrencia, recuperación y seguridad', { t
     if (process.env.ACCESOS_PLAYWRIGHT_MODULE && process.env.NGINX_BIN && process.env.NGINX_MIME_TYPES) {
       await t.test('Frontend y gateway reales con respuesta perdida y reanudación', { timeout: 60000 }, async () => {
         const { verificarAccesosWeb } = await import('./verificar-accesos-web.mjs');
-        await verificarAccesosWeb({ temporary, accesosUrl: a, sociosUrl, email: admin.email, password: 'clave-solo-ficticia' });
+        let redis; let cachedApp;
+        try {
+          let webUrl = a;
+          if (process.env.ACCESOS_WEB_CACHE === '1') {
+            const { entornoRedis } = await import('./cache/redis-entorno.mjs');
+            const { default: redisModule } = await import('../services/accesos-ocupacion/dist/redis.cache.js');
+            redis = await entornoRedis();
+            const cache = new redisModule.RedisOcupacionCache({ url: redis.url }); cache.start();
+            for (let n = 0; n < 60 && !cache.ready; n++) await pause(50); assert.ok(cache.ready);
+            cachedApp = access.buildAccesosApp({ repository: repoA, socios: new sociosClient.HttpSociosClient(sociosUrl, internalApiKey, 500), jwtSecret, ocupacionCache: cache });
+            await cachedApp.listen({ host: '127.0.0.1', port: 0 }); webUrl = 'http://127.0.0.1:' + cachedApp.server.address().port;
+          }
+          await verificarAccesosWeb({ temporary, accesosUrl: webUrl, sociosUrl, email: admin.email, password: 'clave-solo-ficticia' });
+          if (cachedApp) { assert.ok(cachedApp.ocupacionMetrics.hit > 0); assert.ok(cachedApp.ocupacionMetrics.invalidations > 0); }
+        } finally { await cachedApp?.close(); await redis?.close(); }
       });
     }
     await t.test('Socios caído: ingreso sin efecto; egreso y replay siguen operativos', async () => {
