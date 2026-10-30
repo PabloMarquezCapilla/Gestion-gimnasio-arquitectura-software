@@ -67,3 +67,7 @@ Logs JSON con `service`, `trace_id`, `span_id`, padre e ID de movimiento; propag
 - Un nodo MongoDB soporta transacciones pero no redundancia. Reintentos no equivalen a disponibilidad garantizada ni eliminan incertidumbre de respuesta.
 
 Referencias técnicas: [transacciones del driver oficial](https://www.mongodb.com/docs/drivers/node/current/crud/transactions/), [índices únicos MongoDB](https://www.mongodb.com/docs/manual/core/index-unique/).
+
+## Extensión posterior — etapa 2
+
+[ADR-020](ADR-020-cache-ocupacion-redis.md) agrega Redis sobre el agregado de ocupación, conservando transacciones, autorización, contratos y propiedad de datos de esta decisión. La exclusión de caché del alcance original sigue documentada arriba como historia de etapa 1.

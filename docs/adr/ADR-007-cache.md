@@ -1,6 +1,6 @@
 # D7 - Caché
 
-**Estado:** diseño de caché conservado; Redis y caché de negocio pendientes. Exclusión de caché de cupos implementada.
+**Estado actual (30/10/2026):** implementado y medido para ocupación; [ADR-020](ADR-020-cache-ocupacion-redis.md) concreta esta decisión. El texto siguiente conserva el diseño previo y su estado histórico. Exclusión de caché de cupos conservada.
 **Fecha original:** 12/10/2026. **Revisión factual:** 19/10/2026.
 **Enunciado:** §2.7, página 3; §5, D7, página 7; decisión requerida en §6.3, página 8.
 

@@ -1,0 +1,11 @@
+
+> gestion-gimnasio@0.1.0 frontend:build
+> npm --prefix frontend run build
+
+
+> fitflow-frontend@1.0.0 build
+> tsc -b && vite build
+
+error TS2688: Cannot find type definition file for 'node 2'.
+  The file is in the program because:
+    Entry point for implicit type library 'node 2'

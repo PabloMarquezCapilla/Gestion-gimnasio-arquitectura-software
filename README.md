@@ -51,7 +51,7 @@ Las reglas de negocio, exclusiones y criterios de aceptación están en [ALCANCE
 |---|---|---|
 | Socios y Membresías | Login JWT, permisos, altas administrativas, membresías, lecturas/vinculación Car Cruds, vista previa y envío mensual manual con persistencia e historial; POST anterior de empleados. | Conexión conjunta Car Cruds; planes/pagos/comprobantes, renovación/reactivación y resolución de solicitudes. |
 | Clases y Reservas | Catálogo por sede/fechas, reservas, cancelación, espera FIFO y recuperación de promociones; PostgreSQL y dos réplicas. | Publicación administrativa de clases, consulta textual FTS y cancelación de reservas por cambios posteriores de membresía. |
-| Accesos y Ocupación | Recepción ADMIN: ingresos/egresos, historial y ocupación real; MongoDB transaccional e idempotencia durable. | Caché medida y eventual integración de hechos de uso con Car Cruds. |
+| Accesos y Ocupación | Recepción ADMIN: ingresos/egresos, historial y ocupación real; MongoDB transaccional, Redis medido e idempotencia durable. | Integración de hechos de uso con Car Cruds. |
 | Tienda | Servicio y sección web con JWT; informa `503 INTEGRACION_PENDIENTE`. | Acordar con FAV la consulta externa de stock, conexión y consumo real. |
 | Gateway y portal | NGINX, rutas, portal React, balanceo y logs de destinos. | Despliegue público y frontend completo de los flujos pendientes. |
 
@@ -63,7 +63,7 @@ El **POST anterior `/api/v1/integraciones/empleados`**, contrato propio **1.0.1*
 
 ## Arquitectura y estructura
 
-Se utiliza Node.js 22, TypeScript y Fastify; React/Vite para el portal y NGINX como entrada. Clases aplica Hexagonal y Socios, Capas. PostgreSQL 17 está integrado; MongoDB 8.0 está integrado en Accesos; RabbitMQ 4.1 continúa configurado sin eventos de dominio operativos. Redis es una propuesta pendiente.
+Se utiliza Node.js 22, TypeScript y Fastify; React/Vite para el portal y NGINX como entrada. Clases aplica Hexagonal y Socios, Capas. PostgreSQL 17 está integrado; MongoDB 8.0 está integrado en Accesos; RabbitMQ 4.1 continúa configurado sin eventos de dominio operativos. Redis 8.2.11 acelera la ocupación con cache-aside.
 
 ```text
 services/
@@ -218,7 +218,7 @@ npm run test:accesos
 ACCESOS_TEST_MODE=native MONGOD_BIN=/ruta/al/mongod npm run test:accesos
 ```
 
-El ensayo verifica pertenencia antes de limpiar sus recursos temporales. No usar bases existentes como destino. Accesos no incorpora caché ni modifica el cálculo/envío de Car Cruds en esta etapa.
+El ensayo verifica pertenencia antes de limpiar sus recursos temporales. No usar bases existentes como destino. El ensayo original de etapa 1 no incorpora caché; etapa 2 agrega Redis sin modificar el cálculo/envío de Car Cruds.
 
 ## Pruebas y evidencia
 
@@ -256,4 +256,10 @@ Los cambios de esta entrega se preparan en `entrega-2` y se revisan mediante PR 
 | [Contrato e integración](docs/contracts/README.md) | Capacidad ofrecida, versión, ejemplos, errores, autenticación e idempotencia (§4.1). |
 | [Postmortem](docs/POSTMORTEM.md) | Ensayo local de caída: impacto, secuencia, detección, respuesta, causa y mejoras (§2.9 y §3). |
 
-E1 (§6.2) queda representada por alcance, arquitectura/diagramas, límites, estructura y contratos/mocks conservados. Para E2 (§6.3) hay flujo propio operativo, PostgreSQL, logs/traza y ADR; Car Cruds cuenta con contrato, lecturas, vinculación y envío manual verificados localmente, con conexión y prueba conjunta pendientes. D9 mantiene abierta la consulta de stock de FAV. La implementación completa de búsqueda, caché, mensajería y frontend de las funciones restantes, además del despliegue y la integración real, sigue pendiente para los requisitos generales y la presentación final (§6, páginas 8–9).
+E1 (§6.2) queda representada por alcance, arquitectura/diagramas, límites, estructura y contratos/mocks conservados. Para E2 (§6.3) hay flujo propio operativo, PostgreSQL, logs/traza y ADR; Car Cruds cuenta con contrato, lecturas, vinculación y envío manual verificados localmente, con conexión y prueba conjunta pendientes. D9 mantiene abierta la consulta de stock de FAV. La implementación completa de búsqueda, mensajería y frontend de las funciones restantes, además del despliegue y la integración real, sigue pendiente para los requisitos generales y la presentación final (§6, páginas 8–9).
+
+## Caché Redis de ocupación (etapa 2)
+
+Compose incorpora Redis 8.2.11 sin puerto público ni persistencia, con límite de memoria 64 MiB y evicción LRU. Accesos recibe `REDIS_URL`; fuera de Compose, omitirla desactiva la caché. Variables opcionales: `OCUPACION_CACHE_TTL_MS=30000` (50–30000), `REDIS_TIMEOUT_MS=100` (1–1000) y `OCUPACION_CACHE_NAMESPACE=pulse:ocupacion:v1`. Usar namespace distinto por entorno/fuente MongoDB y configuración idéntica en todas las réplicas. Cambiar TTL/namespace de forma coordinada, con reinicio de caché, para no dejar réplicas invalidando claves diferentes. No se modificó `.env`.
+
+Redis no autoriza ingresos: sólo acelera el agregado por sede. Si falla, se consulta MongoDB; puede existir información anterior hasta 30 s si una invalidación falla. La interfaz y las rutas del gateway conservan sus contratos. `npm run test:cache` usa MongoDB y Redis reales aislados (Docker por defecto); modo nativo y medición antes/después en [EVIDENCIA-CACHE](docs/EVIDENCIA-CACHE.md). Diseño: [ADR-020](docs/adr/ADR-020-cache-ocupacion-redis.md).

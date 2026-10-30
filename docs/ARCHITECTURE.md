@@ -10,7 +10,7 @@
 |---|---|---|
 | **Socios y Membresías** | Socios, planes, membresías, pagos, comprobantes, referencias externas, solicitudes, vínculos Car Cruds, auditoría y registro de fotografías/envíos. | Capas; JWT, altas, habilitación, lecturas/vinculación/envío manual Car Cruds para ADMIN y POST anterior. PostgreSQL: `socios`, `membresias`, `solicitudes_membresia`, `empleados_externos`, `altas_empleados_idempotencia`, `car_cruds_vinculos`, `car_cruds_vinculos_historial`, `car_cruds_evidencias_series` y `car_cruds_evidencias`. Conexión conjunta, pagos y planes pendientes. |
 | **Clases y Reservas** | Clases, capacidad, reservas, espera e índice de búsqueda derivado. | Hexagonal; catálogo, reservas/cancelación y recuperación FIFO. PostgreSQL: `clases`, `reservas`, `lista_espera`. Publicación administrativa y consulta textual pendientes. |
-| **Accesos y Ocupación** | Sedes, intentos y movimientos de acceso, presencias y ocupación/caché derivadas. | Capas; recepción ADMIN, ingresos/egresos, historial y ocupación con transacciones MongoDB. Caché pendiente; ver ADR-019. |
+| **Accesos y Ocupación** | Sedes, intentos y movimientos de acceso, presencias y ocupación/caché derivadas. | Capas; recepción ADMIN, ingresos/egresos, historial y ocupación con transacciones MongoDB. Cache-aside Redis sobre ocupación, invalidación y TTL; ver ADR-019 y ADR-020. |
 | **Tienda** | Integrar la consulta de productos y stock. El catálogo y las existencias pertenecen a la distribuidora. | Estructura en Capas, JWT y pantalla. Sin base propia ni cliente externo; devuelve `503 INTEGRACION_PENDIENTE`. |
 
 Socios y Clases usan bases y usuarios PostgreSQL separados en una instancia local compartida; no hay acceso de un servicio a tablas ajenas. MongoDB tiene un replica set de un solo nodo, sin redundancia. El diseño de motores y restricciones se justifica en [D3](adr/ADR-003-persistencia.md); los límites vigentes, en [D1](adr/ADR-015-limites-con-tienda.md).
@@ -28,7 +28,7 @@ NGINX sirve el portal React y enruta las solicitudes por un único puerto local 
 
 ### Recepción y ocupación (30/10/2026)
 
-ADMIN → panel React → NGINX `/api/v1/accesos/*` → Accesos. El ingreso consulta Socios con clave técnica antes de la transacción; el egreso usa estado local. MongoDB rs0 guarda presencia, movimiento y resultado idempotente juntos. Ocupación deriva de presencias abiertas; historial filtra sede/socio y pagina. La UI conserva operaciones inciertas en sessionStorage por actor, sin JWT, para repetir el mismo cuerpo/clave incluso tras recarga. No hay caché ni acceso directo a colecciones ajenas.
+ADMIN → panel React → NGINX `/api/v1/accesos/*` → Accesos. El ingreso consulta Socios con clave técnica antes de la transacción; el egreso usa estado local. MongoDB rs0 guarda presencia, movimiento y resultado idempotente juntos. Ocupación deriva de presencias abiertas; historial filtra sede/socio y pagina. La UI conserva operaciones inciertas en sessionStorage por actor, sin JWT, para repetir el mismo cuerpo/clave incluso tras recarga. Etapa 2 agrega caché Redis exclusivamente al agregado; no hay acceso directo a colecciones ajenas.
 
 [ADR-019](adr/ADR-019-accesos-mongodb-recepcion.md), [contrato interno](contracts/openapi-accesos-v1.yaml) y [evidencia](EVIDENCIA-ACCESOS.md). La autorización JWT es local hasta su vencimiento, como Clases/Tienda, sin revocación inmediata. MongoDB sigue siendo un nodo sin redundancia.
 
@@ -168,9 +168,9 @@ sequenceDiagram
 
 ## Limitaciones conocidas y deuda técnica aceptada
 
-- **Dominio pendiente:** pagos/comprobantes, planes, renovación/reactivación, resolución de solicitudes, credenciales de empleados, publicación de clases. Accesos ya implementa movimientos y ocupación; su caché y consumo desde Car Cruds quedan pendientes. El frontend no simula éxito de esas funciones.
+- **Dominio pendiente:** pagos/comprobantes, planes, renovación/reactivación, resolución de solicitudes, credenciales de empleados, publicación de clases. Accesos ya implementa movimientos y ocupación; su caché está implementada; el consumo desde Car Cruds queda pendiente. El frontend no simula éxito de esas funciones.
 - **Integración externa:** Car Cruds tiene contrato fijado, lecturas, vínculo y envío durable probados localmente; faltan datos fiables de pagos/ingresos y prueba conjunta con conexión operativa. Tienda no consume productos/stock de FAV y aún carece de su test de contrato. La conexión accesible y las pruebas entre grupos siguen pendientes (§4.1).
-- **Búsqueda y caché:** FTS/GIN creado pero sin consulta textual; Redis/caché de negocio pendiente de implementación y medición comparativa.
+- **Búsqueda y caché:** FTS/GIN creado pero sin consulta textual; Redis sobre ocupación implementado y medido localmente; demanda de producción y despliegue Compose completo pendientes.
 - **Mensajería:** broker configurado sin evento publicado/consumido, Inbox/Outbox ni DLQ; reservas futuras no se cancelan automáticamente por una suspensión posterior.
 - **Disponibilidad:** un gateway, una instancia PostgreSQL y MongoDB de un nodo. Dos réplicas HTTP no eliminan esos puntos de falla ni los errores durante detección. No hay despliegue multizona ni protección completa por circuit breaker/límite de concurrencia.
 - **Identidad:** Clases y Tienda validan el JWT hasta su vencimiento; no hay revocación inmediata ni refresh tokens. La configuración actual del POST admite un origen externo por entorno.
@@ -192,7 +192,7 @@ Estas limitaciones mantienen visibles los requisitos generales y de la presentac
 | **D4 vigente** | Consistencia y recuperación FIFO | Cancelación local y promoción recuperable verificadas | [ADR-017](adr/ADR-017-consistencia-y-recuperacion-de-espera.md) |
 | **D5** | Comunicación entre servicios (Síncrona y Asíncrona) | HTTP y POST externo operativos; mensajería pendiente | [ADR-005](adr/ADR-005-comunicacion-entre-servicios.md) |
 | **D6** | Búsqueda | Catálogo filtrado; FTS preparado, consulta textual pendiente | [ADR-006](adr/ADR-006-busqueda.md) |
-| **D7** | Caché | Diseño documentado; Redis pendiente | [ADR-007](adr/ADR-007-cache.md) |
+| **D7** | Caché | Redis implementado y medido; ADR-020 concreta ADR-007 | [ADR-007](adr/ADR-007-cache.md) |
 | **D8 inicial** | Consulta de clases | Reemplazado; contrato y pruebas conservados | [ADR-008](adr/ADR-008-contrato-propio.md) |
 | **D8 anterior** | Recepción de empleados y solicitud pendiente | Reemplazado en diseño; contrato 1.0.1 y POST local conservados | [ADR-014](adr/ADR-014-contrato-empleados.md) |
 | **D8 vigente** | Información mensual para Car Cruds | Lecturas, vínculo y envío manual verificados localmente; conexión conjunta pendiente | [ADR-018](adr/ADR-018-integracion-car-cruds.md) |
@@ -202,3 +202,9 @@ Estas limitaciones mantienen visibles los requisitos generales y de la presentac
 | **D12** | Balanceo de carga | Distribución, detección y reemplazo verificados con límites explícitos | [ADR-012](adr/ADR-012-balanceo-de-carga.md) |
 | **D13** | Capacidad y estimación de costos | Línea base local y estimación ilustrativa | [ADR-013](adr/ADR-013-capacidad-y-costos.md) |
 | Adicional | Autenticación y altas administradas | JWT, permisos y bootstrap local implementados | [ADR-016](adr/ADR-016-autenticacion-y-altas.md) |
+
+### Caché de ocupación (etapa 2)
+
+Accesos consulta Redis antes de cargar existencia de sede y conteo de presencias abiertas desde MongoDB. Sólo el entero agregado se almacena; JWT y permisos se validan antes. Cada movimiento aceptado invalida después del commit. Dos claves por sede y scripts Lua con token de generación impiden que una lectura antigua repueble la caché después de invalidar. TTL máximo 30 s contado desde el inicio de la carga, sin renovación por hits. Redis caído provoca fallback a MongoDB; no decide admisión ni altera transacciones.
+
+La coherencia es eventual: una invalidación fallida o un proceso que cae después del commit puede dejar el valor anterior hasta su expiración. Una respuesta ya en vuelo puede contener el estado anterior. Redis no persiste y no publica puerto en Compose. No es un requisito de salud de Accesos. Configuración, garantías y deudas: [ADR-020](adr/ADR-020-cache-ocupacion-redis.md). Métricas y resultados reproducibles: [evidencia](EVIDENCIA-CACHE.md).

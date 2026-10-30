@@ -33,3 +33,7 @@ La propuesta inicial contempla circuit breaker y aislamiento adicional; faltan i
 ## Verificación y ensayo de caída
 
 `npm run test:postgres` reproduce la caída/recuperación de Socios y la reasignación FIFO. `npm run test:balanceo` construye un entorno completo aislado y detiene/reemplaza una réplica. El [postmortem](../POSTMORTEM.md) documenta impacto, secuencia, detección y mejoras del ensayo local; no sustituye la futura jornada con el proveedor. No se declaran probados escenarios sin un ensayo equivalente.
+
+## Extensión 30/10/2026: dependencia Redis
+
+La caché de ocupación es opcional: conexión en segundo plano, sin cola offline, máximo 1000 comandos pendientes y timeout por operación de 100 ms (configurable 1–1000). El plazo HTTP deja de esperar aunque un comando ya enviado pueda terminar después. Los scripts siguen siendo seguros con esa ejecución tardía. Un fallo de invalidación se registra sin revertir el movimiento confirmado. MongoDB conserva sus límites existentes y los errores de fuente nunca se convierten en cero. [ADR-020](ADR-020-cache-ocupacion-redis.md) y [ensayos reales](../EVIDENCIA-CACHE.md).

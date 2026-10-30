@@ -25,7 +25,7 @@ Ejecución del 19/10/2026 (Argentina): trace ID `c7cab1c968ccd7baa1d58a49564f5e1
 
 Socios y Clases exponen `/metrics` en formato compatible con Prometheus: `http_requests_total`, `http_errors_total`, `process_uptime_seconds` y `pg_pool_active_connections`. Son contadores por proceso que se reinician con él. Las conexiones ocupadas provienen de `totalCount - idleCount` del pool.
 
-No existen todavía histogramas de duración, métricas de caché/cola/event loop, recolector Prometheus, Grafana, alertas ni exportador OpenTelemetry. Un identificador W3C permite correlacionar logs, pero enviar spans completos a un backend requiere instrumentación/exportación adicional.
+Accesos incorpora histogramas de duración/antigüedad y contadores de caché en etapa 2 ([métricas](../EVIDENCIA-CACHE.md)). Siguen pendientes métricas de cola/event loop, recolector Prometheus, Grafana, alertas y exportador OpenTelemetry. Un identificador W3C permite correlacionar logs, pero enviar spans completos a un backend requiere instrumentación/exportación adicional.
 
 Se conserva como diseño el tablero RED (tasa, errores, duración) y USE (utilización, saturación, errores). Objetivos iniciales propuestos: disponibilidad mensual 99,5%, 95% de reservas bajo 500 ms y 99% de lecturas de clases bajo 150 ms. No están acreditados por una prueba local breve ni confirmados como compromiso del negocio.
 
