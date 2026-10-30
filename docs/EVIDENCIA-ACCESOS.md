@@ -12,6 +12,7 @@
 | Dependencias frontend | `npm --prefix frontend ci --ignore-scripts`, completado; lockfile frontend no modificado. |
 | Regresión final | `npm test`: **187 aprobadas, 0 fallidas, 0 omitidas**. Compila los cuatro servicios e incluye reglas/autenticación/reservas/Car Cruds y 14 pruebas nuevas (10 backend/gateway y 4 cliente frontend). |
 | Build frontend | `npm run frontend:build`: TypeScript + Vite, completado. |
+| Configuración Compose | `docker compose config --quiet`: completado sin errores; valida configuración, no inicia servicios ni acredita operación de contenedores. |
 | MongoDB real sin navegador | `ACCESOS_TEST_MODE=native MONGOD_BIN=/ruta/mongod npm run test:accesos`: **14 aprobadas, 0 fallidas, 0 omitidas** (13 escenarios y contenedor lógico de tests). |
 | MongoDB + Chrome + NGINX reales, versión final | Mismo comando con herramientas opcionales indicadas debajo: **15 aprobadas, 0 fallidas, 0 omitidas** (14 escenarios y contenedor lógico). |
 | Revisión de diff | `git diff --check`, sin errores de espacios. |
