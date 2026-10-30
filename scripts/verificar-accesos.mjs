@@ -70,7 +70,7 @@ test('Accesos: MongoDB real, HTTP, concurrencia, recuperación y seguridad', { t
   try {
     if (mode === 'native') startMongo();
     else if (mode === 'docker') {
-      docker(['run', '--detach', '--name', id, '--label', 'gimnasio.accesos.test=' + id, '--tmpfs', '/data/db',
+      docker(['run', '--detach', '--name', id, '--label', 'gimnasio.accesos.test=' + id, '--tmpfs', '/data/db', '--env', 'GLIBC_TUNABLES=glibc.pthread.rseq=1',
         '--publish', `127.0.0.1:${port}:27017`, 'mongo:8.0', '--replSet', 'rs0', '--bind_ip_all']); created = true;
     } else throw new Error('ACCESOS_TEST_MODE debe ser docker o native.');
     client = await connect();

@@ -1,3 +1,5 @@
+import { GestionRepository } from './membresias.gestion';
+import { registrarGestionMembresias } from './membresias.http';
 import { hostname } from 'node:os';
 import Fastify, { FastifyInstance, FastifyRequest } from 'fastify';
 import fastifyJwt from '@fastify/jwt';
@@ -16,6 +18,7 @@ import { CarCrudsEvidenciasService } from './car-cruds-evidencias.service';
 
 export interface SociosAppOptions {
   repository?: ISociosRepository;
+  gestion?: GestionRepository;
   logger?: boolean | Record<string, unknown>;
   jwtSecret?: string;
   internalApiKey?: string;
@@ -84,6 +87,8 @@ export function buildSociosApp(options: SociosAppOptions = {}): FastifyInstance 
     await autenticar(request);
   }
 
+  const metricasGestion = registrarGestionMembresias(app, options.gestion, autenticar, administrador, identidad);
+
   app.addHook('onResponse', async (_request, reply) => {
     httpRequestsTotal += 1;
     if (reply.statusCode >= 500) httpErrorsTotal += 1;
@@ -118,6 +123,7 @@ export function buildSociosApp(options: SociosAppOptions = {}): FastifyInstance 
       '# HELP process_uptime_seconds Tiempo de actividad en segundos',
       '# TYPE process_uptime_seconds gauge',
       'process_uptime_seconds{service="socios-membresias",instance="' + instanceId + '"} ' + Math.floor(process.uptime()),
+      metricasGestion(),
     ].join('\n') + '\n';
   });
 

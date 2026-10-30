@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import type { AuthUser, ClassSession, UserReservation } from '../types/auth';
 import { apiObtenerClasesYReservas, apiObtenerSocio, apiReservarClase, apiUnirseEspera, apiCancelarReserva } from '../services/api';
+import { MisSolicitudes } from './MembresiasPanel';
 import { TiendaPanel } from './TiendaPanel';
 
 interface UserPanelProps {
@@ -44,7 +45,7 @@ export const UserPanel: React.FC<UserPanelProps> = ({ user, onLogout, showToast,
     apiObtenerSocio(user.socioId).then(data => { if (active) setProfile(data); })
       .catch(error => { if (active) setProfileError(errorMessage(error)); });
     return () => { active = false; };
-  }, [user]);
+  }, [user, activeTab]);
 
   const syncWithBackend = useCallback(async () => {
     setLoading(true);
@@ -562,15 +563,11 @@ export const UserPanel: React.FC<UserPanelProps> = ({ user, onLogout, showToast,
                   </div>
                 </div>
               </div>
-              <div className="p-4 sm:p-5 rounded-xl bg-surface-container-low border border-outline-variant/60 space-y-3">
-                <h3 className="text-base font-bold font-headline">Historial de Pagos</h3>
-                <p className="text-xs text-on-surface-variant">La consulta de pagos y los comprobantes internos están pendientes de implementación. No hay movimientos disponibles para mostrar.</p>
-                <button disabled className="px-3 py-2 rounded-lg border border-outline-variant text-xs opacity-50">Comprobantes pendientes</button>
-              </div>
+              <MisSolicitudes socioId={user.socioId} />
             </div>
             <div className="p-4 rounded-xl bg-surface-container-low border border-outline-variant/60 space-y-3 h-fit">
               <h4 className="text-sm font-bold">Gestión de membresía</h4>
-              <p className="text-xs text-on-surface-variant">El administrador elige el plan y confirma el pago correspondiente. Los pagos y la reactivación todavía no están implementados.</p>
+              <p className="text-xs text-on-surface-variant">El administrador elige el plan, registra y confirma el pago. Las solicitudes pendientes o rechazadas no habilitan el uso. Reactivación de períodos superpuestos pendiente de una política aprobada.</p>
               <button disabled className="px-3 py-2 rounded-lg border border-outline-variant text-xs opacity-50">Reactivación pendiente</button>
             </div>
           </div>

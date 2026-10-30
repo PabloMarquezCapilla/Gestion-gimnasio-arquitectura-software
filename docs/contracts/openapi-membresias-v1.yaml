@@ -1,0 +1,1742 @@
+openapi: 3.1.1
+info:
+  title: Planes, pagos manuales y membresías — PULSE CLUB
+  version: 1.0.0
+  description: Contrato propio adicional de Socios. No altera los contratos
+    externos. Comprobante interno no fiscal; no hay pasarela ni pagos
+    automáticos.
+servers:
+  - url: http://localhost:8080
+    description: Gateway local
+security:
+  - Bearer: []
+paths:
+  /api/v1/planes:
+    get:
+      summary: Consultar planes configurados
+      description: ADMIN o SOCIO autenticado. Incluye activos/inactivos; sólo activos
+        se seleccionan. Sin planes demo.
+      parameters: []
+      responses:
+        "200":
+          description: Resultado persistido o replay original
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Plan"
+                required:
+                  - items
+        "400":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      summary: Crear un plan con tarifa explícita
+      description: Requiere ADMIN activo en backend.
+      parameters:
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            type: string
+            pattern: ^[A-Za-z0-9_-]{8,128}$
+          description: Por actor administrador y todas las operaciones. Misma
+            clave/contenido devuelve resultado original; contenido diferente
+            tras commit devuelve 409. Errores con rollback no reservan clave.
+      responses:
+        "201":
+          description: Resultado persistido o replay original
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Plan"
+        "400":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                nombre:
+                  type: string
+                  minLength: 1
+                  maxLength: 50
+                importeMinor:
+                  type: integer
+                  minimum: 0
+                  maximum: 9007199254740991
+                moneda:
+                  type: string
+                  pattern: ^[A-Z]{3}$
+                  description: Código reconocido por Intl/ICU del runtime. Importe en unidad
+                    mínima de esta moneda, sin conversión ni cálculo fiscal.
+              required:
+                - nombre
+                - importeMinor
+                - moneda
+  /api/v1/planes/{id}/estado:
+    put:
+      summary: Activar o desactivar disponibilidad del plan
+      description: Requiere ADMIN activo en backend.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            type: string
+            pattern: ^[A-Za-z0-9_-]{8,128}$
+          description: Por actor administrador y todas las operaciones. Misma
+            clave/contenido devuelve resultado original; contenido diferente
+            tras commit devuelve 409. Errores con rollback no reservan clave.
+      responses:
+        "200":
+          description: Resultado persistido o replay original
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Plan"
+        "400":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                estado:
+                  enum:
+                    - ACTIVO
+                    - INACTIVO
+              required:
+                - estado
+  /api/v1/socios:
+    get:
+      summary: Consultar socios sin hashes ni credenciales
+      description: ADMIN. Orden fijo por socioId; paginación sin snapshot global.
+      parameters:
+        - in: query
+          name: pagina
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000000
+            default: 1
+        - in: query
+          name: tamanio
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: Resultado persistido o replay original
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  pagina:
+                    type: integer
+                    minimum: 1
+                  tamanio:
+                    type: integer
+                    minimum: 1
+                    maximum: 100
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/SocioAdministrativo"
+                required:
+                  - pagina
+                  - tamanio
+                  - items
+        "400":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/solicitudes:
+    get:
+      summary: Consultar solicitudes administrativas
+      description: ADMIN. Orden createdAt descendente y solicitudId; sin snapshot global.
+      parameters:
+        - in: query
+          name: pagina
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000000
+            default: 1
+        - in: query
+          name: tamanio
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: Resultado persistido o replay original
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  pagina:
+                    type: integer
+                    minimum: 1
+                  tamanio:
+                    type: integer
+                    minimum: 1
+                    maximum: 100
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Solicitud"
+                required:
+                  - pagina
+                  - tamanio
+                  - items
+        "400":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/socios/{socioId}/solicitudes:
+    get:
+      summary: Consultar solicitudes y comprobantes del socio
+      description: ADMIN o SOCIO propietario. Orden createdAt descendente y solicitudId.
+      parameters:
+        - in: path
+          name: socioId
+          required: true
+          schema:
+            type: string
+            pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$
+        - in: query
+          name: pagina
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000000
+            default: 1
+        - in: query
+          name: tamanio
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: Resultado persistido o replay original
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                properties:
+                  pagina:
+                    type: integer
+                    minimum: 1
+                  tamanio:
+                    type: integer
+                    minimum: 1
+                    maximum: 100
+                  items:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Solicitud"
+                required:
+                  - pagina
+                  - tamanio
+                  - items
+        "400":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+    post:
+      summary: Crear solicitud de alta o nuevo período explícito
+      description: ADMIN. Una pendiente por socio. Inicio <= fin; fin no pasado.
+        Precio/moneda se copian del plan. No habilita ni calcula meses.
+      parameters:
+        - in: path
+          name: socioId
+          required: true
+          schema:
+            type: string
+            pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            type: string
+            pattern: ^[A-Za-z0-9_-]{8,128}$
+          description: Por actor administrador y todas las operaciones. Misma
+            clave/contenido devuelve resultado original; contenido diferente
+            tras commit devuelve 409. Errores con rollback no reservan clave.
+      responses:
+        "201":
+          description: Resultado persistido o replay original
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Solicitud"
+        "400":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                planId:
+                  type: string
+                  pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$
+                fechaInicio:
+                  type: string
+                  format: date-time
+                fechaFin:
+                  type: string
+                  format: date-time
+              required:
+                - planId
+                - fechaInicio
+                - fechaFin
+  /api/v1/solicitudes/{id}:
+    get:
+      summary: Consultar estado de solicitud, pago y comprobante
+      description: ADMIN o SOCIO propietario. Vencimiento por fechaFin es derivado; no
+        modifica estado PENDIENTE.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$
+      responses:
+        "200":
+          description: Resultado persistido o replay original
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Solicitud"
+        "400":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/solicitudes/{id}/pagos:
+    post:
+      summary: Registrar pago manual pendiente
+      description: ADMIN. Referencia global única y un pago por solicitud.
+        Importe/moneda exactos del snapshot. No habilita.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            type: string
+            pattern: ^[A-Za-z0-9_-]{8,128}$
+          description: Por actor administrador y todas las operaciones. Misma
+            clave/contenido devuelve resultado original; contenido diferente
+            tras commit devuelve 409. Errores con rollback no reservan clave.
+      responses:
+        "201":
+          description: Resultado persistido o replay original
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Solicitud"
+        "400":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                referencia:
+                  type: string
+                  pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{7,99}$
+                importeMinor:
+                  type: integer
+                  minimum: 0
+                  maximum: 9007199254740991
+                moneda:
+                  type: string
+                  pattern: ^[A-Z]{3}$
+                  description: Código reconocido por Intl/ICU del runtime. Importe en unidad
+                    mínima de esta moneda, sin conversión ni cálculo fiscal.
+              required:
+                - referencia
+                - importeMinor
+                - moneda
+  /api/v1/pagos/{id}/confirmar:
+    post:
+      summary: Confirmar cobro verificado y habilitar una única membresía
+      description: ADMIN confirma manualmente un cobro verificado. Pago, membresía,
+        comprobante interno y solicitud se guardan atómicamente. Plan activo,
+        cuenta activa y vigencia no finalizada. Períodos superpuestos bloqueados
+        para revisión; no acumula días ni reactiva suspensiones. Repetir pago
+        confirmado devuelve resultado sin nueva activación.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            type: string
+            pattern: ^[A-Za-z0-9_-]{8,128}$
+          description: Por actor administrador y todas las operaciones. Misma
+            clave/contenido devuelve resultado original; contenido diferente
+            tras commit devuelve 409. Errores con rollback no reservan clave.
+      responses:
+        "200":
+          description: Resultado persistido o replay original
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Solicitud"
+        "400":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties: {}
+              required: []
+  /api/v1/solicitudes/{id}/rechazar:
+    post:
+      summary: Rechazar solicitud y pago pendiente
+      description: ADMIN. Rechazo terminal sin habilitación. No permite rechazar
+        confirmadas ni ejecutar devoluciones.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+            pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema:
+            type: string
+            pattern: ^[A-Za-z0-9_-]{8,128}$
+          description: Por actor administrador y todas las operaciones. Misma
+            clave/contenido devuelve resultado original; contenido diferente
+            tras commit devuelve 409. Errores con rollback no reservan clave.
+      responses:
+        "200":
+          description: Resultado persistido o replay original
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Solicitud"
+        "400":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "404":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "409":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "422":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: Validación, autorización, conflicto de estado/idempotencia o fallo
+            de persistencia. No prueba cobro exitoso.
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+                const: no-store
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties: {}
+              required: []
+components:
+  securitySchemes:
+    Bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    Plan:
+      type: object
+      additionalProperties: false
+      properties:
+        planId:
+          type: string
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$
+        nombre:
+          type: string
+          minLength: 1
+          maxLength: 50
+        importeMinor:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+        moneda:
+          type: string
+          pattern: ^[A-Z]{3}$
+          description: Código reconocido por Intl/ICU del runtime. Importe en unidad
+            mínima de esta moneda, sin conversión ni cálculo fiscal.
+        estado:
+          enum:
+            - ACTIVO
+            - INACTIVO
+      required:
+        - planId
+        - nombre
+        - importeMinor
+        - moneda
+        - estado
+    Pago:
+      type: object
+      additionalProperties: false
+      properties:
+        pagoId:
+          type: string
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$
+        referencia:
+          type: string
+          minLength: 1
+        estado:
+          enum:
+            - PENDIENTE
+            - CONFIRMADO
+            - RECHAZADO
+      required:
+        - pagoId
+        - referencia
+        - estado
+    Comprobante:
+      type: object
+      additionalProperties: false
+      properties:
+        comprobanteId:
+          type: string
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$
+        pagoId:
+          type: string
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$
+        membresiaId:
+          type: string
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$
+        confirmadoPor:
+          type: string
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$
+        confirmadoEn:
+          type: string
+          format: date-time
+      required:
+        - comprobanteId
+        - pagoId
+        - membresiaId
+        - confirmadoPor
+        - confirmadoEn
+    Solicitud:
+      type: object
+      additionalProperties: false
+      properties:
+        solicitudId:
+          type: string
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$
+        socioId:
+          type: string
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$
+        planId:
+          type: string
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$
+        nombrePlan:
+          type: string
+          minLength: 1
+        importeMinor:
+          type: integer
+          minimum: 0
+          maximum: 9007199254740991
+        moneda:
+          type: string
+          pattern: ^[A-Z]{3}$
+          description: Código reconocido por Intl/ICU del runtime. Importe en unidad
+            mínima de esta moneda, sin conversión ni cálculo fiscal.
+        fechaInicio:
+          type: string
+          format: date-time
+        fechaFin:
+          type: string
+          format: date-time
+        estado:
+          enum:
+            - PENDIENTE
+            - CONFIRMADA
+            - RECHAZADA
+        createdAt:
+          type: string
+          format: date-time
+        pago:
+          anyOf:
+            - $ref: "#/components/schemas/Pago"
+            - type: "null"
+        comprobante:
+          anyOf:
+            - $ref: "#/components/schemas/Comprobante"
+            - type: "null"
+      required:
+        - solicitudId
+        - socioId
+        - planId
+        - nombrePlan
+        - importeMinor
+        - moneda
+        - fechaInicio
+        - fechaFin
+        - estado
+        - createdAt
+        - pago
+        - comprobante
+    SocioAdministrativo:
+      type: object
+      additionalProperties: false
+      properties:
+        socioId:
+          type: string
+          pattern: ^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$
+        dni:
+          type: string
+          minLength: 1
+        nombre:
+          type: string
+          minLength: 1
+        email:
+          type: string
+          format: email
+        estado:
+          enum:
+            - ACTIVO
+            - INACTIVO
+      required:
+        - socioId
+        - dni
+        - nombre
+        - email
+        - estado
+    Error:
+      type: object
+      additionalProperties: false
+      properties:
+        codigo:
+          type: string
+          minLength: 1
+        mensaje:
+          type: string
+          minLength: 1
+      required:
+        - codigo
+        - mensaje

@@ -1,3 +1,4 @@
+import { PostgresGestionMembresias } from './membresias.postgres';
 import { Pool } from 'pg';
 import { buildSociosApp } from './app';
 import { PostgresSociosRepository, MemorySociosRepository, ISociosRepository } from './repository';
@@ -45,6 +46,7 @@ async function start() {
 
   const app = buildSociosApp({
     repository,
+    gestion: pool ? new PostgresGestionMembresias(pool) : undefined,
     ...auth,
     empleadosCredenciales,
     carCrudsClient,

@@ -98,6 +98,7 @@ try {
   const files = (await run('git', ['ls-files', '--cached', '--others', '--exclude-standard'], root)).split(/\r?\n/);
   for (const file of files) {
     // No copiar secretos, dependencias, compilados ni metadatos Git, aunque se versionaran por error.
+    if (file === 'services/accesos-ocupacion/src/server 2.ts') continue; // Archivo ajeno: tampoco copiarlo al entorno de ensayo.
     if (!file || /(^|\/)(node_modules|dist|\.git)(\/|$)/.test(file) || /(^|\/)\.env(?:\.|$)/.test(file)) continue;
     const source = resolve(root, file), target = resolve(workspace, file);
     assert.ok(source.startsWith(root + sep) && target.startsWith(workspace + sep));
