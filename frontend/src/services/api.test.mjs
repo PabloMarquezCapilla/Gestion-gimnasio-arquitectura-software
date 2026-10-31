@@ -491,3 +491,18 @@ test('fotografías usa el manejo central de 401 propio sin volver a enviar la se
   assert.equal(expired, 1);
   assert.equal(calls, 1);
 });
+
+test('Membresías: conserva JWT, contenido y clave de la confirmación sin inventar estado',async()=>{
+ api.setApiSession('jwt-ficticio');
+ const result={solicitudId:'sol-1',socioId:'socio-1',planId:'plan-1',nombrePlan:'Prueba',importeMinor:123,moneda:'ARS',fechaInicio:'2040-01-01T00:00:00Z',fechaFin:'2040-02-01T00:00:00Z',estado:'CONFIRMADA',pago:{pagoId:'pago-1',referencia:'ref-prueba',estado:'CONFIRMADO'},comprobante:{comprobanteId:'comp-1',pagoId:'pago-1',membresiaId:'mem-1',confirmadoEn:'2040-01-01T00:00:00Z'}};
+ globalThis.fetch=async(url,options)=>{assert.equal(url,'/api/v1/pagos/pago-1/confirmar');assert.equal(options.headers.get('Authorization'),'Bearer jwt-ficticio');assert.equal(options.headers.get('Idempotency-Key'),'misma-clave');assert.deepEqual(JSON.parse(options.body),{});return json(result);};
+ assert.equal((await api.apiOperacionMembresia('/api/v1/pagos/pago-1/confirmar','POST',{},'misma-clave')).comprobante.comprobanteId,'comp-1');
+ for(const value of [undefined,{}, {...result,comprobante:null},{...result,pago:{...result.pago,pagoId:'otro'}}]){
+  globalThis.fetch=async()=>json(value);await assert.rejects(api.apiOperacionMembresia('/api/v1/pagos/pago-1/confirmar','POST',{},'misma-clave'),{status:502});
+ }
+});
+test('Membresías: ni errores de red ni consultas ajenas se convierten en éxito o historial vacío',async()=>{
+ api.setApiSession('jwt-ficticio');globalThis.fetch=async()=>{throw new TypeError('offline');};await assert.rejects(api.apiOperacionMembresia('/api/v1/pagos/pago-1/confirmar','POST',{},'clave'),{status:0});
+ globalThis.fetch=async()=>json({items:[{solicitudId:'ajena'}]});await assert.rejects(api.apiSolicitudesMembresia(1,'socio-1'),{status:502});
+ globalThis.fetch=async()=>json({});await assert.rejects(api.apiPlanesMembresia(),{status:502});
+});

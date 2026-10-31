@@ -1,0 +1,139 @@
+TAP version 13
+# Subtest: Planes, pagos y membresías: PostgreSQL real y HTTP entre dos instancias
+    # Subtest: Base vacía: no se inventan planes ni membresía para alta administrativa
+    ok 1 - Base vacía: no se inventan planes ni membresía para alta administrativa
+      ---
+      duration_ms: 25.095291
+      type: 'test'
+      ...
+    # Subtest: Permisos reales: SOCIO/clave técnica/no autenticado no administran ni leen terceros
+    ok 2 - Permisos reales: SOCIO/clave técnica/no autenticado no administran ni leen terceros
+      ---
+      duration_ms: 17.211542
+      type: 'test'
+      ...
+    # Subtest: Plan configurado por ADMIN, replay durable y clave incompatible
+    ok 3 - Plan configurado por ADMIN, replay durable y clave incompatible
+      ---
+      duration_ms: 16.939791
+      type: 'test'
+      ...
+    # Subtest: Plan inexistente/no disponible y fechas inválidas no crean solicitud
+    ok 4 - Plan inexistente/no disponible y fechas inválidas no crean solicitud
+      ---
+      duration_ms: 22.528916
+      type: 'test'
+      ...
+    # Subtest: Solicitud concurrente por claves diferentes deja una sola pendiente
+    ok 5 - Solicitud concurrente por claves diferentes deja una sola pendiente
+      ---
+      duration_ms: 23.294125
+      type: 'test'
+      ...
+    # Subtest: Registro manual no habilita; importe/moneda incompatibles se rechazan
+    ok 6 - Registro manual no habilita; importe/moneda incompatibles se rechazan
+      ---
+      duration_ms: 23.020042
+      type: 'test'
+      ...
+    # Subtest: Reserva antes de confirmar pago se rechaza
+    ok 7 - Reserva antes de confirmar pago se rechaza
+      ---
+      duration_ms: 11.861292
+      type: 'test'
+      ...
+    # Subtest: Fallo real al insertar comprobante revierte pago, membresía, solicitud e idempotencia
+    ok 8 - Fallo real al insertar comprobante revierte pago, membresía, solicitud e idempotencia
+      ---
+      duration_ms: 16.374625
+      type: 'test'
+      ...
+    # Subtest: Confirmación concurrente/reintento y respuesta perdida no duplican efectos
+    ok 9 - Confirmación concurrente/reintento y respuesta perdida no duplican efectos
+      ---
+      duration_ms: 55.353125
+      type: 'test'
+      ...
+    # Subtest: Membresía confirmada permite reservar; duplicada y fuera de vigencia se rechazan
+    ok 10 - Membresía confirmada permite reservar; duplicada y fuera de vigencia se rechazan
+      ---
+      duration_ms: 17.824333
+      type: 'test'
+      ...
+    # Subtest: Referencia de cobro única entre socios; rechazo impide habilitar y confirmar
+    ok 11 - Referencia de cobro única entre socios; rechazo impide habilitar y confirmar
+      ---
+      duration_ms: 34.412
+      type: 'test'
+      ...
+    # Subtest: Nuevo período explícito no superpuesto; renovación futura conserva cobertura actual
+    ok 12 - Nuevo período explícito no superpuesto; renovación futura conserva cobertura actual
+      ---
+      duration_ms: 22.161541
+      type: 'test'
+      ...
+    # Subtest: Período superpuesto queda bloqueado sin cobrar/activar de nuevo
+    ok 13 - Período superpuesto queda bloqueado sin cobrar/activar de nuevo
+      ---
+      duration_ms: 21.881959
+      type: 'test'
+      ...
+    # Subtest: Cambio de plan a inactivo entre solicitud y confirmación bloquea sin efectos
+    ok 14 - Cambio de plan a inactivo entre solicitud y confirmación bloquea sin efectos
+      ---
+      duration_ms: 29.345625
+      type: 'test'
+      ...
+    # Subtest: Solicitud vencida no confirma; rechazo repetido conserva estado y claves incompatibles se detectan
+    ok 15 - Solicitud vencida no confirma; rechazo repetido conserva estado y claves incompatibles se detectan
+      ---
+      duration_ms: 32.888917
+      type: 'test'
+      ...
+    # Subtest: Reconstruir aplicación conserva comprobantes y solicitudes en PostgreSQL
+    ok 16 - Reconstruir aplicación conserva comprobantes y solicitudes en PostgreSQL
+      ---
+      duration_ms: 14.767125
+      type: 'test'
+      ...
+    # Subtest: Observabilidad: replay, rechazos y fallo transaccional correlacionados sin importes/credenciales
+    ok 17 - Observabilidad: replay, rechazos y fallo transaccional correlacionados sin importes/credenciales
+      ---
+      duration_ms: 0.992916
+      type: 'test'
+      ...
+    # Subtest: Actualización desde DDL previo conserva socios, solicitudes externas y membresías
+    ok 18 - Actualización desde DDL previo conserva socios, solicitudes externas y membresías
+      ---
+      duration_ms: 108.806541
+      type: 'test'
+      ...
+# Chrome + NGINX + PostgreSQL: alta web sin membresía, configuración de plan, solicitud, registro pendiente, confirmación con respuesta perdida, recarga/replay, comprobante del socio y reserva real verificados.
+    # Subtest: Navegador real: alta, plan, solicitud, cobro, confirmación, portal y reserva
+    ok 19 - Navegador real: alta, plan, solicitud, cobro, confirmación, portal y reserva
+      ---
+      duration_ms: 5791.9515
+      type: 'test'
+      ...
+# PostgreSQL real 17.11; Node v22.23.3; fixtures de importe/moneda explícitamente sintéticos, no tarifas desplegadas.
+    # Subtest: Socios temporalmente indisponible: Clases no interpreta habilitación
+    ok 20 - Socios temporalmente indisponible: Clases no interpreta habilitación
+      ---
+      duration_ms: 101.824875
+      type: 'test'
+      ...
+    1..20
+ok 1 - Planes, pagos y membresías: PostgreSQL real y HTTP entre dos instancias
+  ---
+  duration_ms: 8616.286209
+  type: 'test'
+  ...
+1..1
+# tests 21
+# suites 0
+# pass 21
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 9137.628125

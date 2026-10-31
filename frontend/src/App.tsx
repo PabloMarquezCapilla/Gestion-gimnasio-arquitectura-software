@@ -1,9 +1,10 @@
-import { useState, useMemo, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import type { AuthResponse, AuthState } from './types/auth';
 import { setApiSession } from './services/api';
 import { AuthModal } from './components/AuthModal';
 import { UserPanel } from './components/UserPanel';
 import { CarCrudsPanel } from './components/CarCrudsPanel';
+import { MembresiasPanel } from './components/MembresiasPanel';
 import { AccesosPanel } from './components/AccesosPanel';
 
 // --- Interfaces ---
@@ -37,9 +38,6 @@ export default function App() {
 
   // --- Navigation & Filter States ---
   const [activeNav, setActiveNav] = useState('socios-y-membresias');
-  const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'warning' | 'expired'>('all');
-  const [planFilter, setPlanFilter] = useState<string>('');
-  const [expiryFilter, setExpiryFilter] = useState<string>('');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -104,10 +102,6 @@ export default function App() {
     setIsAuthModalOpen(true);
   };
 
-  // El listado administrativo todavía no cuenta con una consulta integrada.
-  // No se muestra una nómina local como si fueran socios registrados.
-  const members: Member[] = [];
-
   // Keyboard shortcut Ctrl+K or Cmd+K
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -119,26 +113,6 @@ export default function App() {
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, []);
-
-  // Filtered members list
-  const filteredMembers = useMemo(() => {
-    return members.filter((m) => {
-      if (statusFilter !== 'all' && m.status !== statusFilter) return false;
-      if (planFilter && m.planKey !== planFilter) return false;
-      if (expiryFilter === 'expired' && m.status !== 'expired') return false;
-      if (expiryFilter === '7days' && !m.validityNote.toLowerCase().includes('días')) return false;
-
-      if (searchQuery.trim()) {
-        const query = searchQuery.toLowerCase().trim();
-        const matchesName = m.name.toLowerCase().includes(query);
-        const matchesDni = m.dni.replace(/\./g, '').includes(query.replace(/\./g, ''));
-        const matchesCode = m.code.toLowerCase().includes(query);
-        const matchesPhone = m.phone.includes(query);
-        if (!matchesName && !matchesDni && !matchesCode && !matchesPhone) return false;
-      }
-      return true;
-    });
-  }, [members, statusFilter, planFilter, expiryFilter, searchQuery]);
 
   const toastView = toast.show ? (
     <div role="status" className="fixed bottom-6 right-6 z-[100] max-w-md bg-surface-container-high border border-outline-variant rounded-xl p-4 shadow-xl text-on-surface flex items-center gap-2">
@@ -245,8 +219,8 @@ export default function App() {
               return (
                 <button
                   key={item.path}
-                  disabled={!['socios-y-membresias', 'empleados-car-cruds', 'accesos'].includes(item.path)}
-                  title={!['socios-y-membresias', 'empleados-car-cruds', 'accesos'].includes(item.path) ? 'Sección pendiente de integración.' : undefined}
+                  disabled={!['socios-y-membresias', 'planes-y-tarifas', 'empleados-car-cruds', 'accesos'].includes(item.path)}
+                  title={!['socios-y-membresias', 'planes-y-tarifas', 'empleados-car-cruds', 'accesos'].includes(item.path) ? 'Sección pendiente de integración.' : undefined}
                   onClick={() => setActiveNav(item.path)}
                   className={`flex items-center gap-2.5 px-3 py-1.5 rounded-lg transition-all text-xs font-semibold w-full text-left ${
                     isActive
@@ -326,7 +300,7 @@ export default function App() {
 
             {/* Primary Action Button (Volt Lime + Dark Text) */}
             <button
-              disabled title="Los pagos están pendientes de implementación."
+              onClick={() => setActiveNav('socios-y-membresias')} title="Gestionar solicitudes y pagos"
               className="flex items-center gap-1 bg-primary text-on-primary px-3 py-1 rounded-lg text-xs font-bold hover:bg-primary-hover shadow-sm transition-all active:scale-95"
               type="button"
             >
@@ -392,475 +366,8 @@ export default function App() {
         {/* --- MAIN BODY VIEWPORT --- */}
         <main className="w-full pt-14 bg-background px-4 sm:px-6 min-h-screen">
           {toastView}
-          {activeNav === 'accesos' ? <AccesosPanel actorId={currentUser.socioId} /> : activeNav === 'empleados-car-cruds' ? <CarCrudsPanel onNuevoSocio={handleOpenRegister} /> : (
-          <div className="flex flex-col w-full pb-6">
+          {activeNav === 'accesos' ? <AccesosPanel actorId={currentUser.socioId} /> : activeNav === 'empleados-car-cruds' ? <CarCrudsPanel onNuevoSocio={handleOpenRegister} /> : <MembresiasPanel actorId={currentUser.socioId} onNuevoSocio={handleOpenRegister} filtro={searchQuery} />}
 
-            {/* Top Banner / View Header */}
-            <section className="flex flex-col lg:flex-row lg:items-center justify-between gap-3 mb-4 pt-3">
-              <div className="flex flex-col">
-                <div className="flex items-center gap-1.5 mb-1">
-                  <span className="text-[10px] font-label-code text-primary uppercase tracking-wider flex items-center gap-1 font-bold">
-                    <span className="w-1.5 h-1.5 rounded-full bg-primary animate-pulse"></span>
-                    Panel Administrativo
-                  </span>
-                  <span className="text-on-surface-variant font-label-code text-[10px]">•</span>
-                  <span className="font-label-code text-[10.5px] text-on-surface-variant">Servicios del gimnasio</span>
-                </div>
-                <h1 className="font-headline text-headline-lg text-on-surface tracking-tight font-bold">
-                  Gestión de Membresías y Caja
-                </h1>
-                <p className="font-body-sm text-body-sm text-on-surface-variant mt-0.5">
-                  Altas de socios disponibles. Listado, pagos, reactivación y comprobantes pendientes de integración.
-                </p>
-              </div>
-
-              {/* Main Global Actions */}
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="flex items-center gap-2 bg-surface-container-low px-3 py-1.5 rounded-xl border border-outline-variant/50">
-                  <div className="w-7 h-7 rounded-lg bg-surface-container-high text-secondary flex items-center justify-center">
-                    <span className="material-symbols-outlined text-[18px]">account_balance_wallet</span>
-                  </div>
-                  <div className="flex flex-col">
-                    <span className="font-label-code text-[10px] text-on-surface-variant">
-                      Cierre de Caja del Día
-                    </span>
-                    <span className="font-data-metric text-sm text-on-surface font-bold tracking-tight">
-                      Pendiente{' '}
-                      <span className="font-label-code text-[10px] font-normal text-on-surface-variant">ARS</span>
-                    </span>
-                  </div>
-                </div>
-
-                <button
-                  onClick={handleOpenRegister}
-                  className="flex items-center gap-1.5 bg-surface-container hover:bg-surface-container-high text-on-surface px-3 py-1.5 rounded-xl text-xs font-semibold transition-colors border border-outline-variant/40"
-                  type="button"
-                >
-                  <span className="material-symbols-outlined text-[16px]">person_add</span>
-                  <span>Alta de Socio</span>
-                </button>
-
-                {/* Primary Button (+ Registrar Cobro / Pago) */}
-                <button
-                  disabled title="Los pagos están pendientes de implementación."
-                  className="flex items-center gap-1.5 bg-primary text-on-primary px-3 py-1.5 rounded-xl text-xs font-bold shadow-sm hover:bg-primary-hover active:scale-95 transition-all"
-                  type="button"
-                >
-                  <span className="material-symbols-outlined text-[18px]">add_circle</span>
-                  <span>Registrar Cobro / Pago</span>
-                </button>
-              </div>
-            </section>
-
-            {/* KPI Cards Grid */}
-            <section className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 mb-4">
-              {/* KPI 1: Socios Activos */}
-              <div className="bg-surface-container-low rounded-xl p-3.5 relative overflow-hidden flex flex-col justify-between border border-outline-variant/40">
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider font-semibold">
-                    Socios Activos
-                  </span>
-                  <span className="w-7 h-7 rounded-lg bg-secondary-container text-secondary flex items-center justify-center">
-                    <span className="material-symbols-outlined text-[16px]">group</span>
-                  </span>
-                </div>
-                <div className="flex items-baseline justify-between mt-1">
-                  <span className="font-data-metric text-data-metric text-on-surface font-bold">—</span>
-                  <div className="flex items-center gap-0.5 bg-secondary-container text-secondary px-1.5 py-0.2 rounded-full font-label-code text-[10.5px] font-bold">
-                    <span className="material-symbols-outlined text-[13px]">arrow_upward</span>
-                    <span>Sin datos</span>
-                  </div>
-                </div>
-                <div className="w-full bg-surface-container h-1 rounded-full mt-2.5 overflow-hidden">
-                  <div className="bg-secondary h-full rounded-full" style={{ width: '0%' }}></div>
-                </div>
-                <span className="font-body-sm text-[11px] text-on-surface-variant mt-1.5">
-                  Consulta de métricas pendiente
-                </span>
-              </div>
-
-              {/* KPI 2: Por Vencer */}
-              <div className="bg-surface-container-low rounded-xl p-3.5 relative overflow-hidden flex flex-col justify-between border border-outline-variant/40">
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider font-semibold">
-                    Por Vencer (7 días)
-                  </span>
-                  <span className="w-7 h-7 rounded-lg bg-warning-container text-warning flex items-center justify-center">
-                    <span className="material-symbols-outlined text-[16px]">notification_important</span>
-                  </span>
-                </div>
-                <div className="flex items-baseline justify-between mt-1">
-                  <span className="font-data-metric text-data-metric text-on-surface font-bold">—</span>
-                  <span className="font-label-code text-[10.5px] text-warning bg-warning-container px-1.5 py-0.2 rounded-full font-semibold">
-                    Datos pendientes
-                  </span>
-                </div>
-                <div className="w-full bg-surface-container h-1 rounded-full mt-2.5 overflow-hidden">
-                  <div className="bg-warning h-full rounded-full" style={{ width: '0%' }}></div>
-                </div>
-                <span className="font-body-sm text-[11px] text-on-surface-variant mt-1.5">
-                  Consulta de vencimientos pendiente
-                </span>
-              </div>
-
-              {/* KPI 3: Vencidas */}
-              <div className="bg-surface-container-low rounded-xl p-3.5 relative overflow-hidden flex flex-col justify-between border border-outline-variant/40">
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider font-semibold">
-                    Membresías Vencidas
-                  </span>
-                  <span className="w-7 h-7 rounded-lg bg-error-container text-error flex items-center justify-center">
-                    <span className="material-symbols-outlined text-[16px]">cancel</span>
-                  </span>
-                </div>
-                <div className="flex items-baseline justify-between mt-1">
-                  <span className="font-data-metric text-data-metric text-on-surface font-bold">—</span>
-                  <span className="font-label-code text-[10.5px] text-error bg-error-container px-1.5 py-0.2 rounded-full font-semibold">
-                    Datos pendientes
-                  </span>
-                </div>
-                <div className="w-full bg-surface-container h-1 rounded-full mt-2.5 overflow-hidden">
-                  <div className="bg-error h-full rounded-full" style={{ width: '0%' }}></div>
-                </div>
-                <span className="font-body-sm text-[11px] text-on-surface-variant mt-1.5">
-                  Consulta de vencimientos pendiente
-                </span>
-              </div>
-
-              {/* KPI 4: Ingresos Hoy */}
-              <div className="bg-surface-container-low rounded-xl p-3.5 relative overflow-hidden flex flex-col justify-between border border-outline-variant/40">
-                <div className="flex items-center justify-between mb-1.5">
-                  <span className="font-label-md text-label-md text-on-surface-variant uppercase tracking-wider font-semibold">
-                    Ingresos Registrados Hoy
-                  </span>
-                  <span className="w-7 h-7 rounded-lg bg-secondary-container text-secondary flex items-center justify-center">
-                    <span className="material-symbols-outlined text-[16px]">payments</span>
-                  </span>
-                </div>
-                <div className="flex items-baseline justify-between mt-1">
-                  <span className="font-data-metric text-data-metric text-primary font-bold tracking-tight">
-                    Pendiente
-                  </span>
-                  <span className="font-label-code text-[10px] text-on-surface-variant">ARS</span>
-                </div>
-                <div className="w-full bg-surface-container h-1 rounded-full mt-2.5 overflow-hidden">
-                  <div className="bg-primary h-full rounded-full" style={{ width: '0%' }}></div>
-                </div>
-                <span className="font-body-sm text-[11px] text-on-surface-variant mt-1.5">
-                  Registro de pagos pendiente
-                </span>
-              </div>
-            </section>
-
-            {/* Filter & Search Control Bar */}
-            <section className="bg-surface-container-low rounded-xl p-3 mb-3.5 flex flex-col gap-2.5 border border-outline-variant/40">
-              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2.5">
-                {/* Status Tabs */}
-                <div className="flex items-center gap-1 p-1 bg-surface-container-lowest rounded-lg overflow-x-auto border border-outline-variant/40">
-                  <button
-                    onClick={() => setStatusFilter('all')}
-                    className={`px-3 py-1.5 rounded-md font-label-md text-xs transition-colors flex items-center gap-1.5 ${
-                      statusFilter === 'all'
-                        ? 'bg-surface-container-high text-white font-bold'
-                        : 'text-on-surface-variant hover:text-white'
-                    }`}
-                    type="button"
-                  >
-                    <span>Todos</span>
-                    <span className="font-label-code text-[11px] px-1.5 py-0.2 rounded-md bg-surface-container text-white font-bold">
-                      —
-                    </span>
-                  </button>
-
-                  <button
-                    onClick={() => setStatusFilter('active')}
-                    className={`px-3 py-1.5 rounded-md font-label-md text-xs transition-colors flex items-center gap-1.5 ${
-                      statusFilter === 'active'
-                        ? 'bg-surface-container-high text-white font-bold'
-                        : 'text-on-surface-variant hover:text-white'
-                    }`}
-                    type="button"
-                  >
-                    <span>Activos</span>
-                    <span className="font-label-code text-[11px] px-1.5 py-0.2 rounded-md bg-secondary-container text-secondary font-bold">
-                      —
-                    </span>
-                  </button>
-
-                  <button
-                    onClick={() => setStatusFilter('warning')}
-                    className={`px-3 py-1.5 rounded-md font-label-md text-xs transition-colors flex items-center gap-1.5 ${
-                      statusFilter === 'warning'
-                        ? 'bg-surface-container-high text-white font-bold'
-                        : 'text-on-surface-variant hover:text-white'
-                    }`}
-                    type="button"
-                  >
-                    <span>Suspendidos</span>
-                    <span className="font-label-code text-[11px] px-1.5 py-0.2 rounded-md bg-warning-container text-warning font-bold">
-                      —
-                    </span>
-                  </button>
-
-                  <button
-                    onClick={() => setStatusFilter('expired')}
-                    className={`px-3 py-1.5 rounded-md font-label-md text-xs transition-colors flex items-center gap-1.5 ${
-                      statusFilter === 'expired'
-                        ? 'bg-surface-container-high text-white font-bold'
-                        : 'text-on-surface-variant hover:text-white'
-                    }`}
-                    type="button"
-                  >
-                    <span>Vencidos</span>
-                    <span className="font-label-code text-[11px] px-1.5 py-0.2 rounded-md bg-error-container text-error font-bold">
-                      —
-                    </span>
-                  </button>
-                </div>
-
-                {/* Quick Filters */}
-                <div className="flex flex-wrap items-center gap-2">
-                  {/* Plan selector */}
-                  <div className="relative">
-                    <select
-                      value={planFilter}
-                      disabled
-                      title="La consulta de planes está pendiente de integración."
-                      onChange={(e) => setPlanFilter(e.target.value)}
-                      className="appearance-none bg-surface-container-lowest text-on-surface text-xs pl-3 pr-7 py-2 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary border border-outline-variant/40"
-                    >
-                      <option value="">Planes pendientes de consulta</option>
-                    </select>
-                    <span className="material-symbols-outlined pointer-events-none absolute right-2 top-2 text-on-surface-variant text-[16px]">
-                      expand_more
-                    </span>
-                  </div>
-
-                  {/* Expiration Range */}
-                  <div className="relative">
-                    <select
-                      value={expiryFilter}
-                      onChange={(e) => setExpiryFilter(e.target.value)}
-                      className="appearance-none bg-surface-container-lowest text-on-surface text-xs pl-3 pr-7 py-2 rounded-lg focus:outline-none focus:ring-1 focus:ring-primary border border-outline-variant/40"
-                    >
-                      <option value="">Vencimiento: Cualquiera</option>
-                      <option value="today">Vence hoy</option>
-                      <option value="7days">Próximos 7 días</option>
-                      <option value="30days">Este mes</option>
-                      <option value="expired">Ya vencidos</option>
-                    </select>
-                    <span className="material-symbols-outlined pointer-events-none absolute right-2 top-2 text-on-surface-variant text-[16px]">
-                      calendar_today
-                    </span>
-                  </div>
-
-                  {/* Reset filters */}
-                  <button
-                    onClick={() => {
-                      setStatusFilter('all');
-                      setPlanFilter('');
-                      setExpiryFilter('');
-                      setSearchQuery('');
-                      showToast('Filtros restablecidos.');
-                    }}
-                    className="p-2 bg-surface-container-lowest hover:bg-surface-container text-on-surface-variant hover:text-white rounded-lg transition-colors border border-outline-variant/40"
-                    title="Restablecer filtros"
-                    type="button"
-                  >
-                    <span className="material-symbols-outlined text-[18px]">refresh</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Live Search Line */}
-              <div className="relative w-full">
-                <span className="material-symbols-outlined absolute left-3 top-2.5 text-on-surface-variant text-[18px]">
-                  search
-                </span>
-                <input
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full bg-surface-container-lowest pl-9 pr-16 py-2 rounded-lg text-xs text-on-surface placeholder:text-on-surface-variant/70 focus:outline-none focus:ring-1 focus:ring-primary transition-all border border-outline-variant/40"
-                  placeholder="Buscar por Nombre, DNI, Teléfono o N° Socio (ej: Pereyra, 38.912.441 o #P-1042)..."
-                  type="text"
-                />
-                <span className="absolute right-3 top-2 font-label-code text-[10px] text-on-surface-variant bg-surface-container px-1.5 py-0.5 rounded hidden md:inline border border-outline-variant/40">
-                  ⌘ + K
-                </span>
-              </div>
-            </section>
-
-            {/* Main Table Section */}
-            <section className="bg-surface-container-low rounded-xl overflow-hidden shadow-xl mb-6 border border-outline-variant/40">
-              <div className="overflow-x-auto">
-                <table className="w-full text-left border-collapse">
-                  <thead>
-                    <tr className="bg-surface-container-lowest text-on-surface-variant font-label-md text-[11px] uppercase tracking-wider h-9 border-b border-outline-variant/40">
-                      <th className="px-3.5 py-2 font-semibold">Socio & Identificación</th>
-                      <th className="px-3.5 py-2 font-semibold">Plan Actual</th>
-                      <th className="px-3.5 py-2 font-semibold">Estado Membresía</th>
-                      <th className="px-3.5 py-2 font-semibold">Vigencia & Vencimiento</th>
-                      <th className="px-3.5 py-2 font-semibold text-right">Último Pago</th>
-                      <th className="px-3.5 py-2 font-semibold text-center">Acciones</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-surface-container font-body-sm text-xs">
-                    {filteredMembers.map((m) => (
-                      <tr key={m.id} className="hover:bg-surface-container-high/40 transition-colors group">
-                        <td className="px-3.5 py-2.5">
-                          <div className="flex items-center gap-2.5">
-                            {m.avatarUrl ? (
-                              <img
-                                alt={m.name}
-                                className="w-8 h-8 rounded-full object-cover ring-1 ring-surface-variant flex-shrink-0"
-                                src={m.avatarUrl}
-                              />
-                            ) : (
-                              <div className="w-8 h-8 rounded-full bg-surface-container-highest text-primary flex items-center justify-center font-bold text-xs border border-primary/20 flex-shrink-0">
-                                {m.initials}
-                              </div>
-                            )}
-                            <div className="flex flex-col min-w-0">
-                              <div className="flex items-center gap-1.5">
-                                <span className="font-bold text-xs text-on-surface truncate">{m.name}</span>
-                                <span className="font-label-code text-[10px] px-1 py-0.2 rounded bg-surface-container text-on-surface-variant">
-                                  {m.code}
-                                </span>
-                              </div>
-                              <span className="font-label-code text-[10.5px] text-on-surface-variant truncate">
-                                DNI: {m.dni} • Tel: {m.phone}
-                              </span>
-                            </div>
-                          </div>
-                        </td>
-
-                        <td className="px-3.5 py-2.5">
-                          <div className="flex flex-col">
-                            <span className="text-xs text-on-surface font-semibold">{m.planName}</span>
-                            <span className="font-label-code text-[10.5px] text-on-surface-variant">{m.planDesc}</span>
-                          </div>
-                        </td>
-
-                        <td className="px-3.5 py-2.5">
-                          {m.status === 'active' && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-label-code text-[10.5px] font-bold bg-secondary-container text-secondary">
-                              <span className="w-1.5 h-1.5 rounded-full bg-secondary"></span>
-                              Activo
-                            </span>
-                          )}
-                          {m.status === 'warning' && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-label-code text-[10.5px] font-bold bg-warning-container text-warning">
-                              <span className="w-1.5 h-1.5 rounded-full bg-warning"></span>
-                              Suspendido
-                            </span>
-                          )}
-                          {m.status === 'expired' && (
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full font-label-code text-[10.5px] font-bold bg-error-container text-error">
-                              <span className="w-1.5 h-1.5 rounded-full bg-error"></span>
-                              Vencido
-                            </span>
-                          )}
-                        </td>
-
-                        <td className="px-3.5 py-2.5">
-                          <div className="flex flex-col">
-                            <span
-                              className={`text-xs ${
-                                m.status === 'expired' ? 'text-on-surface-variant line-through' : 'text-on-surface'
-                              }`}
-                            >
-                              {m.periodStart} — {m.periodEnd}
-                            </span>
-                            <span
-                              className={`font-label-code text-[10.5px] font-medium ${
-                                m.status === 'expired'
-                                  ? 'text-error'
-                                  : m.status === 'warning'
-                                  ? 'text-warning'
-                                  : m.validityNote.includes('días')
-                                  ? 'text-warning'
-                                  : 'text-secondary'
-                              }`}
-                            >
-                              {m.validityNote}
-                            </span>
-                          </div>
-                        </td>
-
-                        <td className="px-3.5 py-2.5 text-right">
-                          <div className="flex flex-col items-end">
-                            <span className="font-label-code text-xs font-bold text-on-surface">
-                              ${m.lastAmount.toLocaleString('es-AR')}
-                            </span>
-                            <div className="flex items-center gap-1 text-on-surface-variant">
-                              <span className="material-symbols-outlined text-[13px]">payments</span>
-                              <span className="font-label-code text-[10.5px]">{m.lastMethod}</span>
-                            </div>
-                          </div>
-                        </td>
-
-                        <td className="px-3.5 py-2.5">
-                          <div className="flex items-center justify-center gap-1.5">
-                            {/* Primary Cobrar Button (Volt Lime + Dark Text) */}
-                            {m.status === 'active' && (
-                              <button
-                                disabled title="Los pagos están pendientes de implementación."
-                                className="px-2.5 py-1 bg-primary text-on-primary hover:bg-primary-hover rounded-lg font-bold text-xs transition-all flex items-center gap-1 shadow-sm active:scale-95"
-                                type="button"
-                              >
-                                <span className="material-symbols-outlined text-[15px]">payments</span>
-                                Cobrar
-                              </button>
-                            )}
-                            {m.status === 'expired' && (
-                              <button
-                                disabled title="Los pagos están pendientes de implementación."
-                                className="px-2.5 py-1 bg-error text-white hover:opacity-90 rounded-lg font-bold text-xs transition-all flex items-center gap-1 shadow-md shadow-error/20 active:scale-95"
-                                type="button"
-                              >
-                                <span className="material-symbols-outlined text-[15px]">point_of_sale</span>
-                                Cobrar
-                              </button>
-                            )}
-                            {m.status === 'warning' && (
-                              <button
-                                disabled title="La reactivación está pendiente de implementación."
-                                className="px-2.5 py-1 bg-surface-container hover:bg-surface-container-high text-white rounded-lg text-xs font-medium transition-colors border border-outline-variant/40"
-                                type="button"
-                              >
-                                Reactivar
-                              </button>
-                            )}
-
-                            <button
-                              disabled title="Los comprobantes internos están pendientes de implementación."
-                              className="p-1 bg-surface-container hover:bg-surface-container-highest text-white rounded-lg transition-colors border border-outline-variant/40"
-                              type="button"
-                            >
-                              <span className="material-symbols-outlined text-[16px]">receipt_long</span>
-                            </button>
-
-                            <button
-                              disabled title="La ficha no está implementada."
-                              className="p-1 bg-surface-container hover:bg-surface-container-highest text-on-surface-variant hover:text-white rounded-lg transition-colors border border-outline-variant/40"
-                              type="button"
-                            >
-                              <span className="material-symbols-outlined text-[16px]">badge</span>
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-
-              <div className="px-3.5 py-3 bg-surface-container-lowest border-t border-outline-variant/40 text-xs text-on-surface-variant">
-                El listado administrativo está pendiente de integración. Podés crear un socio desde «Alta de Socio», sin asignarle una membresía ni registrar pagos.
-              </div>
-            </section>
-          </div>
-          )}
         </main>
       </div>
 

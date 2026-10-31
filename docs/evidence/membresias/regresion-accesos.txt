@@ -1,0 +1,104 @@
+TAP version 13
+# Subtest: Accesos: MongoDB real, HTTP, concurrencia, recuperación y seguridad
+    # Subtest: CA-G05: ingreso habilitado persiste presencia y movimiento
+    ok 1 - CA-G05: ingreso habilitado persiste presencia y movimiento
+      ---
+      duration_ms: 52.371292
+      type: 'test'
+      ...
+    # Subtest: Inhabilitado e ingreso repetido quedan en historial sin incrementar ocupación
+    ok 2 - Inhabilitado e ingreso repetido quedan en historial sin incrementar ocupación
+      ---
+      duration_ms: 49.656834
+      type: 'test'
+      ...
+    # Subtest: Dos clientes/réplicas: 20 ingresos concurrentes de la misma persona aceptan exactamente uno
+    ok 3 - Dos clientes/réplicas: 20 ingresos concurrentes de la misma persona aceptan exactamente uno
+      ---
+      duration_ms: 443.034541
+      type: 'test'
+      ...
+    # Subtest: CA-G06: egresos concurrentes cierran una sola presencia y nunca producen negativos
+    ok 4 - CA-G06: egresos concurrentes cierran una sola presencia y nunca producen negativos
+      ---
+      duration_ms: 280.525791
+      type: 'test'
+      ...
+    # Subtest: Repetición concurrente conserva resultado único; replay tardío no reabre tras egreso
+    ok 5 - Repetición concurrente conserva resultado único; replay tardío no reabre tras egreso
+      ---
+      duration_ms: 75.264417
+      type: 'test'
+      ...
+    # Subtest: Misma clave simultánea con cuerpos distintos no aplica ambos
+    ok 6 - Misma clave simultánea con cuerpos distintos no aplica ambos
+      ---
+      duration_ms: 21.571708
+      type: 'test'
+      ...
+    # Subtest: CA-G07: ocupación derivada por sede coincide exactamente con presencias abiertas
+    ok 7 - CA-G07: ocupación derivada por sede coincide exactamente con presencias abiertas
+      ---
+      duration_ms: 27.03425
+      type: 'test'
+      ...
+    # Subtest: Fallo al guardar idempotencia revierte movimiento y presencia (transacción real)
+    ok 8 - Fallo al guardar idempotencia revierte movimiento y presencia (transacción real)
+      ---
+      duration_ms: 51.313417
+      type: 'test'
+      ...
+    # Subtest: Historial paginado y filtros; sede inexistente y permisos de API
+    ok 9 - Historial paginado y filtros; sede inexistente y permisos de API
+      ---
+      duration_ms: 62.894833
+      type: 'test'
+      ...
+    # Subtest: Reinicio de proceso real Accesos conserva datos y replay
+    ok 10 - Reinicio de proceso real Accesos conserva datos y replay
+      ---
+      duration_ms: 1180.361417
+      type: 'test'
+      ...
+# Navegador + NGINX reales: login, ingreso, respuesta perdida, recarga/replay, duplicado, egreso, membresía suspendida e historial verificados.
+    # Subtest: Frontend y gateway reales con respuesta perdida y reanudación
+    ok 11 - Frontend y gateway reales con respuesta perdida y reanudación
+      ---
+      duration_ms: 6620.487917
+      type: 'test'
+      ...
+    # Subtest: Socios caído: ingreso sin efecto; egreso y replay siguen operativos
+    ok 12 - Socios caído: ingreso sin efecto; egreso y replay siguen operativos
+      ---
+      duration_ms: 212.869417
+      type: 'test'
+      ...
+    # Subtest: MongoDB indisponible: salud/operaciones fallan con 503 y sin detalle sensible
+    ok 13 - MongoDB indisponible: salud/operaciones fallan con 503 y sin detalle sensible
+      ---
+      duration_ms: 4.403458
+      type: 'test'
+      ...
+    # Subtest: Caída real del motor y recuperación conservan historial y ocupación
+    ok 14 - Caída real del motor y recuperación conservan historial y ocupación
+      ---
+      duration_ms: 2108.779875
+      type: 'test'
+      ...
+# MongoDB real: 8.0.32; Node v22.23.3; modo docker
+# Dependencia Socios: implementación HTTP real con repositorio de fixture en memoria; no acredita PostgreSQL.
+    1..14
+ok 1 - Accesos: MongoDB real, HTTP, concurrencia, recuperación y seguridad
+  ---
+  duration_ms: 13643.140083
+  type: 'test'
+  ...
+1..1
+# tests 15
+# suites 0
+# pass 15
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 14255.398917

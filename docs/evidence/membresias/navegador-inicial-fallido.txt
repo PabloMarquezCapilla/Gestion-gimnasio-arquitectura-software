@@ -1,0 +1,167 @@
+
+> gestion-gimnasio@0.1.0 test:membresias
+> npm run build && node --test scripts/verificar-membresias.mjs
+
+
+> gestion-gimnasio@0.1.0 build
+> npm run build --workspaces
+
+
+> @gimnasio/socios-membresias@0.1.0 build
+> tsc -p tsconfig.json
+
+
+> @gimnasio/clases-reservas@0.1.0 build
+> tsc -p tsconfig.json
+
+
+> @gimnasio/accesos-ocupacion@0.1.0 build
+> tsc -p tsconfig.json
+
+
+> @gimnasio/tienda@0.1.0 build
+> tsc -p tsconfig.json
+
+TAP version 13
+# Subtest: Planes, pagos y membresías: PostgreSQL real y HTTP entre dos instancias
+    # Subtest: Base vacía: no se inventan planes ni membresía para alta administrativa
+    ok 1 - Base vacía: no se inventan planes ni membresía para alta administrativa
+      ---
+      duration_ms: 23.028041
+      type: 'test'
+      ...
+    # Subtest: Permisos reales: SOCIO/clave técnica/no autenticado no administran ni leen terceros
+    ok 2 - Permisos reales: SOCIO/clave técnica/no autenticado no administran ni leen terceros
+      ---
+      duration_ms: 35.699583
+      type: 'test'
+      ...
+    # Subtest: Plan configurado por ADMIN, replay durable y clave incompatible
+    ok 3 - Plan configurado por ADMIN, replay durable y clave incompatible
+      ---
+      duration_ms: 61.174125
+      type: 'test'
+      ...
+    # Subtest: Plan inexistente/no disponible y fechas inválidas no crean solicitud
+    ok 4 - Plan inexistente/no disponible y fechas inválidas no crean solicitud
+      ---
+      duration_ms: 62.99775
+      type: 'test'
+      ...
+    # Subtest: Solicitud concurrente por claves diferentes deja una sola pendiente
+    ok 5 - Solicitud concurrente por claves diferentes deja una sola pendiente
+      ---
+      duration_ms: 38.220208
+      type: 'test'
+      ...
+    # Subtest: Registro manual no habilita; importe/moneda incompatibles se rechazan
+    ok 6 - Registro manual no habilita; importe/moneda incompatibles se rechazan
+      ---
+      duration_ms: 73.232292
+      type: 'test'
+      ...
+    # Subtest: Reserva antes de confirmar pago se rechaza
+    ok 7 - Reserva antes de confirmar pago se rechaza
+      ---
+      duration_ms: 27.1035
+      type: 'test'
+      ...
+    # Subtest: Fallo real al insertar comprobante revierte pago, membresía, solicitud e idempotencia
+    ok 8 - Fallo real al insertar comprobante revierte pago, membresía, solicitud e idempotencia
+      ---
+      duration_ms: 63.110625
+      type: 'test'
+      ...
+    # Subtest: Confirmación concurrente/reintento y respuesta perdida no duplican efectos
+    ok 9 - Confirmación concurrente/reintento y respuesta perdida no duplican efectos
+      ---
+      duration_ms: 118.729041
+      type: 'test'
+      ...
+    # Subtest: Membresía confirmada permite reservar; duplicada y fuera de vigencia se rechazan
+    ok 10 - Membresía confirmada permite reservar; duplicada y fuera de vigencia se rechazan
+      ---
+      duration_ms: 49.7
+      type: 'test'
+      ...
+    # Subtest: Referencia de cobro única entre socios; rechazo impide habilitar y confirmar
+    ok 11 - Referencia de cobro única entre socios; rechazo impide habilitar y confirmar
+      ---
+      duration_ms: 75.926333
+      type: 'test'
+      ...
+    # Subtest: Nuevo período explícito no superpuesto; renovación futura conserva cobertura actual
+    ok 12 - Nuevo período explícito no superpuesto; renovación futura conserva cobertura actual
+      ---
+      duration_ms: 43.4445
+      type: 'test'
+      ...
+    # Subtest: Período superpuesto queda bloqueado sin cobrar/activar de nuevo
+    ok 13 - Período superpuesto queda bloqueado sin cobrar/activar de nuevo
+      ---
+      duration_ms: 47.385875
+      type: 'test'
+      ...
+    # Subtest: Cambio de plan a inactivo entre solicitud y confirmación bloquea sin efectos
+    ok 14 - Cambio de plan a inactivo entre solicitud y confirmación bloquea sin efectos
+      ---
+      duration_ms: 93.650625
+      type: 'test'
+      ...
+    # Subtest: Reconstruir aplicación conserva comprobantes y solicitudes en PostgreSQL
+    ok 15 - Reconstruir aplicación conserva comprobantes y solicitudes en PostgreSQL
+      ---
+      duration_ms: 32.324083
+      type: 'test'
+      ...
+    # Subtest: Actualización desde DDL previo conserva socios, solicitudes externas y membresías
+    ok 16 - Actualización desde DDL previo conserva socios, solicitudes externas y membresías
+      ---
+      duration_ms: 227.712375
+      type: 'test'
+      ...
+    # Subtest: Navegador real: alta, plan, solicitud, cobro, confirmación, portal y reserva
+    not ok 17 - Navegador real: alta, plan, solicitud, cobro, confirmación, portal y reserva
+      ---
+      duration_ms: 24049.416667
+      type: 'test'
+      location: '<REPO>/scripts/verificar-membresias.mjs:152:55'
+      failureType: 'testCodeFailure'
+      error: |-
+        locator.click: Timeout 12000ms exceeded.
+        Call log:
+        [2m  - waiting for getByRole('button', { name: 'Mi Membresía' })[22m
+
+      code: 'ERR_TEST_FAILURE'
+      name: 'TimeoutError'
+      stack: |-
+        verificarMembresiasWeb (<REPO>/scripts/membresias/web.mjs:52:68)
+        async TestContext.<anonymous> (<REPO>/scripts/verificar-membresias.mjs:153:74)
+        async TestContext.<anonymous> (<REPO>/scripts/verificar-membresias.mjs:152:47)
+      ...
+# PostgreSQL real 17.11; Node v22.23.3; fixtures de importe/moneda explícitamente sintéticos, no tarifas desplegadas.
+    # Subtest: Socios temporalmente indisponible: Clases no interpreta habilitación
+    ok 18 - Socios temporalmente indisponible: Clases no interpreta habilitación
+      ---
+      duration_ms: 129.489875
+      type: 'test'
+      ...
+    1..18
+not ok 1 - Planes, pagos y membresías: PostgreSQL real y HTTP entre dos instancias
+  ---
+  duration_ms: 28092.665708
+  type: 'test'
+  location: '<REPO>/scripts/verificar-membresias.mjs:15:1'
+  failureType: 'subtestsFailed'
+  error: '1 subtest failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+1..1
+# tests 19
+# suites 0
+# pass 17
+# fail 2
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 28784.898167

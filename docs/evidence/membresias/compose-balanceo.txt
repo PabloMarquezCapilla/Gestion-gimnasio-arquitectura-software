@@ -1,0 +1,80 @@
+[1/5] Construyendo e iniciando el proyecto temporal codex-balanceo-69d47662cf37...
+[2/5] Verificando distribución en las dos instancias...
+[3/5] Deteniendo solo una réplica temporal y manteniendo consultas...
+Durante detención: {"solicitudes":24,"estados":{"200":24},"instancias":{"252bc144865f":12,"4c2e995fde51":12}}
+Detección tras parada: {"solicitudes":24,"estados":{"200":24},"instancias":{"252bc144865f":24}}
+Una réplica: {"solicitudes":40,"estados":{"200":40},"instancias":{"252bc144865f":40}}
+[4/5] Reemplazando la réplica detenida sin reiniciar NGINX...
+{
+  "ejecutadoEn": "2026-10-30T21:14:11.717Z",
+  "configuracion": "NGINX least_conn; 2 réplicas; PostgreSQL",
+  "normal": {
+    "solicitudes": 40,
+    "estados": {
+      "200": 40
+    },
+    "instancias": {
+      "4c2e995fde51": 20,
+      "252bc144865f": 20
+    }
+  },
+  "duranteDetencion": {
+    "solicitudes": 24,
+    "estados": {
+      "200": 24
+    },
+    "instancias": {
+      "252bc144865f": 12,
+      "4c2e995fde51": 12
+    }
+  },
+  "deteccion": {
+    "solicitudes": 24,
+    "estados": {
+      "200": 24
+    },
+    "instancias": {
+      "252bc144865f": 24
+    }
+  },
+  "tiempoDeteccionYMuestreoMs": 3142,
+  "unaReplica": {
+    "solicitudes": 40,
+    "estados": {
+      "200": 40
+    },
+    "instancias": {
+      "252bc144865f": 40
+    }
+  },
+  "transicionRecuperacion": {
+    "solicitudes": 160,
+    "estados": {
+      "200": 160
+    },
+    "instancias": {
+      "252bc144865f": 160
+    }
+  },
+  "recuperacion": {
+    "solicitudes": 40,
+    "estados": {
+      "200": 40
+    },
+    "instancias": {
+      "252bc144865f": 23,
+      "08816741e8d3": 17
+    }
+  },
+  "escrituras": {
+    "intentos": 12,
+    "confirmadas": 1,
+    "conflictos": 11
+  },
+  "gatewayReiniciado": false,
+  "registrosProxy": 330,
+  "reintentosObservados": 4
+}
+Balanceo verificado. Los valores son evidencia de este ensayo local, no una garantía de disponibilidad ni capacidad.
+[5/5] Retirando exclusivamente los recursos temporales de la prueba...
+Recursos de prueba retirados; .env, contenedores y volúmenes del grupo conservados.

@@ -34,3 +34,7 @@ Criterios propuestos: alertar ante >1% de 5xx durante 5 min, p99 de reservas >15
 ## Consecuencias
 
 La primera traza permite seguir una reserva entre servicios HTTP con PostgreSQL. La observabilidad general de §2.10 aún requiere tablero y mayor cobertura; no se acredita por exponer métricas sin recolector ni alertas.
+
+### Etapa 3 — trazabilidad de membresías
+
+`membresias_operaciones_total` por comando/resultado/servicio/instancia distingue resolución, replay y fallo; no etiqueta socios, claves o pagos individuales. Logs con correlación permiten investigar estados, repetición y errores sin registrar importes ni credenciales. [ADR-021](ADR-021-planes-pagos-membresias.md) y [evidencia](../EVIDENCIA-MEMBRESIAS.md). No incorpora tablero global.

@@ -1,0 +1,1177 @@
+
+> gestion-gimnasio@0.1.0 test
+> npm run build && node --test
+
+
+> gestion-gimnasio@0.1.0 build
+> npm run build --workspaces
+
+
+> @gimnasio/socios-membresias@0.1.0 build
+> tsc -p tsconfig.json
+
+
+> @gimnasio/clases-reservas@0.1.0 build
+> tsc -p tsconfig.json
+
+
+> @gimnasio/accesos-ocupacion@0.1.0 build
+> tsc -p tsconfig.json
+
+
+> @gimnasio/tienda@0.1.0 build
+> tsc -p tsconfig.json
+
+TAP version 13
+# Subtest: Accesos envía JWT, clave idempotente y cuerpo sin modificar al gateway
+ok 1 - Accesos envía JWT, clave idempotente y cuerpo sin modificar al gateway
+  ---
+  duration_ms: 27.848583
+  type: 'test'
+  ...
+# Subtest: Accesos no interpreta error de red ni un cuerpo ajeno como éxito
+ok 2 - Accesos no interpreta error de red ni un cuerpo ajeno como éxito
+  ---
+  duration_ms: 0.692292
+  type: 'test'
+  ...
+# Subtest: Accesos muestra rechazo de membresía y conserva sesión ante falla de dependencia
+ok 3 - Accesos muestra rechazo de membresía y conserva sesión ante falla de dependencia
+  ---
+  duration_ms: 2.136584
+  type: 'test'
+  ...
+# Subtest: Accesos pagina historial con filtros enviados al backend
+ok 4 - Accesos pagina historial con filtros enviados al backend
+  ---
+  duration_ms: 1.835666
+  type: 'test'
+  ...
+# Subtest: login conserva el error del servidor; nunca fabrica credenciales alternativas
+ok 5 - login conserva el error del servidor; nunca fabrica credenciales alternativas
+  ---
+  duration_ms: 1.594833
+  type: 'test'
+  ...
+# Subtest: login y registro rechazan fallas de red sin crear cuentas ni tokens locales
+ok 6 - login y registro rechazan fallas de red sin crear cuentas ni tokens locales
+  ---
+  duration_ms: 0.267708
+  type: 'test'
+  ...
+# Subtest: login solo acepta la identidad y token provistos por el servidor
+ok 7 - login solo acepta la identidad y token provistos por el servidor
+  ---
+  duration_ms: 0.582375
+  type: 'test'
+  ...
+# Subtest: Bearer acompaña cada petición privada y logout impide reutilizarlo
+ok 8 - Bearer acompaña cada petición privada y logout impide reutilizarlo
+  ---
+  duration_ms: 0.569375
+  type: 'test'
+  ...
+# Subtest: 401 privado elimina la sesión y avisa una vez; 403 conserva la sesión
+ok 9 - 401 privado elimina la sesión y avisa una vez; 403 conserva la sesión
+  ---
+  duration_ms: 0.319625
+  type: 'test'
+  ...
+# Subtest: una respuesta 401 vieja no borra una sesión nueva
+ok 10 - una respuesta 401 vieja no borra una sesión nueva
+  ---
+  duration_ms: 0.360083
+  type: 'test'
+  ...
+# Subtest: alta administrativa conserva Bearer del administrador, sin sesión del socio creado
+ok 11 - alta administrativa conserva Bearer del administrador, sin sesión del socio creado
+  ---
+  duration_ms: 0.253083
+  type: 'test'
+  ...
+# Subtest: 409 de registro, reserva o cancelación permanece error y conserva la sesión
+ok 12 - 409 de registro, reserva o cancelación permanece error y conserva la sesión
+  ---
+  duration_ms: 0.336333
+  type: 'test'
+  ...
+# Subtest: consulta vacía se devuelve vacía; respuesta inválida y fallas de red no son listas vacías
+ok 13 - consulta vacía se devuelve vacía; respuesta inválida y fallas de red no son listas vacías
+  ---
+  duration_ms: 0.260708
+  type: 'test'
+  ...
+# Subtest: respuestas sin confirmación de reserva o espera no producen éxito
+ok 14 - respuestas sin confirmación de reserva o espera no producen éxito
+  ---
+  duration_ms: 0.296834
+  type: 'test'
+  ...
+# Subtest: Tienda conserva el error de integración pendiente y la sesión; nunca inventa productos
+ok 15 - Tienda conserva el error de integración pendiente y la sesión; nunca inventa productos
+  ---
+  duration_ms: 0.298167
+  type: 'test'
+  ...
+# Subtest: Tienda participa del cierre de sesión ante un JWT rechazado
+ok 16 - Tienda participa del cierre de sesión ante un JWT rechazado
+  ---
+  duration_ms: 0.148375
+  type: 'test'
+  ...
+# Subtest: Car Cruds usa solo JWT propio y codifica IDs al consultar lista, estado, vínculo e historial
+ok 17 - Car Cruds usa solo JWT propio y codifica IDs al consultar lista, estado, vínculo e historial
+  ---
+  duration_ms: 0.736791
+  type: 'test'
+  ...
+# Subtest: Car Cruds busca por cuerpo privado y conserva solo campos públicos del socio
+ok 18 - Car Cruds busca por cuerpo privado y conserva solo campos públicos del socio
+  ---
+  duration_ms: 0.214708
+  type: 'test'
+  ...
+# Subtest: Car Cruds confirma vínculo y desvinculación con la versión leída, sin modificar membresías
+ok 19 - Car Cruds confirma vínculo y desvinculación con la versión leída, sin modificar membresías
+  ---
+  duration_ms: 0.352709
+  type: 'test'
+  ...
+# Subtest: Car Cruds conserva conflicto de versión e indisponibilidad sin cerrar la sesión ni fingir éxito
+ok 20 - Car Cruds conserva conflicto de versión e indisponibilidad sin cerrar la sesión ni fingir éxito
+  ---
+  duration_ms: 5.660709
+  type: 'test'
+  ...
+# Subtest: Car Cruds cierra la sesión ante 401 propio y no vuelve a enviar el JWT
+ok 21 - Car Cruds cierra la sesión ante 401 propio y no vuelve a enviar el JWT
+  ---
+  duration_ms: 0.645208
+  type: 'test'
+  ...
+# Subtest: Car Cruds no convierte respuestas incompletas, de otro empleado o fallas de red en datos válidos
+ok 22 - Car Cruds no convierte respuestas incompletas, de otro empleado o fallas de red en datos válidos
+  ---
+  duration_ms: 0.935792
+  type: 'test'
+  ...
+# Subtest: fotografías usa JWT propio y consulta el mes con ID opaco sin exponer token de Car Cruds
+ok 23 - fotografías usa JWT propio y consulta el mes con ID opaco sin exponer token de Car Cruds
+  ---
+  duration_ms: 0.307041
+  type: 'test'
+  ...
+# Subtest: preparación envía solo mes, revisiones esperadas y confirmación del cambio; nunca hechos del cliente
+ok 24 - preparación envía solo mes, revisiones esperadas y confirmación del cambio; nunca hechos del cliente
+  ---
+  duration_ms: 0.4665
+  type: 'test'
+  ...
+# Subtest: enviar o reintentar identifica la fotografía guardada y no vuelve a calcular ni transmite sus hechos
+ok 25 - enviar o reintentar identifica la fotografía guardada y no vuelve a calcular ni transmite sus hechos
+  ---
+  duration_ms: 0.307625
+  type: 'test'
+  ...
+# Subtest: fotografías conserva null, cero y applied false sin inferir hechos ni vigencia remota
+ok 26 - fotografías conserva null, cero y applied false sin inferir hechos ni vigencia remota
+  ---
+  duration_ms: 0.288542
+  type: 'test'
+  ...
+# Subtest: fotografías rechaza datos incompletos, cantidades inseguras y respuesta de otro empleado, mes o registro
+ok 27 - fotografías rechaza datos incompletos, cantidades inseguras y respuesta de otro empleado, mes o registro
+  ---
+  duration_ms: 5.100958
+  type: 'test'
+  ...
+# Subtest: fotografías conserva conflictos y fallas de red; no repite POST ni cierra sesión por errores de integración
+ok 28 - fotografías conserva conflictos y fallas de red; no repite POST ni cierra sesión por errores de integración
+  ---
+  duration_ms: 0.395834
+  type: 'test'
+  ...
+# Subtest: fotografías usa el manejo central de 401 propio sin volver a enviar la sesión vencida
+ok 29 - fotografías usa el manejo central de 401 propio sin volver a enviar la sesión vencida
+  ---
+  duration_ms: 0.149208
+  type: 'test'
+  ...
+# Subtest: Reglas de alternancia: habilitación, ingreso repetido y egreso independiente
+ok 30 - Reglas de alternancia: habilitación, ingreso repetido y egreso independiente
+  ---
+  duration_ms: 1.372625
+  type: 'test'
+  ...
+# Subtest: API de recepción exige ADMIN incluso al cambiar IDs y URLs
+ok 31 - API de recepción exige ADMIN incluso al cambiar IDs y URLs
+  ---
+  duration_ms: 66.358709
+  type: 'test'
+  ...
+# Subtest: JWT inválido, vencido, futuro o de otro emisor no autoriza
+ok 32 - JWT inválido, vencido, futuro o de otro emisor no autoriza
+  ---
+  duration_ms: 6.59975
+  type: 'test'
+  ...
+# Subtest: API rechaza campos adicionales, operadores Mongo y claves inválidas antes de escribir
+ok 33 - API rechaza campos adicionales, operadores Mongo y claves inválidas antes de escribir
+  ---
+  duration_ms: 15.045875
+  type: 'test'
+  ...
+# Subtest: Sede inexistente, historial y paginación inválida
+ok 34 - Sede inexistente, historial y paginación inválida
+  ---
+  duration_ms: 3.718166
+  type: 'test'
+  ...
+# Subtest: No inventa ingresos cuando Socios falla y no consulta Socios para egresos ni replay
+ok 35 - No inventa ingresos cuando Socios falla y no consulta Socios para egresos ni replay
+  ---
+  duration_ms: 8.00925
+  type: 'test'
+  ...
+# Subtest: Errores inesperados y salud no exponen datos internos; métricas y correlación
+ok 36 - Errores inesperados y salud no exponen datos internos; métricas y correlación
+  ---
+  duration_ms: 4.146833
+  type: 'test'
+  ...
+# Subtest: Cliente Socios valida identidad, habilitación y vigencia; propaga contexto
+ok 37 - Cliente Socios valida identidad, habilitación y vigencia; propaga contexto
+  ---
+  duration_ms: 25.896542
+  type: 'test'
+  ...
+# Subtest: Cliente Socios limita timeout también con cuerpo abierto y reintenta solo GET transitorio
+ok 38 - Cliente Socios limita timeout también con cuerpo abierto y reintenta solo GET transitorio
+  ---
+  duration_ms: 254.875708
+  type: 'test'
+  ...
+# Subtest: Gateway integra Accesos sin retry de POST ni exposición de clave técnica
+ok 39 - Gateway integra Accesos sin retry de POST ni exposición de clave técnica
+  ---
+  duration_ms: 5.939458
+  type: 'test'
+  ...
+# Subtest: Cache-aside: hit evita fuente y registra antigüedad; miss carga y guarda
+ok 40 - Cache-aside: hit evita fuente y registra antigüedad; miss carga y guarda
+  ---
+  duration_ms: 5.273416
+  type: 'test'
+  ...
+# Subtest: Fallas Redis no inventan ceros; si Mongo falla se propaga el error
+ok 41 - Fallas Redis no inventan ceros; si Mongo falla se propaga el error
+  ---
+  duration_ms: 4.531833
+  type: 'test'
+  ...
+# Subtest: Escritura obsoleta rechazada se cuenta; caché desactivada consulta fuente
+ok 42 - Escritura obsoleta rechazada se cuenta; caché desactivada consulta fuente
+  ---
+  duration_ms: 0.711083
+  type: 'test'
+  ...
+# Subtest: el listado cumple el contrato, ordena y devuelve una instantánea ficticia
+ok 43 - el listado cumple el contrato, ordena y devuelve una instantánea ficticia
+  ---
+  duration_ms: 176.580208
+  type: 'test'
+  ...
+# Subtest: filtra como instantes, incluye desde, excluye hasta y pagina después de filtrar
+ok 44 - filtra como instantes, incluye desde, excluye hasta y pagina después de filtrar
+  ---
+  duration_ms: 32.468792
+  type: 'test'
+  ...
+# Subtest: la página fuera del resultado y una sede sin clases devuelven 200 vacío
+ok 45 - la página fuera del resultado y una sede sin clases devuelven 200 vacío
+  ---
+  duration_ms: 43.849375
+  type: 'test'
+  ...
+# Subtest: se exige la clave correcta en ambos endpoints antes de validar parámetros
+ok 46 - se exige la clave correcta en ambos endpoints antes de validar parámetros
+  ---
+  duration_ms: 44.864542
+  type: 'test'
+  ...
+# Subtest: rechaza filtros, fechas e intervalos inválidos con el error declarado
+ok 47 - rechaza filtros, fechas e intervalos inválidos con el error declarado
+  ---
+  duration_ms: 55.443125
+  type: 'test'
+  ...
+# Subtest: una clase llena o iniciada sigue siendo consultable; una inexistente devuelve 404
+ok 48 - una clase llena o iniciada sigue siendo consultable; una inexistente devuelve 404
+  ---
+  duration_ms: 25.917292
+  type: 'test'
+  ...
+# Subtest: no publica clases ocultas y desempata el orden por claseId
+ok 49 - no publica clases ocultas y desempata el orden por claseId
+  ---
+  duration_ms: 32.16775
+  type: 'test'
+  ...
+# Subtest: los errores internos o temporales respetan el contrato sin inventar disponibilidad
+ok 50 - los errores internos o temporales respetan el contrato sin inventar disponibilidad
+  ---
+  duration_ms: 75.109334
+  type: 'test'
+  ...
+# Subtest: health describe únicamente la estructura y el modo mock
+ok 51 - health describe únicamente la estructura y el modo mock
+  ---
+  duration_ms: 85.231709
+  type: 'test'
+  ...
+# Subtest: comprueba vigencia actual y al inicio; no admite cobertura solo futura ni solo actual
+ok 52 - comprueba vigencia actual y al inicio; no admite cobertura solo futura ni solo actual
+  ---
+  duration_ms: 6.557166
+  type: 'test'
+  ...
+# Subtest: la espera es voluntaria y se registra atómicamente; no admite cola innecesaria
+ok 53 - la espera es voluntaria y se registra atómicamente; no admite cola innecesaria
+  ---
+  duration_ms: 1.725542
+  type: 'test'
+  ...
+# Subtest: cancelar con Socios caído conserva FIFO y la recuperación funciona con otra instancia del servicio
+ok 54 - cancelar con Socios caído conserva FIFO y la recuperación funciona con otra instancia del servicio
+  ---
+  duration_ms: 1.141959
+  type: 'test'
+  ...
+# Subtest: retira al primero realmente inhabilitado y promueve al siguiente sin duplicar entre procesadores
+ok 55 - retira al primero realmente inhabilitado y promueve al siguiente sin duplicar entre procesadores
+  ---
+  duration_ms: 1.050417
+  type: 'test'
+  ...
+# Subtest: una reserva nueva durante la validación de una promoción no toma su cupo ni produce sobreventa
+ok 56 - una reserva nueva durante la validación de una promoción no toma su cupo ni produce sobreventa
+  ---
+  duration_ms: 1.605916
+  type: 'test'
+  ...
+# Subtest: los cortes temporales se vuelven a evaluar después de esperar validaciones
+ok 57 - los cortes temporales se vuelven a evaluar después de esperar validaciones
+  ---
+  duration_ms: 0.675667
+  type: 'test'
+  ...
+# Subtest: JWT exige sesión propia o administrador; la clave externa no autoriza datos personales ni mutaciones
+ok 58 - JWT exige sesión propia o administrador; la clave externa no autoriza datos personales ni mutaciones
+  ---
+  duration_ms: 160.683125
+  type: 'test'
+  ...
+# Subtest: el cliente interno usa credencial y limita también cuerpos lentos; 401 y 503 nunca son inhabilitación
+ok 59 - el cliente interno usa credencial y limita también cuerpos lentos; 401 y 503 nunca son inhabilitación
+  ---
+  duration_ms: 209.509167
+  type: 'test'
+  ...
+# Subtest: Car Cruds consulta páginas por HTTP con Bearer propio y conserva el prefijo de URL
+ok 60 - Car Cruds consulta páginas por HTTP con Bearer propio y conserva el prefijo de URL
+  ---
+  duration_ms: 89.303791
+  type: 'test'
+  ...
+# Subtest: Car Cruds conserva identificadores opacos, nombres Unicode de 150 caracteres y una página vacía
+ok 61 - Car Cruds conserva identificadores opacos, nombres Unicode de 150 caracteres y una página vacía
+  ---
+  duration_ms: 11.118917
+  type: 'test'
+  ...
+# Subtest: Car Cruds consulta el estado explícito y codifica el ID como un solo segmento sin query
+ok 62 - Car Cruds consulta el estado explícito y codifica el ID como un solo segmento sin query
+  ---
+  duration_ms: 3.970667
+  type: 'test'
+  ...
+# Subtest: Car Cruds rechaza paginación e identificadores locales inválidos antes de llamar al proveedor
+ok 63 - Car Cruds rechaza paginación e identificadores locales inválidos antes de llamar al proveedor
+  ---
+  duration_ms: 2.745833
+  type: 'test'
+  ...
+# Subtest: Car Cruds distingue los errores externos de la sesión JWT y nunca infiere una baja
+    # Subtest: HTTP externo 400
+    ok 1 - HTTP externo 400
+      ---
+      duration_ms: 9.368875
+      type: 'test'
+      ...
+    # Subtest: HTTP externo 401
+    ok 2 - HTTP externo 401
+      ---
+      duration_ms: 6.217625
+      type: 'test'
+      ...
+    # Subtest: HTTP externo 403
+    ok 3 - HTTP externo 403
+      ---
+      duration_ms: 3.196167
+      type: 'test'
+      ...
+    # Subtest: HTTP externo 404
+    ok 4 - HTTP externo 404
+      ---
+      duration_ms: 6.212417
+      type: 'test'
+      ...
+    # Subtest: HTTP externo 503
+    ok 5 - HTTP externo 503
+      ---
+      duration_ms: 127.007291
+      type: 'test'
+      ...
+    1..5
+ok 64 - Car Cruds distingue los errores externos de la sesión JWT y nunca infiere una baja
+  ---
+  duration_ms: 155.551542
+  type: 'test'
+  ...
+# Subtest: Car Cruds valida el contrato importado y rechaza páginas incompatibles o incoherentes sin reintentar
+    # Subtest: respuesta incompatible 0
+    ok 1 - respuesta incompatible 0
+      ---
+      duration_ms: 3.006417
+      type: 'test'
+      ...
+    # Subtest: respuesta incompatible 1
+    ok 2 - respuesta incompatible 1
+      ---
+      duration_ms: 6.553042
+      type: 'test'
+      ...
+    # Subtest: respuesta incompatible 2
+    ok 3 - respuesta incompatible 2
+      ---
+      duration_ms: 1.275917
+      type: 'test'
+      ...
+    # Subtest: respuesta incompatible 3
+    ok 4 - respuesta incompatible 3
+      ---
+      duration_ms: 2.373958
+      type: 'test'
+      ...
+    # Subtest: respuesta incompatible 4
+    ok 5 - respuesta incompatible 4
+      ---
+      duration_ms: 3.483083
+      type: 'test'
+      ...
+    # Subtest: respuesta incompatible 5
+    ok 6 - respuesta incompatible 5
+      ---
+      duration_ms: 1.305542
+      type: 'test'
+      ...
+    # Subtest: respuesta incompatible 6
+    ok 7 - respuesta incompatible 6
+      ---
+      duration_ms: 1.365208
+      type: 'test'
+      ...
+    # Subtest: respuesta incompatible 7
+    ok 8 - respuesta incompatible 7
+      ---
+      duration_ms: 0.934041
+      type: 'test'
+      ...
+    # Subtest: respuesta incompatible 8
+    ok 9 - respuesta incompatible 8
+      ---
+      duration_ms: 0.923833
+      type: 'test'
+      ...
+    # Subtest: respuesta incompatible 9
+    ok 10 - respuesta incompatible 9
+      ---
+      duration_ms: 0.861041
+      type: 'test'
+      ...
+    # Subtest: respuesta incompatible 10
+    ok 11 - respuesta incompatible 10
+      ---
+      duration_ms: 5.049292
+      type: 'test'
+      ...
+    # Subtest: respuesta incompatible 11
+    ok 12 - respuesta incompatible 11
+      ---
+      duration_ms: 5.104083
+      type: 'test'
+      ...
+    # Subtest: respuesta incompatible 12
+    ok 13 - respuesta incompatible 12
+      ---
+      duration_ms: 2.763167
+      type: 'test'
+      ...
+    # Subtest: respuesta incompatible 13
+    ok 14 - respuesta incompatible 13
+      ---
+      duration_ms: 2.060708
+      type: 'test'
+      ...
+    # Subtest: respuesta incompatible 14
+    ok 15 - respuesta incompatible 14
+      ---
+      duration_ms: 2.58825
+      type: 'test'
+      ...
+    1..15
+ok 65 - Car Cruds valida el contrato importado y rechaza páginas incompatibles o incoherentes sin reintentar
+  ---
+  duration_ms: 41.799166
+  type: 'test'
+  ...
+# Subtest: Car Cruds exige una respuesta de estado válida para el mismo empleado, incluso en HTTP 200
+ok 66 - Car Cruds exige una respuesta de estado válida para el mismo empleado, incluso en HTTP 200
+  ---
+  duration_ms: 10.888708
+  type: 'test'
+  ...
+# Subtest: Car Cruds rechaza JSON roto, medios distintos y respuestas mayores a 1 MiB sin reintentar
+ok 67 - Car Cruds rechaza JSON roto, medios distintos y respuestas mayores a 1 MiB sin reintentar
+  ---
+  duration_ms: 9.268416
+  type: 'test'
+  ...
+# Subtest: Car Cruds no sigue redirecciones ni entrega el Bearer a otro destino
+ok 68 - Car Cruds no sigue redirecciones ni entrega el Bearer a otro destino
+  ---
+  duration_ms: 0.962333
+  type: 'test'
+  ...
+# Subtest: Car Cruds recupera una lectura transitoria y limita a dos los intentos fallidos
+ok 69 - Car Cruds recupera una lectura transitoria y limita a dos los intentos fallidos
+  ---
+  duration_ms: 391.332375
+  type: 'test'
+  ...
+# Subtest: Car Cruds conserva la traza y genera un span distinto por intento de consulta
+ok 70 - Car Cruds conserva la traza y genera un span distinto por intento de consulta
+  ---
+  duration_ms: 123.184375
+  type: 'test'
+  ...
+# Subtest: Car Cruds aplica el presupuesto total también si llegan headers pero el cuerpo queda abierto
+ok 71 - Car Cruds aplica el presupuesto total también si llegan headers pero el cuerpo queda abierto
+  ---
+  duration_ms: 253.638625
+  type: 'test'
+  ...
+# Subtest: Car Cruds comparte el presupuesto entre la respuesta transitoria, la espera y el reintento
+ok 72 - Car Cruds comparte el presupuesto entre la respuesta transitoria, la espera y el reintento
+  ---
+  duration_ms: 301.115791
+  type: 'test'
+  ...
+# Subtest: Car Cruds se configura sin leer secretos del disco y permanece deshabilitado sin URL ni token
+ok 73 - Car Cruds se configura sin leer secretos del disco y permanece deshabilitado sin URL ni token
+  ---
+  duration_ms: 0.933041
+  type: 'test'
+  ...
+# Subtest: Car Cruds rechaza configuración incompleta o insegura sin publicar valores sensibles
+ok 74 - Car Cruds rechaza configuración incompleta o insegura sin publicar valores sensibles
+  ---
+  duration_ms: 1.0115
+  type: 'test'
+  ...
+# Subtest: Car Cruds POST entrega una fotografía completa sin alterar identidad, versión, corte ni desconocidos
+ok 75 - Car Cruds POST entrega una fotografía completa sin alterar identidad, versión, corte ni desconocidos
+  ---
+  duration_ms: 50.287291
+  type: 'test'
+  ...
+# Subtest: Car Cruds POST acepta recibo applied:false y el reenvío explícito conserva exactamente el mismo cuerpo
+ok 76 - Car Cruds POST acepta recibo applied:false y el reenvío explícito conserva exactamente el mismo cuerpo
+  ---
+  duration_ms: 23.3045
+  type: 'test'
+  ...
+# Subtest: Car Cruds POST rechaza fotografías incompatibles antes de efectuar una escritura
+ok 77 - Car Cruds POST rechaza fotografías incompatibles antes de efectuar una escritura
+  ---
+  duration_ms: 3.29275
+  type: 'test'
+  ...
+# Subtest: Car Cruds POST separa rechazo definitivo, conflicto y resultado incierto sin reintento automático
+    # Subtest: HTTP 400
+    ok 1 - HTTP 400
+      ---
+      duration_ms: 9.1505
+      type: 'test'
+      ...
+    # Subtest: HTTP 401
+    ok 2 - HTTP 401
+      ---
+      duration_ms: 6.140167
+      type: 'test'
+      ...
+    # Subtest: HTTP 403
+    ok 3 - HTTP 403
+      ---
+      duration_ms: 4.089792
+      type: 'test'
+      ...
+    # Subtest: HTTP 404
+    ok 4 - HTTP 404
+      ---
+      duration_ms: 4.065542
+      type: 'test'
+      ...
+    # Subtest: HTTP 409
+    ok 5 - HTTP 409
+      ---
+      duration_ms: 2.814583
+      type: 'test'
+      ...
+    # Subtest: HTTP 415
+    ok 6 - HTTP 415
+      ---
+      duration_ms: 9.067542
+      type: 'test'
+      ...
+    # Subtest: HTTP 422
+    ok 7 - HTTP 422
+      ---
+      duration_ms: 5.323542
+      type: 'test'
+      ...
+    # Subtest: HTTP 408
+    ok 8 - HTTP 408
+      ---
+      duration_ms: 5.07375
+      type: 'test'
+      ...
+    # Subtest: HTTP 429
+    ok 9 - HTTP 429
+      ---
+      duration_ms: 1.411916
+      type: 'test'
+      ...
+    # Subtest: HTTP 500
+    ok 10 - HTTP 500
+      ---
+      duration_ms: 3.263791
+      type: 'test'
+      ...
+    # Subtest: HTTP 502
+    ok 11 - HTTP 502
+      ---
+      duration_ms: 2.625708
+      type: 'test'
+      ...
+    # Subtest: HTTP 503
+    ok 12 - HTTP 503
+      ---
+      duration_ms: 1.8505
+      type: 'test'
+      ...
+    # Subtest: HTTP 504
+    ok 13 - HTTP 504
+      ---
+      duration_ms: 1.040541
+      type: 'test'
+      ...
+    # Subtest: HTTP 201
+    ok 14 - HTTP 201
+      ---
+      duration_ms: 1.820583
+      type: 'test'
+      ...
+    # Subtest: HTTP 204
+    ok 15 - HTTP 204
+      ---
+      duration_ms: 3.676542
+      type: 'test'
+      ...
+    1..15
+ok 78 - Car Cruds POST separa rechazo definitivo, conflicto y resultado incierto sin reintento automático
+  ---
+  duration_ms: 63.863208
+  type: 'test'
+  ...
+# Subtest: Car Cruds POST considera incierto un 200 sin recibo válido y no infiere que la escritura falló
+ok 79 - Car Cruds POST considera incierto un 200 sin recibo válido y no infiere que la escritura falló
+  ---
+  duration_ms: 32.479167
+  type: 'test'
+  ...
+# Subtest: Car Cruds POST no sigue redirecciones 307 ni filtra el token a otro destino
+ok 80 - Car Cruds POST no sigue redirecciones 307 ni filtra el token a otro destino
+  ---
+  duration_ms: 1.970958
+  type: 'test'
+  ...
+# Subtest: Car Cruds POST trata la desconexión después de recibir el cuerpo como resultado incierto sin repetir
+ok 81 - Car Cruds POST trata la desconexión después de recibir el cuerpo como resultado incierto sin repetir
+  ---
+  duration_ms: 1.500917
+  type: 'test'
+  ...
+# Subtest: Car Cruds POST aplica un único timeout hasta completar el cuerpo del recibo
+ok 82 - Car Cruds POST aplica un único timeout hasta completar el cuerpo del recibo
+  ---
+  duration_ms: 256.900208
+  type: 'test'
+  ...
+# Subtest: Car Cruds POST propaga la traza del envío en un span hijo
+ok 83 - Car Cruds POST propaga la traza del envío en un span hijo
+  ---
+  duration_ms: 2.091917
+  type: 'test'
+  ...
+# Subtest: Fotografías: JWT y rol ADMIN vigente antes de consultar, preparar o enviar
+ok 84 - Fotografías: JWT y rol ADMIN vigente antes de consultar, preparar o enviar
+  ---
+  duration_ms: 245.647375
+  type: 'test'
+  ...
+# Subtest: Vista previa queda guardada con fuente y corte del servidor; solo member demostrable es true
+ok 85 - Vista previa queda guardada con fuente y corte del servidor; solo member demostrable es true
+  ---
+  duration_ms: 137.733833
+  type: 'test'
+  ...
+# Subtest: La afiliación observada se conserva; pasado sin prueba, suspensión y falta de plan permanecen desconocidos
+ok 86 - La afiliación observada se conserva; pasado sin prueba, suspensión y falta de plan permanecen desconocidos
+  ---
+  duration_ms: 162.832125
+  type: 'test'
+  ...
+# Subtest: El mes se interpreta en Argentina y no se admiten meses futuros ni hechos editados por cliente
+ok 87 - El mes se interpreta en Argentina y no se admiten meses futuros ni hechos editados por cliente
+  ---
+  duration_ms: 181.798667
+  type: 'test'
+  ...
+# Subtest: Sin configuración se preparan y leen fotos locales pero no se consume un intento de envío
+ok 88 - Sin configuración se preparan y leen fotos locales pero no se consume un intento de envío
+  ---
+  duration_ms: 92.589375
+  type: 'test'
+  ...
+# Subtest: Enviar utiliza solo el cuerpo guardado y la traza; recibir no altera personas ni membresías
+ok 89 - Enviar utiliza solo el cuerpo guardado y la traza; recibir no altera personas ni membresías
+  ---
+  duration_ms: 241.24175
+  type: 'test'
+  ...
+# Subtest: Dos confirmaciones simultáneas solo reclaman un envío; resultado incierto conserva cada dato
+ok 90 - Dos confirmaciones simultáneas solo reclaman un envío; resultado incierto conserva cada dato
+  ---
+  duration_ms: 235.167708
+  type: 'test'
+  ...
+# Subtest: Un conflicto exige revisión y nunca incrementa la versión para eludirlo
+ok 91 - Un conflicto exige revisión y nunca incrementa la versión para eludirlo
+  ---
+  duration_ms: 176.849583
+  type: 'test'
+  ...
+# Subtest: Corregir vínculo conserva receipt e historia y exige revisión para la foto siguiente
+ok 92 - Corregir vínculo conserva receipt e historia y exige revisión para la foto siguiente
+  ---
+  duration_ms: 199.864459
+  type: 'test'
+  ...
+# Subtest: Desvincular impide enviar una pendiente; una corrección revisada puede sustituirla sin borrar historia
+ok 93 - Desvincular impide enviar una pendiente; una corrección revisada puede sustituirla sin borrar historia
+  ---
+  duration_ms: 127.665667
+  type: 'test'
+  ...
+# Subtest: Reinicio tras claim y fallo al guardar receipt se recuperan al vencer el lease con el mismo cuerpo
+ok 94 - Reinicio tras claim y fallo al guardar receipt se recuperan al vencer el lease con el mismo cuerpo
+  ---
+  duration_ms: 365.647666
+  type: 'test'
+  ...
+# Subtest: Integración HTTP controlada: pérdida de respuesta después de recibir y reenvío idéntico sin duplicar
+ok 95 - Integración HTTP controlada: pérdida de respuesta después de recibir y reenvío idéntico sin duplicar
+  ---
+  duration_ms: 306.747917
+  type: 'test'
+  ...
+# Subtest: Las consultas Car Cruds requieren un JWT de administrador antes de invocar al proveedor
+ok 96 - Las consultas Car Cruds requieren un JWT de administrador antes de invocar al proveedor
+  ---
+  duration_ms: 333.431
+  type: 'test'
+  ...
+# Subtest: La autorización consulta el rol y estado actuales de la cuenta aunque su JWT diga ADMIN
+ok 97 - La autorización consulta el rol y estado actuales de la cuenta aunque su JWT diga ADMIN
+  ---
+  duration_ms: 289.945333
+  type: 'test'
+  ...
+# Subtest: Sin configurar el proveedor, el administrador recibe un pendiente explícito y el resto conserva sus permisos
+ok 98 - Sin configurar el proveedor, el administrador recibe un pendiente explícito y el resto conserva sus permisos
+  ---
+  duration_ms: 176.306625
+  type: 'test'
+  ...
+# Subtest: Paginación y consultas inválidas se rechazan antes de consultar Car Cruds
+ok 99 - Paginación y consultas inválidas se rechazan antes de consultar Car Cruds
+  ---
+  duration_ms: 131.795625
+  type: 'test'
+  ...
+# Subtest: Una consulta HTTP real propaga la traza con credencial propia, devuelve estado inactivo y no cambia socios ni membresías
+ok 100 - Una consulta HTTP real propaga la traza con credencial propia, devuelve estado inactivo y no cambia socios ni membresías
+  ---
+  duration_ms: 508.771417
+  type: 'test'
+  ...
+# Subtest: Los errores del proveedor mantienen su significado sin convertir desconocidos en bajas
+ok 101 - Los errores del proveedor mantienen su significado sin convertir desconocidos en bajas
+  ---
+  duration_ms: 257.786209
+  type: 'test'
+  ...
+# Subtest: Todas las operaciones locales de vínculos requieren administrador antes de consultar o escribir
+ok 102 - Todas las operaciones locales de vínculos requieren administrador antes de consultar o escribir
+  ---
+  duration_ms: 473.435416
+  type: 'test'
+  ...
+# Subtest: Un JWT administrativo pierde acceso si cambió el rol o se desactivó la cuenta
+ok 103 - Un JWT administrativo pierde acceso si cambió el rol o se desactivó la cuenta
+  ---
+  duration_ms: 219.726042
+  type: 'test'
+  ...
+# Subtest: Buscar socios exige DNI o email exactos, devuelve datos públicos y no crea cuentas
+ok 104 - Buscar socios exige DNI o email exactos, devuelve datos públicos y no crea cuentas
+  ---
+  duration_ms: 145.818125
+  type: 'test'
+  ...
+# Subtest: La búsqueda no elige tácitamente una persona si un dato coincide con dos cuentas
+ok 105 - La búsqueda no elige tácitamente una persona si un dato coincide con dos cuentas
+  ---
+  duration_ms: 175.970125
+  type: 'test'
+  ...
+# Subtest: Vincular, corregir y quitar conserva auditoría del administrador sin cambiar personas ni membresías
+ok 106 - Vincular, corregir y quitar conserva auditoría del administrador sin cambiar personas ni membresías
+  ---
+  duration_ms: 343.830583
+  type: 'test'
+  ...
+# Subtest: Un reintento de la misma asociación no consume versiones ni duplica el historial
+ok 107 - Un reintento de la misma asociación no consume versiones ni duplica el historial
+  ---
+  duration_ms: 111.413125
+  type: 'test'
+  ...
+# Subtest: La unicidad uno a uno y la revisión rechazan sobrescrituras y conservan el vínculo anterior
+ok 108 - La unicidad uno a uno y la revisión rechazan sobrescrituras y conservan el vínculo anterior
+  ---
+  duration_ms: 275.092125
+  type: 'test'
+  ...
+# Subtest: Una cuenta inexistente no se crea tácitamente y un empleado inactivo puede vincularse
+ok 109 - Una cuenta inexistente no se crea tácitamente y un empleado inactivo puede vincularse
+  ---
+  duration_ms: 97.476917
+  type: 'test'
+  ...
+# Subtest: Dar de alta un socio sigue siendo una operación explícita y no activa membresía al vincularlo
+ok 110 - Dar de alta un socio sigue siendo una operación explícita y no activa membresía al vincularlo
+  ---
+  duration_ms: 186.707083
+  type: 'test'
+  ...
+# Subtest: Una falla o un 404 externo bloquea la asociación sin cambios locales ni baja inferida
+ok 111 - Una falla o un 404 externo bloquea la asociación sin cambios locales ni baja inferida
+  ---
+  duration_ms: 93.124875
+  type: 'test'
+  ...
+# Subtest: Los vínculos y su historial pueden consultarse y quitarse sin configurar el proveedor
+ok 112 - Los vínculos y su historial pueden consultarse y quitarse sin configurar el proveedor
+  ---
+  duration_ms: 424.503083
+  type: 'test'
+  ...
+# Subtest: El listado local pagina en orden estable y excluye los vínculos quitados
+ok 113 - El listado local pagina en orden estable y excluye los vínculos quitados
+  ---
+  duration_ms: 81.686875
+  type: 'test'
+  ...
+# Subtest: Entradas inválidas y actor o fecha inyectados se rechazan antes de consultar al proveedor
+ok 114 - Entradas inválidas y actor o fecha inyectados se rechazan antes de consultar al proveedor
+  ---
+  duration_ms: 156.60325
+  type: 'test'
+  ...
+# Subtest: El repositorio en memoria mantiene exclusión uno a uno y versiones ante solicitudes simultáneas
+ok 115 - El repositorio en memoria mantiene exclusión uno a uno y versiones ante solicitudes simultáneas
+  ---
+  duration_ms: 0.458083
+  type: 'test'
+  ...
+# Subtest: El vínculo Car Cruds es independiente del registro histórico de la capacidad anterior
+ok 116 - El vínculo Car Cruds es independiente del registro histórico de la capacidad anterior
+  ---
+  duration_ms: 0.260125
+  type: 'test'
+  ...
+# Subtest: el contrato y el mock reciben un empleado y crean solo un alta pendiente
+ok 117 - el contrato y el mock reciben un empleado y crean solo un alta pendiente
+  ---
+  duration_ms: 51.870333
+  type: 'test'
+  ...
+# Subtest: el replay conserva el 201 y los IDs originales después de normalizar, antes de rechazar duplicados
+ok 118 - el replay conserva el 201 y los IDs originales después de normalizar, antes de rechazar duplicados
+  ---
+  duration_ms: 12.44125
+  type: 'test'
+  ...
+# Subtest: la misma clave con otro contenido da conflicto sin modificar el alta anterior
+ok 119 - la misma clave con otro contenido da conflicto sin modificar el alta anterior
+  ---
+  duration_ms: 12.0625
+  type: 'test'
+  ...
+# Subtest: DNI y email preexistentes son conflictos globales sin sobrescribir socios
+ok 120 - DNI y email preexistentes son conflictos globales sin sobrescribir socios
+  ---
+  duration_ms: 14.350834
+  type: 'test'
+  ...
+# Subtest: la identidad externa y la clave se distinguen por origen; un empleado no cambia de DNI
+ok 121 - la identidad externa y la clave se distinguen por origen; un empleado no cambia de DNI
+  ---
+  duration_ms: 6.209958
+  type: 'test'
+  ...
+# Subtest: campos requeridos, tipos, longitudes y email se validan desde OpenAPI
+ok 122 - campos requeridos, tipos, longitudes y email se validan desde OpenAPI
+  ---
+  duration_ms: 31.439375
+  type: 'test'
+  ...
+# Subtest: el consumidor no puede inyectar origen, rol, plan, contraseña ni habilitación
+ok 123 - el consumidor no puede inyectar origen, rol, plan, contraseña ni habilitación
+  ---
+  duration_ms: 36.661667
+  type: 'test'
+  ...
+# Subtest: autentica antes de validar o repetir el alta y exige una clave de idempotencia válida
+ok 124 - autentica antes de validar o repetir el alta y exige una clave de idempotencia válida
+  ---
+  duration_ms: 23.277875
+  type: 'test'
+  ...
+# Subtest: JSON malformado y medios no admitidos mantienen errores de solicitud declarados
+ok 125 - JSON malformado y medios no admitidos mantienen errores de solicitud declarados
+  ---
+  duration_ms: 11.502292
+  type: 'test'
+  ...
+# Subtest: solicitudes concurrentes con la misma clave producen el mismo alta en este proceso
+ok 126 - solicitudes concurrentes con la misma clave producen el mismo alta en este proceso
+  ---
+  duration_ms: 22.361542
+  type: 'test'
+  ...
+# Subtest: un error inesperado devuelve el 500 genérico del contrato sin exponer su causa
+ok 127 - un error inesperado devuelve el 500 genérico del contrato sin exponer su causa
+  ---
+  duration_ms: 6.39425
+  type: 'test'
+  ...
+# Subtest: alta operativa cumple contrato, normaliza y crea SOCIO sin contraseña ni membresía
+ok 128 - alta operativa cumple contrato, normaliza y crea SOCIO sin contraseña ni membresía
+  ---
+  duration_ms: 293.407458
+  type: 'test'
+  ...
+# Subtest: replay devuelve los mismos IDs antes de conflictos y respeta normalización/orden JSON
+ok 129 - replay devuelve los mismos IDs antes de conflictos y respeta normalización/orden JSON
+  ---
+  duration_ms: 18.56575
+  type: 'test'
+  ...
+# Subtest: conflictos de identidad no sobrescriben ni actualizan socios existentes
+ok 130 - conflictos de identidad no sobrescriben ni actualizan socios existentes
+  ---
+  duration_ms: 45.866125
+  type: 'test'
+  ...
+# Subtest: origen proviene de la credencial; claves y empleado externo se separan por origen
+ok 131 - origen proviene de la credencial; claves y empleado externo se separan por origen
+  ---
+  duration_ms: 46.119708
+  type: 'test'
+  ...
+# Subtest: valida JSON, contenido, campos y clave según contrato antes de escribir
+ok 132 - valida JSON, contenido, campos y clave según contrato antes de escribir
+  ---
+  duration_ms: 181.39925
+  type: 'test'
+  ...
+# Subtest: reintentos simultáneos no duplican el alta y claves incompatibles no cambian su resultado
+ok 133 - reintentos simultáneos no duplican el alta y claves incompatibles no cambian su resultado
+  ---
+  duration_ms: 112.301333
+  type: 'test'
+  ...
+# Subtest: fallas de almacenamiento devuelven el error contractual sin filtrar datos; logs conservan traza
+ok 134 - fallas de almacenamiento devuelven el error contractual sin filtrar datos; logs conservan traza
+  ---
+  duration_ms: 107.538708
+  type: 'test'
+  ...
+# Subtest: salud identifica estructura sin afirmar disponibilidad del proveedor
+ok 135 - salud identifica estructura sin afirmar disponibilidad del proveedor
+  ---
+  duration_ms: 68.3985
+  type: 'test'
+  ...
+# Subtest: exige JWT válido y vigente; ni clave externa ni técnica autorizan Tienda
+ok 136 - exige JWT válido y vigente; ni clave externa ni técnica autorizan Tienda
+  ---
+  duration_ms: 14.617792
+  type: 'test'
+  ...
+# Subtest: Socios emite una sesión que Tienda acepta sin consultas externas ni catálogo ficticio
+ok 137 - Socios emite una sesión que Tienda acepta sin consultas externas ni catálogo ficticio
+  ---
+  duration_ms: 198.236583
+  type: 'test'
+  ...
+# Subtest: la configuración de autenticación inválida impide iniciar la estructura
+ok 138 - la configuración de autenticación inválida impide iniciar la estructura
+  ---
+  duration_ms: 1.265042
+  type: 'test'
+  ...
+# Subtest: Solo administración crea cuentas, sin iniciar sesión por el socio ni habilitar membresías
+ok 139 - Solo administración crea cuentas, sin iniciar sesión por el socio ni habilitar membresías
+  ---
+  duration_ms: 771.493
+  type: 'test'
+  ...
+# Subtest: Se rechaza el autorregistro y un socio no obtiene permisos administrativos
+ok 140 - Se rechaza el autorregistro y un socio no obtiene permisos administrativos
+  ---
+  duration_ms: 89.342208
+  type: 'test'
+  ...
+# Subtest: Los campos de privilegios y de pago no se aceptan en el alta administrativa
+ok 141 - Los campos de privilegios y de pago no se aceptan en el alta administrativa
+  ---
+  duration_ms: 84.297375
+  type: 'test'
+  ...
+# Subtest: Login verifica contraseña, estado de cuenta y token firmado de una hora
+ok 142 - Login verifica contraseña, estado de cuenta y token firmado de una hora
+  ---
+  duration_ms: 163.486792
+  type: 'test'
+  ...
+# Subtest: Se rechazan tokens alterados, de otro emisor/audiencia/algoritmo y Base64 sin firma
+ok 143 - Se rechazan tokens alterados, de otro emisor/audiencia/algoritmo y Base64 sin firma
+  ---
+  duration_ms: 75.825542
+  type: 'test'
+  ...
+# Subtest: La expiración se verifica también después de haber utilizado el token
+ok 144 - La expiración se verifica también después de haber utilizado el token
+  ---
+  duration_ms: 62.293417
+  type: 'test'
+  ...
+# Subtest: Propiedad de datos: socio propio, administrador y credencial técnica limitada
+ok 145 - Propiedad de datos: socio propio, administrador y credencial técnica limitada
+  ---
+  duration_ms: 85.112333
+  type: 'test'
+  ...
+# Subtest: DNI y email normalizados son únicos incluso ante altas concurrentes
+ok 146 - DNI y email normalizados son únicos incluso ante altas concurrentes
+  ---
+  duration_ms: 94.185042
+  type: 'test'
+  ...
+# Subtest: Activar o renovar membresías devuelve pendiente real de pagos y no escribe cambios
+ok 147 - Activar o renovar membresías devuelve pendiente real de pagos y no escribe cambios
+  ---
+  duration_ms: 76.887208
+  type: 'test'
+  ...
+# Subtest: La renovación futura no oculta la membresía vigente y las fechas inválidas no habilitan
+ok 148 - La renovación futura no oculta la membresía vigente y las fechas inválidas no habilitan
+  ---
+  duration_ms: 36.406917
+  type: 'test'
+  ...
+# Subtest: Una membresía solo futura o suspendida no habilita en la fecha actual
+ok 149 - Una membresía solo futura o suspendida no habilita en la fecha actual
+  ---
+  duration_ms: 6.371375
+  type: 'test'
+  ...
+# Subtest: Bootstrap local crea administrador explícito y nunca sobrescribe una cuenta existente
+ok 150 - Bootstrap local crea administrador explícito y nunca sobrescribe una cuenta existente
+  ---
+  duration_ms: 80.246125
+  type: 'test'
+  ...
+# Subtest: La aplicación falla antes de iniciar cuando falta la configuración de autenticación
+ok 151 - La aplicación falla antes de iniciar cuando falta la configuración de autenticación
+  ---
+  duration_ms: 0.197083
+  type: 'test'
+  ...
+# Subtest: D4 / D13 Concurrencia extrema: 50 solicitudes simultaneas compitiendo por 1 solo cupo libre
+ok 152 - D4 / D13 Concurrencia extrema: 50 solicitudes simultaneas compitiendo por 1 solo cupo libre
+  ---
+  duration_ms: 348.407166
+  type: 'test'
+  ...
+# Subtest: Flujo principal de punta a punta: consulta de clases, validacion de membresia y reserva exitosa
+ok 153 - Flujo principal de punta a punta: consulta de clases, validacion de membresia y reserva exitosa
+  ---
+  duration_ms: 541.711542
+  type: 'test'
+  ...
+# Subtest: Garantias de consistencia: duplicados rechazados y membresia inactiva rechazada
+ok 154 - Garantias de consistencia: duplicados rechazados y membresia inactiva rechazada
+  ---
+  duration_ms: 76.558792
+  type: 'test'
+  ...
+# Subtest: Flujo de clase llena: ingreso a lista de espera, cancelacion y promocion automatica
+ok 155 - Flujo de clase llena: ingreso a lista de espera, cancelacion y promocion automatica
+  ---
+  duration_ms: 46.759959
+  type: 'test'
+  ...
+1..155
+# tests 190
+# suites 0
+# pass 190
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 5606.501625

@@ -45,7 +45,7 @@ export async function entornoMongo() {
       child = spawn(process.env.MONGOD_BIN ?? 'mongod', ['--dbpath', dbpath, '--port', String(port), '--bind_ip', '127.0.0.1', '--replSet', 'rs0', '--logpath', join(dir, 'mongo.log')], { stdio: 'ignore' });
       child.on('error', () => {});
     } else if (mode === 'docker') docker(['run', '--detach', '--name', id, '--label', 'pulse.cache.test=' + id,
-      '--tmpfs', '/data/db', '--publish', `127.0.0.1:${port}:27017`, 'mongo:8.0', '--replSet', 'rs0', '--bind_ip_all']);
+      '--tmpfs', '/data/db', '--env', 'GLIBC_TUNABLES=glibc.pthread.rseq=1', '--publish', `127.0.0.1:${port}:27017`, 'mongo:8.0', '--replSet', 'rs0', '--bind_ip_all']);
     else throw new Error('CACHE_TEST_MODE debe ser native o docker.');
     let connected = false;
     for (let n = 0; n < 80; n++) { try { await client.connect(); connected = true; break; } catch { await pause(100); } }

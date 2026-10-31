@@ -334,3 +334,63 @@ export async function apiCarCrudsEnviarFotografia(fotografiaId: string, options:
   if (value.fotografiaId !== fotografiaId) return invalidCarCruds();
   return value;
 }
+
+export interface PlanMembresia { planId: string; nombre: string; importeMinor: number; moneda: string; estado: 'ACTIVO' | 'INACTIVO' }
+export interface SolicitudMembresia {
+  solicitudId: string; socioId: string; planId: string; nombrePlan: string; importeMinor: number; moneda: string;
+  fechaInicio: string; fechaFin: string; estado: 'PENDIENTE' | 'CONFIRMADA' | 'RECHAZADA';
+  pago?: { pagoId: string; referencia: string; estado: 'PENDIENTE' | 'CONFIRMADO' | 'RECHAZADO' } | null;
+  comprobante?: { comprobanteId: string; pagoId: string; membresiaId: string; confirmadoEn: string } | null;
+}
+const invalidMembresias = (): never => { throw new ApiError('Respuesta de membresía no válida. Conservá la misma operación para reintentar.', 502, 'RESPUESTA_INVALIDA'); };
+async function requestGestion<T>(path: string, options: RequestInit = {}): Promise<T> {
+  try { return await request<T>(path,options); }
+  catch(e) { if(e instanceof ApiError && e.status>=200 && e.status<300) return invalidMembresias(); throw e; }
+}
+
+function planMembresia(value: unknown): PlanMembresia {
+  if (!isRecord(value) || !isText(value.planId) || !isText(value.nombre) || !isNatural(value.importeMinor)
+    || typeof value.moneda !== 'string' || !/^[A-Z]{3}$/.test(value.moneda) || !['ACTIVO','INACTIVO'].includes(String(value.estado))) return invalidMembresias();
+  return value as unknown as PlanMembresia;
+}
+function solicitudMembresia(value: unknown): SolicitudMembresia {
+  if (!isRecord(value) || !isText(value.solicitudId) || !isText(value.socioId) || !isText(value.planId) || !isText(value.nombrePlan)
+    || !isNatural(value.importeMinor) || typeof value.moneda !== 'string' || !/^[A-Z]{3}$/.test(value.moneda)
+    || !isDate(value.fechaInicio) || !isDate(value.fechaFin) || !['PENDIENTE','CONFIRMADA','RECHAZADA'].includes(String(value.estado))) return invalidMembresias();
+  if (value.pago != null && (!isRecord(value.pago) || !isText(value.pago.pagoId) || !isText(value.pago.referencia) || !['PENDIENTE','CONFIRMADO','RECHAZADO'].includes(String(value.pago.estado)))) return invalidMembresias();
+  if (value.estado === 'CONFIRMADA') {
+    if (!isRecord(value.pago) || value.pago.estado !== 'CONFIRMADO' || !isRecord(value.comprobante)
+      || !isText(value.comprobante.comprobanteId) || !isText(value.comprobante.membresiaId) || value.comprobante.pagoId !== value.pago.pagoId || !isDate(value.comprobante.confirmadoEn)) return invalidMembresias();
+  } else if (value.comprobante != null) return invalidMembresias();
+  return value as unknown as SolicitudMembresia;
+}
+export async function apiPlanesMembresia() {
+  const v=await requestGestion<unknown>('/api/v1/planes'); if(!isRecord(v)||!Array.isArray(v.items))return invalidMembresias(); return {items:v.items.map(planMembresia)};
+}
+export type SocioAdministrativo = Pick<AuthUser, 'socioId' | 'dni' | 'nombre' | 'email' | 'estado'>;
+export async function apiSociosAdministracion(pagina: number) {
+  const v=await requestGestion<unknown>('/api/v1/socios?'+new URLSearchParams({pagina:String(pagina),tamanio:'20'}));
+  if(!isRecord(v)||!Array.isArray(v.items))return invalidMembresias();
+  const items=v.items.map(item=>{if(!isRecord(item)||!isText(item.socioId)||!isText(item.nombre)||!isText(item.dni)||!isText(item.email)||!['ACTIVO','INACTIVO'].includes(String(item.estado)))return invalidMembresias();
+    return {socioId:item.socioId,nombre:item.nombre,dni:item.dni,email:item.email,estado:item.estado} as SocioAdministrativo;});return {items};
+}
+export async function apiSolicitudesMembresia(pagina: number, socioId?: string) {
+  const v=await requestGestion<unknown>((socioId?'/api/v1/socios/'+encodeURIComponent(socioId)+'/solicitudes':'/api/v1/solicitudes')+'?'+new URLSearchParams({pagina:String(pagina),tamanio:'20'}));
+  if(!isRecord(v)||!Array.isArray(v.items))return invalidMembresias();
+  const items=v.items.map(solicitudMembresia); if(socioId&&items.some(s=>s.socioId!==socioId))return invalidMembresias();return {items};
+}
+export async function apiOperacionMembresia(path: string, method: 'POST' | 'PUT', body: object, clave: string) {
+  const value=await requestGestion<unknown>(path,{method,headers:{'Idempotency-Key':clave},body:JSON.stringify(body)});
+  const b=body as Record<string,unknown>;
+  if(path.startsWith('/api/v1/planes')) {
+    const p=planMembresia(value);
+    if(path==='/api/v1/planes'?(p.nombre!==String(b.nombre).trim()||p.importeMinor!==b.importeMinor||p.moneda!==b.moneda):(path!=='/api/v1/planes/'+p.planId+'/estado'||p.estado!==b.estado))return invalidMembresias();
+    return p;
+  }
+  const s=solicitudMembresia(value);
+  if(path.endsWith('/confirmar')) { if(path!=='/api/v1/pagos/'+s.pago?.pagoId+'/confirmar'||s.estado!=='CONFIRMADA')return invalidMembresias(); }
+  else if(path.endsWith('/rechazar')) { if(path!=='/api/v1/solicitudes/'+s.solicitudId+'/rechazar'||s.estado!=='RECHAZADA')return invalidMembresias(); }
+  else if(path.endsWith('/pagos')) { if(path!=='/api/v1/solicitudes/'+s.solicitudId+'/pagos'||s.pago?.referencia!==b.referencia||s.importeMinor!==b.importeMinor||s.moneda!==b.moneda)return invalidMembresias(); }
+  else if(path!=='/api/v1/socios/'+encodeURIComponent(s.socioId)+'/solicitudes'||s.planId!==b.planId||Date.parse(s.fechaInicio)!==Date.parse(String(b.fechaInicio))||Date.parse(s.fechaFin)!==Date.parse(String(b.fechaFin)))return invalidMembresias();
+  return s;
+}

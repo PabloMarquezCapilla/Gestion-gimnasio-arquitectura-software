@@ -307,3 +307,7 @@ La suite incluye 7 casos adicionales del endpoint operativo con el adaptador en 
 - Cambios incompatibles requieren una nueva versión mayor y coordinación con el consumidor. Cambios compatibles incrementan la menor; correcciones documentales compatibles, el parche.
 - Car Cruds ya está identificado y el intercambio vigente es el descrito arriba. Este POST se conserva como implementación anterior; su mock y sus pruebas no acreditan la nueva integración.
 - Tienda mantiene su integración separada con FAV, descrita arriba y en [D9](../adr/ADR-009-consumo-del-proveedor.md).
+
+## Planes y pagos manuales (contrato propio adicional)
+
+[openapi-membresias-v1.yaml](openapi-membresias-v1.yaml) define gestión ADMIN de planes/solicitudes/pagos y consultas del socio propietario. PostgreSQL, JWT e Idempotency-Key obligatorios para comandos. No es una pasarela ni modifica las APIs de Car Cruds/empleados. [Garantías](../adr/ADR-021-planes-pagos-membresias.md).
