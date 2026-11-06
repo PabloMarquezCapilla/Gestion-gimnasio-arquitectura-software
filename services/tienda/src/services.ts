@@ -5,8 +5,8 @@ export class IntegracionPendienteError extends Error {
   }
 }
 
-// Sin contrato real no se define un modelo de producto ni un cliente externo.
-// No hay catálogo de respaldo, persistencia, caché ni stock propio.
+// La consulta al catálogo de FAV sigue pendiente del acuerdo externo.
+// El stock físico propio se administra por separado en stock.ts.
 export class TiendaService {
   consultarProductos(): never {
     throw new IntegracionPendienteError();

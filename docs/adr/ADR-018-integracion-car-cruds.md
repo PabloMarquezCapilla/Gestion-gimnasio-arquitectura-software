@@ -100,7 +100,7 @@ La verificación reproducible es `npm run test:car-cruds`: HTTP efímero control
 
 La pantalla y las rutas ADMIN permiten búsqueda de socios, consulta de vínculos/historial y confirmación/corrección/desvinculación. La consulta y el PUT de vínculo exigen los permisos actuales de la cuenta; los clientes no pueden elegir el actor. Las rutas y los cuerpos están en [la guía](../contracts/README.md#vinculación-y-membresía).
 
-La pantalla y las rutas ADMIN también permiten preparar, consultar y enviar fotografías mensuales; las rutas, estados y cuerpos están en [la guía](../contracts/README.md#preparar-y-enviar-desde-el-panel). No se agregan motores de almacenamiento ni un microservicio nuevo. Pagos e ingresos siguen pendientes y no se simulan como hechos conocidos.
+La pantalla y las rutas ADMIN también permiten preparar, consultar y enviar fotografías mensuales; las rutas, estados y cuerpos están en [la guía](../contracts/README.md#preparar-y-enviar-desde-el-panel). No se agregan motores de almacenamiento ni un microservicio nuevo. Pagos e ingresos ya tienen módulos operativos; conectar sus hechos a la fotografía mensual sigue pendiente y no se simula como información conocida.
 
 La prueba conjunta deberá cubrir consulta, vínculo, recepción de evidencia, repetición idéntica, corrección y fallas/recuperación. Car Cruds verificará su reporte con una credencial autorizada; el token `gym` no permite consultar ese reporte administrativo. También siguen pendientes URL accesible y credencial compartida.
 

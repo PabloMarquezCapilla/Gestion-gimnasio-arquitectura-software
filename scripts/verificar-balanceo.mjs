@@ -17,7 +17,7 @@ const project = 'codex-balanceo-' + randomBytes(6).toString('hex');
 const tempRoot = resolve(tmpdir());
 const workspace = resolve(tempRoot, project);
 const services = ['socios-membresias', 'clases-reservas', 'accesos-ocupacion', 'tienda', 'gateway'];
-const keyNames = ['POSTGRES_ADMIN_PASSWORD', 'SOCIOS_DB_PASSWORD', 'CLASES_DB_PASSWORD',
+const keyNames = ['POSTGRES_ADMIN_PASSWORD', 'SOCIOS_DB_PASSWORD', 'CLASES_DB_PASSWORD', 'TIENDA_DB_PASSWORD', 'FAV_API_KEY',
   'MONGO_ROOT_PASSWORD', 'ACCESOS_DB_PASSWORD', 'MONGO_KEYFILE', 'RABBITMQ_PASSWORD',
   'CAPACIDAD_API_KEY', 'AUTH_JWT_SECRET', 'SERVICIOS_API_KEY', 'EMPLEADOS_API_KEY'];
 const keys = Object.fromEntries(keyNames.map(key => [key, randomBytes(32).toString('hex')]));
@@ -54,10 +54,11 @@ async function replicas() {
   }
   return result;
 }
-async function request(path, { token, body } = {}) {
+async function request(path, { token, body, apiKey = keys.CAPACIDAD_API_KEY, idempotencyKey } = {}) {
   try {
     const response = await fetch(base + path, { method: body ? 'POST' : 'GET', headers: {
-      Connection: 'close', 'X-API-Key': keys.CAPACIDAD_API_KEY,
+      Connection: 'close', 'X-API-Key': apiKey,
+      ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
       ...(token ? { Authorization: 'Bearer ' + token } : {}),
       ...(body ? { 'Content-Type': 'application/json' } : {}),
     }, ...(body ? { body: JSON.stringify(body) } : {}), signal: AbortSignal.timeout(18000) });
@@ -145,6 +146,31 @@ try {
   const occupied = await request('/api/v1/clases/balanceo-cupo');
   assert.equal(occupied.data.cuposDisponibles, 0);
 
+  // El mismo gateway debe enrutar la capacidad nueva sin mezclar credenciales.
+  assert.equal((await request('/api/v1/consignaciones/stock?proveedorId=fav')).status, 401);
+  const fav = { apiKey: keys.FAV_API_KEY };
+  const initialStock = await request('/api/v1/consignaciones/stock?proveedorId=fav', fav);
+  assert.equal(initialStock.status, 200); assert.deepEqual(initialStock.data.items, []);
+  const delivery = { proveedorId: 'fav', productoCodigo: 'var-balanceo-ficticia', unidades: 21, referencia: 'entrega-balanceo-ficticia' };
+  const receive = key => request('/api/v1/consignaciones/reposiciones', { ...fav, body: delivery, idempotencyKey: key });
+  const firstDelivery = await receive('reposicion-balanceo-1');
+  assert.equal(firstDelivery.status, 201);
+  assert.deepEqual((await receive('reposicion-balanceo-1')).data, firstDelivery.data);
+  assert.deepEqual((await receive('reposicion-balanceo-2')).data, firstDelivery.data);
+  assert.equal((await request('/api/v1/consignaciones/reposiciones', { ...fav,
+    body: { ...delivery, unidades: 22 }, idempotencyKey: 'reposicion-balanceo-1' })).status, 409);
+  assert.equal((await request('/api/v1/tienda/stock', { token: tokens[0] })).status, 403);
+  await compose('exec', '-T', 'postgres', 'psql', '-U', 'postgres', '-d', 'socios', '-v', 'ON_ERROR_STOP=1', '-c',
+    "UPDATE socios SET rol='ADMIN' WHERE dni='11111111'");
+  const adminLogin = await request('/api/v1/auth/login', { body: { emailOrDni: '11111111', password: 'socio123' } });
+  assert.equal(adminLogin.status, 200); assert.equal(adminLogin.data.socio.rol, 'ADMIN');
+  const sale = { token: adminLogin.data.token, body: { productoCodigo: delivery.productoCodigo, unidades: 2 }, idempotencyKey: 'venta-balanceo-ficticia' };
+  const sold = await request('/api/v1/tienda/ventas', sale);
+  assert.equal(sold.status, 201); assert.deepEqual((await request('/api/v1/tienda/ventas', sale)).data, sold.data);
+  const currentStock = await request('/api/v1/consignaciones/stock?proveedorId=fav', fav);
+  assert.deepEqual(currentStock.data.items, [{ productoCodigo: delivery.productoCodigo, unidadesDisponibles: 19, unidadesVendidas: 2 }]);
+  console.log('Tienda por NGINX: autenticación separada, reposición/replay y venta/replay con stock 19/2 verificados.');
+
   console.log('[3/5] Deteniendo solo una réplica temporal y manteniendo consultas...');
   const stopping = run('docker', ['stop', '--time', '5', initial[0].id]);
   const during = await sample(24);
@@ -198,6 +224,7 @@ try {
     tiempoDeteccionYMuestreoMs: detectionMs, unaReplica: summary(degraded),
     transicionRecuperacion: summary(recoveryTransition), recuperacion: summary(recovered),
     escrituras: { intentos: 12, confirmadas: 1, conflictos: 11 },
+    tienda: { reposiciones: 1, ventas: 1, disponibles: 19, vendidas: 2, repeticionesSinDuplicacion: true },
     gatewayReiniciado: false, registrosProxy: proxied.length,
     reintentosObservados: proxied.filter(entry => entry.upstream_status?.includes(',')).length };
   console.log(JSON.stringify(report, null, 2));

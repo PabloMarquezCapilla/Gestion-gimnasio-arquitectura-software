@@ -22,6 +22,7 @@
     "test:accesos": "npm run build && node --test scripts/verificar-accesos.mjs",
     "test:membresias": "npm run build && node --test scripts/verificar-membresias.mjs",
     "test:cache": "npm run build && node --test scripts/verificar-cache-ocupacion.mjs",
+    "test:tienda": "npm run build && node --test scripts/verificar-tienda.mjs",
     "frontend:dev": "npm --prefix frontend run dev",
     "frontend:build": "npm --prefix frontend run build",
     "iniciar": "node scripts/iniciar.mjs"

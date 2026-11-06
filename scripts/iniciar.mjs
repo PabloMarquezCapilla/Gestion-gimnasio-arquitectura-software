@@ -8,10 +8,10 @@ const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const envPath = resolve(root, '.env');
 const projectName = process.env.COMPOSE_PROJECT_NAME?.trim() || 'gimnasio-e2';
 const keys = [
-  'POSTGRES_ADMIN_PASSWORD', 'SOCIOS_DB_PASSWORD', 'CLASES_DB_PASSWORD',
+  'POSTGRES_ADMIN_PASSWORD', 'SOCIOS_DB_PASSWORD', 'CLASES_DB_PASSWORD', 'TIENDA_DB_PASSWORD',
   'MONGO_ROOT_PASSWORD', 'ACCESOS_DB_PASSWORD', 'MONGO_KEYFILE',
   'RABBITMQ_PASSWORD', 'CAPACIDAD_API_KEY',
-  'AUTH_JWT_SECRET', 'SERVICIOS_API_KEY', 'EMPLEADOS_API_KEY',
+  'AUTH_JWT_SECRET', 'SERVICIOS_API_KEY', 'EMPLEADOS_API_KEY', 'FAV_API_KEY',
 ];
 
 function run(args, capture = false) {
@@ -69,7 +69,7 @@ process.loadEnvFile(envPath);
 // Las claves de bases y broker, los datos y las credenciales no vacías se conservan.
 let envContent = readFileSync(envPath, 'utf8');
 let addedSessionKeys = false;
-for (const key of ['AUTH_JWT_SECRET', 'SERVICIOS_API_KEY', 'EMPLEADOS_API_KEY']) {
+for (const key of ['AUTH_JWT_SECRET', 'SERVICIOS_API_KEY', 'EMPLEADOS_API_KEY', 'TIENDA_DB_PASSWORD', 'FAV_API_KEY']) {
   if ((process.env[key] ?? '').trim()) continue;
   const value = randomBytes(32).toString('hex');
   const declaration = new RegExp(`^(?:export\\s+)?${key}\\s*=[^\\r\\n]*`, 'm');
@@ -124,4 +124,6 @@ console.log('La clave X-API-Key está en CAPACIDAD_API_KEY dentro de .env.');
 console.log('Administrador inicial: ejecutar npm run crear-admin y completar los datos del grupo.');
 console.log(`Capacidad de empleados operativa: POST http://localhost:${port}/api/v1/integraciones/empleados`);
 console.log('Usar X-API-Key de EMPLEADOS_API_KEY e Idempotency-Key. El origen local predeterminado es ficticio; el mock separado sigue disponible con npm run mock:empleados.');
-console.log('Tienda disponible en el portal del socio: estructura preparada; consulta externa pendiente del contrato de la distribuidora.');
+console.log('Tienda: stock y ventas desde administración. La consulta al catálogo externo sigue pendiente.');
+console.log('FAV puede consultar /api/v1/consignaciones/stock?proveedorId=fav y enviar POST /api/v1/consignaciones/reposiciones.');
+console.log('Usar X-API-Key de FAV_API_KEY e Idempotency-Key en reposiciones. La clave se comparte solo por canal privado.');

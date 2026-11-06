@@ -6,6 +6,7 @@ import { UserPanel } from './components/UserPanel';
 import { CarCrudsPanel } from './components/CarCrudsPanel';
 import { MembresiasPanel } from './components/MembresiasPanel';
 import { AccesosPanel } from './components/AccesosPanel';
+import { TiendaStockPanel } from './components/TiendaStockPanel';
 
 // --- Interfaces ---
 export interface Member {
@@ -211,6 +212,7 @@ export default function App() {
               { path: 'accesos', label: 'Recepción y Ocupación', icon: 'meeting_room' },
               { path: 'cobros-y-caja', label: 'Cobros & Caja', icon: 'point_of_sale' },
               { path: 'planes-y-tarifas', label: 'Planes y Tarifas', icon: 'card_membership' },
+              { path: 'tienda-stock', label: 'Tienda y stock', icon: 'storefront' },
               { path: 'clases-y-turnos', label: 'Clases & Turnos', icon: 'event_available' },
               { path: 'reportes', label: 'Reportes', icon: 'analytics' },
               { path: 'configuracion', label: 'Configuración', icon: 'settings' },
@@ -219,8 +221,8 @@ export default function App() {
               return (
                 <button
                   key={item.path}
-                  disabled={!['socios-y-membresias', 'planes-y-tarifas', 'empleados-car-cruds', 'accesos'].includes(item.path)}
-                  title={!['socios-y-membresias', 'planes-y-tarifas', 'empleados-car-cruds', 'accesos'].includes(item.path) ? 'Sección pendiente de integración.' : undefined}
+                  disabled={!['socios-y-membresias', 'planes-y-tarifas', 'empleados-car-cruds', 'accesos', 'tienda-stock'].includes(item.path)}
+                  title={!['socios-y-membresias', 'planes-y-tarifas', 'empleados-car-cruds', 'accesos', 'tienda-stock'].includes(item.path) ? 'Sección pendiente de integración.' : undefined}
                   onClick={() => setActiveNav(item.path)}
                   className={`flex items-center gap-2.5 px-3 py-1.5 rounded-lg transition-all text-xs font-semibold w-full text-left ${
                     isActive
@@ -366,7 +368,7 @@ export default function App() {
         {/* --- MAIN BODY VIEWPORT --- */}
         <main className="w-full pt-14 bg-background px-4 sm:px-6 min-h-screen">
           {toastView}
-          {activeNav === 'accesos' ? <AccesosPanel actorId={currentUser.socioId} /> : activeNav === 'empleados-car-cruds' ? <CarCrudsPanel onNuevoSocio={handleOpenRegister} /> : <MembresiasPanel actorId={currentUser.socioId} onNuevoSocio={handleOpenRegister} filtro={searchQuery} />}
+          {activeNav === 'tienda-stock' ? <TiendaStockPanel actorId={currentUser.socioId} /> : activeNav === 'accesos' ? <AccesosPanel actorId={currentUser.socioId} /> : activeNav === 'empleados-car-cruds' ? <CarCrudsPanel onNuevoSocio={handleOpenRegister} /> : <MembresiasPanel actorId={currentUser.socioId} onNuevoSocio={handleOpenRegister} filtro={searchQuery} />}
 
         </main>
       </div>

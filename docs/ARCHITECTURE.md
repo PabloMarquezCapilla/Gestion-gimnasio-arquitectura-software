@@ -1,6 +1,6 @@
 # Arquitectura del sistema
 
-**Estado documental:** 23/10/2026. Flujo propio y POST anterior de empleados operativos localmente. Car Cruds dispone de lecturas, vinculación y envío mensual manual con persistencia e historial, verificados localmente; conexión operativa y prueba conjunta pendientes.
+**Estado documental:** revisión Tienda del 06/11/2026. Flujo propio y POST anterior de empleados operativos localmente. Car Cruds dispone de lecturas, vinculación y envío mensual manual con persistencia e historial, verificados localmente; conexión operativa y prueba conjunta pendientes. Tienda implementa stock/reposiciones para FAV y ventas administrativas con PostgreSQL; consumo del catálogo, publicación y prueba conjunta pendientes.
 
 **Enunciado:** §3, página 4; §4.1, páginas 5–6; §5, páginas 6–7; §6.2–6.3, página 8. Los patrones internos y el balanceo corresponden a §2.1 y §2.3, página 2.
 
@@ -11,9 +11,9 @@
 | **Socios y Membresías** | Socios, planes, membresías, pagos, comprobantes, referencias externas, solicitudes, vínculos Car Cruds, auditoría y registro de fotografías/envíos. | Capas; JWT, altas, habilitación, lecturas/vinculación/envío manual Car Cruds para ADMIN y POST anterior. PostgreSQL: `socios`, `membresias`, `solicitudes_membresia`, `empleados_externos`, `altas_empleados_idempotencia`, `car_cruds_vinculos`, `car_cruds_vinculos_historial`, `car_cruds_evidencias_series` y `car_cruds_evidencias`. Planes, solicitudes y pagos manuales con comprobantes transaccionales (ADR-021); conexión externa conjunta pendiente. |
 | **Clases y Reservas** | Clases, capacidad, reservas, espera e índice de búsqueda derivado. | Hexagonal; catálogo, reservas/cancelación y recuperación FIFO. PostgreSQL: `clases`, `reservas`, `lista_espera`. Publicación administrativa y consulta textual pendientes. |
 | **Accesos y Ocupación** | Sedes, intentos y movimientos de acceso, presencias y ocupación/caché derivadas. | Capas; recepción ADMIN, ingresos/egresos, historial y ocupación con transacciones MongoDB. Cache-aside Redis sobre ocupación, invalidación y TTL; ver ADR-019 y ADR-020. |
-| **Tienda** | Integrar la consulta de productos y stock. El catálogo y las existencias pertenecen a la distribuidora. | Estructura en Capas, JWT y pantalla. Sin base propia ni cliente externo; devuelve `503 INTEGRACION_PENDIENTE`. |
+| **Tienda** | Consultar catálogo/disponibilidad de FAV y administrar el stock físico de una única tienda del gimnasio: reposiciones, ventas e idempotencia. FAV conserva su catálogo y stock de distribuidora. | Capas; API FAV con clave técnica, consulta/ventas ADMIN con JWT y panel. PostgreSQL 17, base `tienda`: `tienda_stock`, `tienda_reposiciones`, `tienda_ventas`, `tienda_operaciones`. El catálogo externo continúa en `503 INTEGRACION_PENDIENTE`; cliente FAV y conexión conjunta pendientes (ADR-022). |
 
-Socios y Clases usan bases y usuarios PostgreSQL separados en una instancia local compartida; no hay acceso de un servicio a tablas ajenas. MongoDB tiene un replica set de un solo nodo, sin redundancia. El diseño de motores y restricciones se justifica en [D3](adr/ADR-003-persistencia.md); los límites vigentes, en [D1](adr/ADR-015-limites-con-tienda.md).
+Socios, Clases y Tienda usan bases y usuarios PostgreSQL separados en una instancia local compartida; no hay acceso de un servicio a tablas ajenas. MongoDB tiene un replica set de un solo nodo, sin redundancia. El diseño de motores y restricciones se justifica en [D3](adr/ADR-003-persistencia.md); los límites vigentes, en [D1](adr/ADR-022-tienda-y-consignaciones-fav.md). El inicializador incorpora base y usuario de Tienda sin recrear volúmenes ni rotar credenciales existentes.
 
 NGINX sirve el portal React y enruta las solicitudes por un único puerto local (`8080` o `GATEWAY_PORT`). La autenticación y los permisos se validan en los servicios. Las llamadas internas y las salidas al proveedor no pasan por nuestro gateway.
 
@@ -21,7 +21,7 @@ NGINX sirve el portal React y enruta las solicitudes por un único puerto local 
 
 - **Clases, Hexagonal:** `app.ts` adapta HTTP; `application/reservas.service.ts` contiene casos de uso; `ports.ts` declara las interfaces; PostgreSQL, memoria y cliente HTTP de Socios son adaptadores. `server.ts` compone y arranca el trabajador de promociones.
 - **Socios, Capas:** HTTP (`app.ts`, `empleados.http.ts`) → servicios de aplicación (`services.ts`, `empleados.service.ts`, `car-cruds.service.ts`, `car-cruds-vinculos.service.ts`, `car-cruds-evidencias.service.ts`) → repositorio o cliente externo `clients/car-cruds.client.ts`. Los puertos de vínculos/evidencias tienen adaptadores PostgreSQL y memoria; `car-cruds-evidencias.storage.ts` aplica las transacciones y el almacenamiento del mensaje. `server.ts` compone el cliente con configuración opcional. Criptografía y JWT están en `security.ts`.
-- **Tienda, Capas:** HTTP/autenticación → servicio de consulta pendiente; todavía no tiene adaptador externo. Accesos concreta Capas con lectura derivada de presencias abiertas; ADR-019 revisa su propuesta previa por eventos, sin introducir broker.
+- **Tienda, Capas:** `app.ts` adapta HTTP y permisos → `stock.ts` valida comandos y define el puerto → `stock.postgres.ts` implementa persistencia; `server.ts` compone pool/aplicación. El servicio de catálogo conserva su respuesta pendiente y todavía no tiene adaptador externo. Accesos concreta Capas con lectura derivada de presencias abiertas; ADR-019 revisa su propuesta previa por eventos, sin introducir broker.
 - **Identidad:** JWT HS256 firmado con vencimiento configurable (una hora por defecto), rol y controles de propietario. Alta interna solo ADMIN; bootstrap local sin contraseña administrativa predeterminada nueva. El portal mantiene la sesión en memoria. [D2](adr/ADR-002-arquitectura-interna-de-servicios.md), [autenticación](adr/ADR-016-autenticacion-y-altas.md).
 
 ## Comunicaciones y operaciones consistentes
@@ -56,11 +56,17 @@ El [contrato externo 0.3.0 y el perfil mensual](contracts/README.md#integracion-
 
 **Implementación anterior conservada:** `POST /api/v1/integraciones/empleados`, contrato propio **1.0.1**, sigue disponible localmente con su mock. Usa `X-API-Key`, `Idempotency-Key` y una transacción para socio, solicitud pendiente, referencia y respuesta original. No realiza el nuevo flujo. [ADR-014 reemplazado en diseño](adr/ADR-014-contrato-empleados.md).
 
-### Capacidad consumida: Tienda
+### Integración con FAV: consumo y capacidad ofrecida
 
-El portal llama por nuestro gateway a `GET /api/v1/tienda/productos` con JWT. Actualmente recibe `503 INTEGRACION_PENDIENTE`. La ruta es interna del gimnasio; no define la API de la distribuidora. La salud `/health/tienda` confirma solo la estructura HTTP.
+El portal llama por nuestro gateway a `GET /api/v1/tienda/productos` con JWT y todavía recibe `503 INTEGRACION_PENDIENTE`: esa ruta interna corresponde al catálogo externo, no al stock local. El panel ADMIN **Tienda y stock** consulta `GET /api/v1/tienda/stock` y registra `POST /api/v1/tienda/ventas`. La salud `/health/tienda` comprueba PostgreSQL y las métricas se exponen en `/metrics/tienda`; ninguna de esas comprobaciones acredita una conexión con FAV.
 
-Tienda será quien llame a **FAV** y adapte su contrato, sin stock ni base local. Se revisó `feature-inventario`: su catálogo público aún no incluye stock y la lectura de inventario exige permisos administrativos. Faltan acuerdo de consulta externa de stock, URL y credencial para fijar el cliente y verificarlo. Compras, consignación y reposición quedan fuera del alcance. [D9](adr/ADR-009-consumo-del-proveedor.md).
+Tienda será quien llame a **FAV** para consultar su catálogo y disponibilidad. Su rama anterior `feature-inventario` ya no existe; se inspeccionaron `main` y `development`, pero la rama de integración no fue confirmada. En `development` existe una consulta pública de disponibilidad que aún debe incorporarse al contrato formal compartido. Faltan ese acuerdo, URL y credenciales para fijar el cliente y verificarlo. [D9](adr/ADR-009-consumo-del-proveedor.md).
+
+El equipo confirmó además stock local en una única tienda: FAV consulta disponibles/vendidas y registra reposiciones; ADMIN del gimnasio registra ventas sin stock negativo. El [OpenAPI propio 1.0.0](contracts/openapi-fav-v1.yaml) y [guía](contracts/fav-tienda.md) definen `GET /api/v1/consignaciones/stock` y `POST /api/v1/consignaciones/reposiciones`, con `X-API-Key` e `Idempotency-Key` en el POST. Una misma entrega conserva su resultado ante repetición por clave o referencia; datos diferentes generan conflicto. No hay stock por sede, devoluciones, ajustes ni compras del socio.
+
+La API de FAV y los movimientos locales están implementados con PostgreSQL 17 propio. La transacción bloquea clave/referencia y stock, guarda movimiento y resultado juntos y permite recuperar el recibo original tras reintento o reinicio. Una venta ADMIN usa su propia clave por actor y no admite stock negativo. El panel conserva una venta incierta en sessionStorage sin JWT, protege el cambio de administrador y no elimina otra operación local al recibir una respuesta tardía. No hay llamadas externas dentro de bloqueos SQL.
+
+[ADR-022](adr/ADR-022-tienda-y-consignaciones-fav.md) conserva el cambio respecto del límite anterior y [EVIDENCIA-TIENDA](EVIDENCIA-TIENDA.md) documenta los ensayos locales. Publicación, aceptación de FAV y comunicación conjunta siguen pendientes; Car Cruds mantiene su capacidad independiente.
 
 ### Mensajería prevista
 
@@ -72,7 +78,7 @@ NGINX distribuye con `least_conn` entre dos instancias de Clases; usa DNS dinám
 
 Socios y Clases emiten logs de negocio JSON con `trace_id`, `span_id` y padre. Clases propaga su contexto a las dos verificaciones HTTP de Socios; los servicios devuelven identificadores de traza. `npm run test:postgres` exige correlación, relación padre/hijo y reserva persistida entre instancias HTTP con puertos distintos. La demostración con `inject` es complementaria. Los campos de correlación entrantes de NGINX pueden estar vacíos si el cliente no los envía; no se afirma cobertura de todos los logs de infraestructura.
 
-Las métricas actuales son contadores HTTP/errores, uptime y conexiones ocupadas del pool. No hay tableros, alertas, histogramas ni backend de trazas todavía. La estrategia y objetivos propuestos están en [D11](adr/ADR-011-observabilidad.md); carga local y costos ilustrativos, en [D13](adr/ADR-013-capacidad-y-costos.md).
+Socios y Clases exponen contadores HTTP/errores, uptime y conexiones ocupadas del pool; Accesos agrega métricas de dependencia y caché e histogramas de duración y antigüedad. Faltan recolector, tablero, alerta y exportación a un backend de trazas. La estrategia y objetivos propuestos están en [D11](adr/ADR-011-observabilidad.md); carga local y costos ilustrativos, en [D13](adr/ADR-013-capacidad-y-costos.md).
 
 ## Diagrama de contexto (C4 - Nivel 1)
 
@@ -84,7 +90,7 @@ flowchart LR
     admin["👤 Administrador<br/>Gestiona socios, membresías,<br/>pagos, comprobantes y clases"]
     recepcion["👤 Personal de Recepción<br/>Valida ingresos, registra<br/>egresos y consulta ocupación"]
     consumidor["Car Cruds<br/>Publica empleados y estado laboral<br/>Recibe información de membresías"]
-    proveedor["FAV: productos y stock<br/>Acuerdo de stock y conexión pendientes"]
+    proveedor["FAV: catálogo y disponibilidad de distribuidora<br/>Consume stock/reposiciones de la tienda<br/>API local implementada; conexión pendiente"]
 
     sistema["🏋️ Sistema Integral de Gestión de Gimnasio<br/>(Plataforma de Microservicios)"]
 
@@ -93,7 +99,8 @@ flowchart LR
     recepcion -->|Web UI| sistema
     sistema -->|Socios: GET empleados/estado · cliente implementado<br/>Conexión conjunta pendiente · Bearer gym| consumidor
     sistema -->|POST de fotografía mensual · Bearer gym<br/>Envío manual implementado; conexión pendiente| consumidor
-    sistema -.->|Tienda: consulta de productos y stock<br/>Integración pendiente| proveedor
+    sistema -.->|Tienda: consulta de catálogo y disponibilidad<br/>Integración pendiente| proveedor
+    proveedor -->|Consulta stock local y registra reposiciones<br/>API local implementada; prueba conjunta pendiente| sistema
 ```
 
 ## Diagrama de contenedores (C4 - Nivel 2)
@@ -110,12 +117,14 @@ flowchart TB
         gateway -->|API anterior: POST /api/v1/integraciones/empleados<br/>X-API-Key e Idempotency-Key| socios
         gateway -->|/api/v1/integraciones/car-cruds/* · JWT ADMIN<br/>Lecturas, búsqueda y vínculos con historial| socios
         gateway -->|Recepción ADMIN · JWT| accesos["Accesos y Ocupación<br/>Ingresos, egresos, historial y ocupación"]
-        gateway -->|GET /api/v1/tienda/productos · JWT<br/>503: integración pendiente| tienda["Tienda · estructura ejecutable<br/>Sin base de datos<br/>Cliente externo pendiente"]
+        gateway -->|GET /api/v1/tienda/productos · JWT<br/>503: catálogo externo pendiente| tienda["Tienda · Capas<br/>Stock, reposiciones y ventas<br/>Cliente de catálogo externo pendiente"]
+        gateway -->|API FAV de stock/reposiciones · X-API-Key<br/>Stock y ventas ADMIN · JWT| tienda
         
         clases -->|HTTP: consulta de habilitación<br/>Ahora y fecha de clase · X-Service-Key| socios
         clases --> dbClases[("Base de Datos Clases<br/>PostgreSQL 17<br/>clases, reservas, lista_espera")]
         socios --> dbSocios[("Base de Datos Socios<br/>PostgreSQL 17<br/>socios, membresias, solicitudes y alta externa<br/>vínculos, historial y fotografías Car Cruds")]
         accesos -->|Transacciones · propiedad exclusiva| dbAccesos[("Base de Datos Accesos<br/>MongoDB 8.0 · presencias y movimientos")]
+        tienda -->|Transacciones · propiedad exclusiva| dbTienda[("Base de Datos Tienda · PostgreSQL 17<br/>Stock, reposiciones, ventas e idempotencia<br/>Única tienda del gimnasio")]
         
         socios -.->|Diseño pendiente: Outbox y publicación| rabbitmq["RabbitMQ 4.1 configurado"]
         rabbitmq -.->|Diseño pendiente: consumo e Inbox| clases
@@ -123,8 +132,9 @@ flowchart TB
     carcruds["Car Cruds · Empleados<br/>OpenAPI 0.3.0<br/>Empleados, estado e informe receptor"]
     socios -->|GET empleados/estado · Bearer gym<br/>Cliente implementado; conexión por coordinar| carcruds
     socios -->|POST evidencia mensual · Bearer gym<br/>Envío manual implementado; conexión pendiente| carcruds
-    distribuidora["FAV · productos y stock<br/>Consulta externa de stock por acordar"]
-    tienda -.->|Consulta externa prevista<br/>Acuerdo y conexión pendientes| distribuidora
+    distribuidora["FAV · catálogo y disponibilidad de distribuidora<br/>Consumidor de stock/reposiciones del gimnasio"]
+    tienda -.->|Consulta externa prevista<br/>Contrato y conexión por acordar| distribuidora
+    distribuidora -->|GET stock · POST reposiciones · X-API-Key<br/>POST con Idempotency-Key · prueba conjunta pendiente| gateway
 ```
 
 Las líneas discontinuas indican partes previstas. El cliente de lectura de Car Cruds se verificó contra HTTP controlado, sin prueba conjunta aún. El entorno local utiliza HTTP; HTTPS y publicación accesible se resolverán en el despliegue.
@@ -169,8 +179,8 @@ sequenceDiagram
 ## Limitaciones conocidas y deuda técnica aceptada
 
 - **Dominio pendiente:** políticas para reactivación, superposición, acumulación/prorrateo, credenciales de empleados y publicación de clases. Planes, solicitudes, pagos/comprobantes y nuevos períodos explícitos no superpuestos están implementados (ADR-021). Accesos ya implementa movimientos y ocupación; su caché está implementada; el consumo desde Car Cruds queda pendiente. El frontend no simula éxito de esas funciones.
-- **Integración externa:** Car Cruds tiene contrato fijado, lecturas, vínculo y envío durable probados localmente; faltan la imputación mensual de los nuevos cobros/ingresos y la prueba conjunta con conexión operativa. Tienda no consume productos/stock de FAV y aún carece de su test de contrato. La conexión accesible y las pruebas entre grupos siguen pendientes (§4.1).
-- **Búsqueda y caché:** FTS/GIN creado pero sin consulta textual; Redis sobre ocupación implementado y medido localmente; demanda de producción y despliegue Compose completo pendientes.
+- **Integración externa:** Car Cruds tiene contrato fijado, lecturas, vínculo y envío durable probados localmente; faltan la imputación mensual de los nuevos cobros/ingresos y la prueba conjunta con conexión operativa. Tienda tiene stock/reposiciones/ventas locales con PostgreSQL, pero no consume todavía catálogo/disponibilidad de FAV. La publicación accesible, aceptación y pruebas entre grupos siguen pendientes (§4.1).
+- **Búsqueda y caché:** FTS/GIN creado pero sin consulta textual; Redis sobre ocupación implementado y medido localmente. Compose aislado fue verificado según [EVIDENCIA-MEMBRESIAS](EVIDENCIA-MEMBRESIAS.md); despliegue público y demanda de producción pendientes.
 - **Mensajería:** broker configurado sin evento publicado/consumido, Inbox/Outbox ni DLQ; reservas futuras no se cancelan automáticamente por una suspensión posterior.
 - **Disponibilidad:** un gateway, una instancia PostgreSQL y MongoDB de un nodo. Dos réplicas HTTP no eliminan esos puntos de falla ni los errores durante detección. No hay despliegue multizona ni protección completa por circuit breaker/límite de concurrencia.
 - **Identidad:** Clases y Tienda validan el JWT hasta su vencimiento; no hay revocación inmediata ni refresh tokens. La configuración actual del POST admite un origen externo por entorno.
@@ -185,9 +195,10 @@ Estas limitaciones mantienen visibles los requisitos generales y de la presentac
 | Decisión | Título | Estado | Documento |
 |---|---|---|---|
 | **D1 anterior** | Límites de los tres servicios originales | Reemplazado por ADR-015; conservado como antecedente | [ADR-001](adr/ADR-001-limites-de-servicios.md) |
-| **D1 vigente** | Límites con Tienda como cuarto microservicio | Estructura propia preparada; consulta externa pendiente | [ADR-015](adr/ADR-015-limites-con-tienda.md) |
+| **D1 anterior** | Tienda de consulta sin stock local | Reemplazado por ADR-022; conservado como antecedente | [ADR-015](adr/ADR-015-limites-con-tienda.md) |
+| **D1 vigente** | Tienda con stock local y capacidad para FAV | Stock, reposiciones y ventas implementados con PostgreSQL propio; conexión externa pendiente | [ADR-022](adr/ADR-022-tienda-y-consignaciones-fav.md) |
 | **D2** | Arquitectura interna de los servicios | Hexagonal y Capas concretadas en Clases/Socios | [ADR-002](adr/ADR-002-arquitectura-interna-de-servicios.md) |
-| **D3** | Persistencia relacional y documental | PostgreSQL propio y alta externa atómica verificados | [ADR-003](adr/ADR-003-persistencia.md) |
+| **D3** | Persistencia relacional y documental | PostgreSQL propio en Socios/Clases/Tienda; MongoDB en Accesos; movimientos de Tienda transaccionales | [ADR-003](adr/ADR-003-persistencia.md) |
 | **D4 anterior** | Consistencia y concurrencia | Reemplazada por ADR-017; antecedente | [ADR-004](adr/ADR-004-consistencia-y-concurrencia.md) |
 | **D4 vigente** | Consistencia y recuperación FIFO | Cancelación local y promoción recuperable verificadas | [ADR-017](adr/ADR-017-consistencia-y-recuperacion-de-espera.md) |
 | **D5** | Comunicación entre servicios (Síncrona y Asíncrona) | HTTP y POST externo operativos; mensajería pendiente | [ADR-005](adr/ADR-005-comunicacion-entre-servicios.md) |
@@ -196,12 +207,16 @@ Estas limitaciones mantienen visibles los requisitos generales y de la presentac
 | **D8 inicial** | Consulta de clases | Reemplazado; contrato y pruebas conservados | [ADR-008](adr/ADR-008-contrato-propio.md) |
 | **D8 anterior** | Recepción de empleados y solicitud pendiente | Reemplazado en diseño; contrato 1.0.1 y POST local conservados | [ADR-014](adr/ADR-014-contrato-empleados.md) |
 | **D8 vigente** | Información mensual para Car Cruds | Lecturas, vínculo y envío manual verificados localmente; conexión conjunta pendiente | [ADR-018](adr/ADR-018-integracion-car-cruds.md) |
-| **D9** | Consulta de productos y stock de FAV | Tienda responde integración pendiente; stock público y conexión por acordar | [ADR-009](adr/ADR-009-consumo-del-proveedor.md) |
+| **D8 adicional** | Stock y reposiciones para FAV | Contrato 1.0.0 y backend local verificados; publicación/conexión pendientes; no reemplaza Car Cruds | [ADR-022](adr/ADR-022-tienda-y-consignaciones-fav.md) |
+| **D9** | Consulta de catálogo y disponibilidad de FAV | Cliente pendiente; rama, contrato de disponibilidad y conexión por acordar | [ADR-009](adr/ADR-009-consumo-del-proveedor.md) |
 | **D10** | Resiliencia | Implementación parcial y pendientes identificados | [ADR-010](adr/ADR-010-resiliencia.md) |
 | **D11** | Observabilidad (Logs, Trazas y Métricas) | 1ª versión en E2 | [ADR-011](adr/ADR-011-observabilidad.md) |
 | **D12** | Balanceo de carga | Distribución, detección y reemplazo verificados con límites explícitos | [ADR-012](adr/ADR-012-balanceo-de-carga.md) |
 | **D13** | Capacidad y estimación de costos | Línea base local y estimación ilustrativa | [ADR-013](adr/ADR-013-capacidad-y-costos.md) |
 | Adicional | Autenticación y altas administradas | JWT, permisos y bootstrap local implementados | [ADR-016](adr/ADR-016-autenticacion-y-altas.md) |
+| D1/D2/D3/D4, concreción | Accesos con MongoDB y recepción | Movimientos, presencias, ocupación e idempotencia implementados | [ADR-019](adr/ADR-019-accesos-mongodb-recepcion.md) |
+| D7, concreción | Caché de ocupación en Redis | Implementada y medida; concreta ADR-007 | [ADR-020](adr/ADR-020-cache-ocupacion-redis.md) |
+| Adicional | Planes y pagos manuales | Solicitudes, confirmación transaccional y comprobantes implementados | [ADR-021](adr/ADR-021-planes-pagos-membresias.md) |
 
 ### Caché de ocupación (etapa 2)
 
