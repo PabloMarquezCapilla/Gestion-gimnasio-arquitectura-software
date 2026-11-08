@@ -7,7 +7,7 @@
 
 ## Contexto
 
-Cada servicio resuelve una responsabilidad de negocio con dependencias internas reconocibles. Socios y Clases usan persistencia propia; Accesos la integrará y Tienda solo consultará al proveedor, sin una base local.
+Cada servicio resuelve una responsabilidad de negocio con dependencias internas reconocibles. Socios, Clases y Tienda usan bases PostgreSQL propias; Accesos utiliza MongoDB y una caché Redis para ocupación. ADR-019/020 concretan Accesos y ADR-022 amplía Tienda con stock local, reposiciones y ventas.
 
 Para asegurar mantenibilidad, facilidad de testing unitario y desacoplamiento de la infraestructura técnica (como bases de datos y frameworks web), es necesario definir el estilo arquitectónico interno y los patrones de diseño aplicados dentro de cada microservicio.
 
@@ -20,7 +20,7 @@ Para cumplir con el requisito de la sección 2.1 del enunciado (*"Al menos dos s
 | **`Clases y Reservas`** | **Arquitectura Hexagonal (Ports & Adapters)** | `ReservasService` concentra reservas, espera, validación remota y recuperación. Depende de puertos propios; HTTP, PostgreSQL y memoria son adaptadores. Conserva las consultas de clases, que ya no son la capacidad ofrecida al otro grupo. |
 | **`Socios y Membresías`** | **Arquitectura en Capas (Layered Architecture)** | HTTP en `app.ts`/`empleados.http.ts` → casos de uso `AuthService`, `SociosService` y `EmpleadosService` → persistencia en `repository.ts`; `security.ts` ofrece operaciones criptográficas. El POST externo utiliza las mismas capas y PostgreSQL; el mock separado se conserva. |
 | **`Accesos y Ocupación`** | **Capas con lectura derivada, concretada en ADR-019** | HTTP → aplicación/reglas → repositorio MongoDB, con transacciones para presencia, movimiento e idempotencia y ocupación derivada de presencias abiertas. ADR-019 revisa la propuesta previa de eventos; no implementa Event Sourcing ni broker. |
-| **`Tienda`** | **Estructura en Capas, integración pendiente** | `app.ts` controla transporte/autenticación, `services.ts` representa la consulta no habilitada y `server.ts` arranca el proceso. Sin repositorio ni cliente externo mientras no exista contrato; no se incorpora un patrón nuevo distinto de los ya elegidos. |
+| **`Tienda`** | **Arquitectura en Capas** | `app.ts` adapta HTTP y autenticación; `stock.ts` valida reposiciones y ventas; `stock.postgres.ts` persiste movimientos, stock e idempotencia en una transacción local. El consumo externo del catálogo sigue pendiente en `services.ts`. ADR-022 concreta esta responsabilidad conservando Capas. |
 
 ### 1. Detalle de `Clases y Reservas`: Arquitectura Hexagonal (Ports & Adapters)
 

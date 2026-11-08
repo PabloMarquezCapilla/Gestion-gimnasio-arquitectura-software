@@ -16,7 +16,7 @@ Una solución limitada únicamente a un CRUD de membresías no alcanza para repr
 Puede consultar su membresía, buscar clases, reservar o cancelar actividades, elegir ingresar a una lista de espera y consultar el estado de sus operaciones. El alcance actualizado incorpora la consulta de productos y stock de la tienda.
 
 ### Administrador
-Administra socios y membresías, registra y confirma los pagos y genera sus comprobantes internos. También gestiona planes, clases y sedes y consulta información operativa del gimnasio.
+Administra socios y membresías, registra y confirma los pagos y genera sus comprobantes internos. También gestiona planes, clases y sedes, registra las unidades vendidas en la tienda y consulta información operativa del gimnasio.
 
 Las altas internas requieren un administrador; no hay autorregistro público. El administrador inicial se crea mediante comando local. El alta crea la cuenta sin habilitar membresía; el pago correspondiente es necesario para su habilitación. También vincula manualmente empleados de Car Cruds con socios; consultar un empleado o vincularlo no activa una membresía.
 
@@ -26,8 +26,8 @@ Valida el acceso de los socios y registra sus ingresos y egresos desde la aplica
 ### Grupo consumidor de membresías para empleados
 Car Cruds publica empleados y su estado laboral. El gimnasio consulta esos datos y le envía información mensual de membresía, uso y pagos de los socios vinculados. Su sistema receptor construye el informe; el administrador del gimnasio conserva la gestión de socios, planes y pagos.
 
-### Distribuidora proveedora
-FAV proveerá la información de productos y stock que consultará la tienda. Se revisó su rama `feature-inventario`; falta acordar la publicación de stock para consumidores externos y los datos de conexión.
+### Distribuidora FAV
+FAV administra su catálogo y existencias de distribuidora, provee productos a la tienda del gimnasio y consume nuestra API para consultar sus existencias locales y registrar reposiciones. La rama de integración y los datos de conexión de ambos sistemas siguen pendientes de coordinación.
 
 ## Capacidades principales
 
@@ -98,15 +98,17 @@ El flujo indicado por el profesor para **Car Cruds** es: **consultar empleados �
 
 El diseño anterior de recepción por `POST /api/v1/integraciones/empleados`, contrato propio `1.0.1`, sigue implementado localmente con su mock, validaciones y alta atómica de socio/solicitud pendiente. Se conserva como antecedente en [ADR-014](adr/ADR-014-contrato-empleados.md); no es la API que llamará Car Cruds en el nuevo flujo. RF-10, RN-G09–G11 y CA-G08–G10 se actualizan al diseño vigente, conservando esa historia.
 
-### Integración: tienda de consulta
+### Integración: tienda y reposiciones de FAV
 
-El socio podrá consultar los productos y el stock publicados por la distribuidora. El alcance confirmado es de **solo consulta**, sin compras, pedidos ni reposición.
+El equipo confirmó el 06/11/2026 que FAV maneja una tienda dentro del gimnasio: **Tienda registra las existencias recibidas en una única tienda**, FAV las consulta y registra reposiciones, y ADMIN del gimnasio registra las unidades vendidas. No se separa stock por sede. Se mantiene el consumo del catálogo y la disponibilidad de la distribuidora, distinguiendo esas existencias del stock físico del gimnasio.
 
-El equipo confirmó un **servicio Tienda separado**, sin una base de datos nueva, que iniciará la comunicación con la distribuidora conforme a la sección 4.1 del enunciado. Su responsabilidad se documenta en [D1, ADR-015](adr/ADR-015-limites-con-tienda.md). Productos y stock seguirán siendo datos del proveedor. La estructura propia está preparada; el cliente externo depende del contrato de la distribuidora.
+El servicio Tienda conserva su separación y arquitectura en Capas. FAV sigue siendo propietario de su catálogo y stock de distribuidora; Tienda administra el stock local, reposiciones, ventas y resultados idempotentes en una base y usuario PostgreSQL 17 propios, dentro de la instancia local existente. [D1 y capacidad FAV, ADR-022](adr/ADR-022-tienda-y-consignaciones-fav.md) reemplaza la decisión anterior de consulta sin almacenamiento; no cambia la integración con Car Cruds.
 
-**Estado de integración:** se identificó FAV y se revisó su contrato de catálogo/pedidos; ese contrato aún no publica la consulta de stock requerida. Faltan ese acuerdo, URL y credencial. Quedan preparados el servicio, gateway y pestaña Tienda del portal; la consulta informa integración pendiente sin mostrar productos ficticios ni existencias en cero. RF-11/CA-G11 no quedan satisfechos hasta conectar y verificar la capacidad real del proveedor. Compras, pedidos, consignación y reposición continúan fuera del alcance acordado.
+La capacidad ofrecida se define en [OpenAPI FAV 1.0.0](contracts/openapi-fav-v1.yaml) y [su guía](contracts/fav-tienda.md): consulta de stock y recepción de una variante por reposición, con credencial de FAV y protección contra entregas duplicadas. Las ventas administrativas no son una operación externa de FAV.
 
-El contrato externo, sus operaciones concretas, los datos de conexión y su comportamiento ante fallas se acordarán antes de implementar esa integración. No se presupone una API del proveedor ni se incorpora un almacenamiento local de productos o existencias.
+**Estado:** stock, reposiciones y ventas administrativas implementados localmente. Las rutas compartidas de FAV usan su credencial técnica; el panel ADMIN consulta stock y registra ventas con JWT e idempotencia. Las transacciones conservan entrega, existencias y respuesta frente a repetición, concurrencia y reinicio. La evidencia y sus límites se mantienen en [EVIDENCIA-TIENDA](EVIDENCIA-TIENDA.md).
+
+El cliente externo y la prueba conjunta siguen pendientes. `GET /api/v1/tienda/productos` continúa devolviendo `503 INTEGRACION_PENDIENTE`, sin productos ficticios ni stock cero de respaldo; esto no impide consultar las existencias locales ya recibidas. La rama anterior `feature-inventario` ya no existe. En el código de `development` de FAV se encontró una consulta pública de disponibilidad; falta fijar la rama y el contrato externo que la incluya, además de URL y credenciales. [D9](adr/ADR-009-consumo-del-proveedor.md).
 
 Los datos de prueba serán ficticios; está pendiente confirmar si esa condición continuará durante toda la evaluación.
 
@@ -124,7 +126,9 @@ Los datos de prueba serán ficticios; está pendiente confirmar si esa condició
 | RF-08 | Recepción puede registrar intentos de ingreso y egresos de una sede desde la aplicación, validando la membresía y la alternancia de los movimientos. |
 | RF-09 | El sistema permite consultar la ocupación actual por sede a partir de los ingresos aceptados y sus egresos. |
 | RF-10 | El administrador consulta empleados de Car Cruds y los vincula manualmente con socios; Socios y Membresías envía fotografías mensuales conforme al contrato externo, con hechos desconocidos explícitos y reintentos sin duplicación. |
-| RF-11 | El socio puede consultar los productos y el stock de la distribuidora desde la tienda, conforme al contrato externo que se acuerde. |
+| RF-11 | El socio puede consultar productos y disponibilidad de FAV desde Tienda conforme al contrato externo acordado, distinguiendo esa disponibilidad del stock físico de la tienda del gimnasio. |
+| RF-12 | FAV puede consultar el stock local de la tienda y registrar reposiciones mediante la capacidad compartida de Tienda, sin duplicar entregas. |
+| RF-13 | ADMIN del gimnasio puede registrar unidades vendidas y consultar las existencias de la tienda sin permitir stock negativo. |
 
 ## Reglas de negocio generales
 
@@ -156,14 +160,35 @@ Los datos de prueba serán ficticios; está pendiente confirmar si esa condició
 | CA-G08 | El administrador consulta empleados y vincula uno con un socio mediante sus identificadores; después puede corregirlo o quitarlo. | Se conserva la relación uno a uno y su historial de cambios, sin vincular por nombre ni modificar la membresía. |
 | CA-G09 | Se reenvía una fotografía mensual con la misma referencia, versión y contenido, incluido observedAt. | Car Cruds reconoce la repetición sin duplicar importes; una corrección completa de versión mayor reemplaza la anterior y una versión atrasada no la pisa. |
 | CA-G10 | El receptor informa conflicto de versión, referencia u origen. | El envío queda para revisión; no se sobrescriben datos ni se cambia la versión para eludir el conflicto. |
-| CA-G11 | El socio consulta la tienda y el proveedor responde conforme al contrato que se acuerde. | Se muestran los productos y el stock obtenidos del proveedor. El tratamiento de fallas queda pendiente de acordar para la integración. |
+| CA-G11 | El socio consulta la tienda y el proveedor responde conforme al contrato que se acuerde. | Se muestran los productos y la disponibilidad de FAV, identificándola como disponibilidad de la distribuidora y diferenciándola de las existencias locales; una falla no se muestra como stock cero. |
 | CA-G12 | Faltan registros fiables de pagos, accesos, vigencia histórica o imputación del costo. | Los hechos correspondientes se envían como desconocidos; no se deducen false ni cero de un módulo pendiente o una consulta fallida. |
 | CA-G13 | Un empleado deja de aparecer en la lista o se consulta su estado laboral. | La ausencia y los errores no prueban una baja; active:false no cancela ni desvincula automáticamente al socio o su membresía. |
 | CA-G14 | Dos administradores modifican un vínculo desde la misma revisión o intentan asociar el mismo socio con empleados distintos. | No se sobrescribe un cambio diferente ni se duplica la asociación; un conflicto requiere actualizar y revisar. Repetir el estado vigente no duplica el historial. |
 | CA-G15 | ADMIN elige un mes y prepara la fotografía; luego confirma el envío. | La vista previa queda guardada antes de enviar y sus hechos no se editan desde el cliente. Cada reintento usa el mismo cuerpo, referencia, versión y corte; no se declara recepción ante una respuesta incierta. |
 | CA-G16 | Se reinicia el servicio durante el envío o se corrige un vínculo que tenía fotografías. | El mensaje se conserva para recuperación; un intento tardío no pisa al actual. Las fotografías y recibos anteriores permanecen; la nueva relación requiere revisión explícita antes de preparar otra. |
 
-La actualización transaccional del índice y la propuesta de vigencia de caché se documentan en D6/D7; la caché aún requiere validación de negocio y medición. Este alcance no establece valores numéricos que todavía no fueron acordados.
+La actualización transaccional del índice y la vigencia de caché se documentan en D6/D7. Redis ya está implementado y medido en ocupación; su frescura todavía requiere validación de negocio. Este alcance no establece compromisos numéricos que no hayan sido acordados.
+
+## Reglas y aceptación de la tienda FAV
+
+Estas reglas fueron confirmadas por el equipo el 06/11/2026 y están implementadas localmente en el flujo de stock, reposiciones y ventas. La prueba conjunta con FAV y el consumo de su catálogo siguen pendientes; las verificaciones y sus límites están en [EVIDENCIA-TIENDA](EVIDENCIA-TIENDA.md).
+
+| Regla | Definición |
+|---|---|
+| RN-T01 | Existe una única tienda del gimnasio. FAV conserva su catálogo y stock de distribuidora; Tienda registra las existencias locales por variante de FAV. |
+| RN-T02 | Una reposición aceptada suma unidades disponibles una sola vez. Una venta registrada por ADMIN descuenta disponibles y aumenta las unidades vendidas acumuladas desde el inicio. |
+| RN-T03 | No se admiten ventas que produzcan stock negativo. Devoluciones y ajustes quedan fuera de esta versión. |
+| RN-T04 | Repetir clave y datos de reposición devuelve la entrega original. Otra clave con la misma referencia y datos también reutiliza esa entrega, sin sumar unidades. |
+| RN-T05 | Reutilizar clave o referencia con datos diferentes produce conflicto y no modifica existencias. FAV se identifica mediante su credencial; no obtiene permisos administrativos del gimnasio. |
+
+| Criterio | Condiciones y acción | Resultado esperado |
+|---|---|---|
+| CA-T01 | FAV registra una reposición válida. | Se conserva una entrega y se incrementan sus unidades disponibles una sola vez. |
+| CA-T02 | FAV repite una entrega con igual clave o con otra clave y la misma referencia y datos. | Se devuelve la entrega original; las existencias no vuelven a incrementarse, incluso tras reinicios o solicitudes concurrentes. |
+| CA-T03 | FAV reutiliza clave o referencia con otro producto o cantidad. | Se informa conflicto sin modificar la entrega ni el stock. |
+| CA-T04 | ADMIN registra una venta con unidades disponibles suficientes. | Disminuyen disponibles y aumentan vendidas acumuladas de forma consistente. Una venta que excede las existencias se rechaza sin cambios. |
+| CA-T05 | FAV consulta existencias con su credencial. | Obtiene unidades disponibles y vendidas acumuladas del gimnasio; no las existencias de su distribuidora. |
+| CA-T06 | Falla la dependencia de datos o llega una credencial inválida. | No se informa stock cero ni se acepta una reposición como exitosa sin resultado confirmado. Los errores y reintentos respetan el contrato. |
 
 ## Datos y persistencia preliminar
 
@@ -187,6 +212,8 @@ Adecuado para:
 - eventos operativos asociados al ingreso/egreso.
 
 Motivo: volumen de eventos y patrón de escritura/consulta basado principalmente en socio, sede y tiempo.
+
+Tienda utiliza PostgreSQL 17 con base y usuario `tienda` separados para stock local, reposiciones, ventas e idempotencia según ADR-022 y D3. Las cuatro tablas de negocio y el resultado de cada movimiento se mantienen en transacciones locales; no se accede a bases ajenas ni se replica el stock de la distribuidora.
 
 ## Caché preliminar
 
@@ -279,7 +306,7 @@ Para evitar ampliar innecesariamente el proyecto, inicialmente quedan fuera:
 - seguimiento de rutinas de entrenamiento;
 - nutrición;
 - progreso corporal;
-- compras, pedidos y reposición de productos de la tienda;
+- compras o pedidos del socio desde la plataforma, cobros en línea de la tienda, devoluciones y ajustes de stock; la reposición por FAV y el registro administrativo de unidades vendidas sí forman parte del alcance actualizado;
 - red social del gimnasio.
 
 Las ampliaciones deberán acordarse explícitamente y reflejarse en el alcance antes de incorporarse al sistema.

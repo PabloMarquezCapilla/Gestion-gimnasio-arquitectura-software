@@ -1,0 +1,221 @@
+import { createHash, randomUUID } from 'node:crypto';
+import { Pool, PoolClient } from 'pg';
+import {
+  ReposicionEntrada, ReposicionRecibida, StockItem, TiendaError, TiendaStockRepository,
+  VentaEntrada, VentaRecibida,
+} from './stock';
+
+// Los IDs del contrato son opacos, sin un límite de longitud. El JSON de cada
+// cadena preserva incluso NUL/surrogates; su digest permite índices de tamaño
+// fijo. Siempre se compara también el valor completo, nunca solo el hash.
+const serializar = (value: unknown) => JSON.stringify(value);
+const digest = (value: string) => createHash('sha256').update(value).digest('hex');
+const maximo = BigInt(Number.MAX_SAFE_INTEGER);
+
+export const TIENDA_STOCK_DDL = `
+CREATE TABLE IF NOT EXISTS tienda_stock (
+  producto_hash CHAR(64) PRIMARY KEY,
+  producto_codigo_json TEXT NOT NULL,
+  unidades_disponibles BIGINT NOT NULL DEFAULT 0 CHECK (unidades_disponibles BETWEEN 0 AND 9007199254740991),
+  unidades_vendidas BIGINT NOT NULL DEFAULT 0 CHECK (unidades_vendidas BETWEEN 0 AND 9007199254740991),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS tienda_reposiciones (
+  reposicion_id UUID PRIMARY KEY,
+  proveedor_id TEXT NOT NULL CHECK (proveedor_id = 'fav'),
+  referencia_hash CHAR(64) NOT NULL,
+  referencia_json TEXT NOT NULL,
+  producto_hash CHAR(64) NOT NULL REFERENCES tienda_stock(producto_hash),
+  unidades BIGINT NOT NULL CHECK (unidades BETWEEN 1 AND 9007199254740991),
+  contenido TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (proveedor_id, referencia_hash)
+);
+CREATE TABLE IF NOT EXISTS tienda_ventas (
+  venta_id UUID PRIMARY KEY,
+  actor_json TEXT NOT NULL,
+  producto_hash CHAR(64) NOT NULL REFERENCES tienda_stock(producto_hash),
+  unidades BIGINT NOT NULL CHECK (unidades BETWEEN 1 AND 9007199254740991),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE TABLE IF NOT EXISTS tienda_operaciones (
+  tipo TEXT NOT NULL CHECK (tipo IN ('REPOSICION', 'VENTA')),
+  origen_hash CHAR(64) NOT NULL,
+  origen_json TEXT NOT NULL,
+  clave_hash CHAR(64) NOT NULL,
+  clave_json TEXT NOT NULL,
+  contenido TEXT NOT NULL,
+  respuesta TEXT NOT NULL,
+  reposicion_id UUID REFERENCES tienda_reposiciones(reposicion_id),
+  venta_id UUID REFERENCES tienda_ventas(venta_id),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (tipo, origen_hash, clave_hash),
+  CHECK ((tipo = 'REPOSICION' AND reposicion_id IS NOT NULL AND venta_id IS NULL)
+    OR (tipo = 'VENTA' AND venta_id IS NOT NULL AND reposicion_id IS NULL))
+);
+`;
+
+type TipoOperacion = 'REPOSICION' | 'VENTA';
+interface IdentidadOperacion { tipo: TipoOperacion; origen: string; clave: string; contenido: string }
+interface FilaStock {
+  producto_codigo_json: string;
+  unidades_disponibles: string;
+  unidades_vendidas: string;
+}
+
+function verificarIdentidad(actual: string, esperada: string): void {
+  if (actual !== esperada) throw new Error('La identidad completa no coincide con el índice de Tienda.');
+}
+function seguro(value: string): number {
+  const n = Number(value);
+  if (!Number.isSafeInteger(n) || n < 0) throw new Error('Cantidad persistida fuera del rango seguro de Tienda.');
+  return n;
+}
+function saldoRepresentable(value: bigint): void {
+  if (value > maximo || value < 0n) {
+    throw new TiendaError(422, 'STOCK_NO_REPRESENTABLE', 'El saldo resultante no puede representarse de forma segura.');
+  }
+}
+
+export class PostgresTiendaStockRepository implements TiendaStockRepository {
+  constructor(private readonly pool: Pool) {}
+
+  async inicializarEsquema(): Promise<void> {
+    await this.transaccion(async client => {
+      await this.bloquear(client, ['esquema', 'v1']);
+      await client.query(TIENDA_STOCK_DDL);
+    });
+  }
+
+  async comprobarSalud(): Promise<void> {
+    await this.pool.query('SELECT 1');
+  }
+
+  async listarStock(): Promise<StockItem[]> {
+    const result = await this.pool.query<FilaStock>(`SELECT producto_codigo_json,
+      unidades_disponibles::text, unidades_vendidas::text FROM tienda_stock`);
+    return result.rows.map(row => ({
+      productoCodigo: JSON.parse(row.producto_codigo_json) as string,
+      unidadesDisponibles: seguro(row.unidades_disponibles),
+      unidadesVendidas: seguro(row.unidades_vendidas),
+    })).sort((a, b) => a.productoCodigo < b.productoCodigo ? -1 : a.productoCodigo > b.productoCodigo ? 1 : 0);
+  }
+
+  async recibirReposicion(clave: string, datos: ReposicionEntrada): Promise<ReposicionRecibida> {
+    const contenido = serializar({ proveedorId: datos.proveedorId, productoCodigo: datos.productoCodigo,
+      unidades: datos.unidades, referencia: datos.referencia });
+    const operacion: IdentidadOperacion = { tipo: 'REPOSICION', origen: datos.proveedorId, clave, contenido };
+    return this.transaccion(async client => {
+      const repetida = await this.buscarOperacion<ReposicionRecibida>(client, operacion);
+      if (repetida) return repetida;
+
+      await this.bloquear(client, ['referencia', datos.proveedorId, datos.referencia]);
+      const referenciaJson = serializar(datos.referencia);
+      const anterior = (await client.query<{ reposicion_id: string; referencia_json: string; contenido: string }>(
+        'SELECT reposicion_id, referencia_json, contenido FROM tienda_reposiciones WHERE proveedor_id=$1 AND referencia_hash=$2',
+        [datos.proveedorId, digest(referenciaJson)],
+      )).rows[0];
+      if (anterior) {
+        verificarIdentidad(anterior.referencia_json, referenciaJson);
+        if (anterior.contenido !== contenido) {
+          throw new TiendaError(409, 'REFERENCIA_REUTILIZADA', 'La entrega ya fue registrada con otros datos.');
+        }
+        const resultado: ReposicionRecibida = { reposicionId: anterior.reposicion_id, estado: 'RECIBIDA' };
+        await this.guardarOperacion(client, operacion, resultado, anterior.reposicion_id);
+        return resultado;
+      }
+
+      const codigoJson = serializar(datos.productoCodigo), productoHash = digest(codigoJson);
+      await client.query('INSERT INTO tienda_stock(producto_hash,producto_codigo_json) VALUES($1,$2) ON CONFLICT DO NOTHING',
+        [productoHash, codigoJson]);
+      const row = await this.bloquearStock(client, productoHash, codigoJson);
+      const disponibles = BigInt(row.unidades_disponibles) + BigInt(datos.unidades);
+      saldoRepresentable(disponibles);
+      await client.query('UPDATE tienda_stock SET unidades_disponibles=$1, updated_at=now() WHERE producto_hash=$2',
+        [disponibles.toString(), productoHash]);
+      const reposicionId = randomUUID();
+      await client.query(`INSERT INTO tienda_reposiciones(reposicion_id,proveedor_id,referencia_hash,referencia_json,producto_hash,unidades,contenido)
+        VALUES($1,$2,$3,$4,$5,$6,$7)`,
+      [reposicionId, datos.proveedorId, digest(referenciaJson), referenciaJson, productoHash, String(datos.unidades), contenido]);
+      const resultado: ReposicionRecibida = { reposicionId, estado: 'RECIBIDA' };
+      await this.guardarOperacion(client, operacion, resultado, reposicionId);
+      return resultado;
+    });
+  }
+
+  async registrarVenta(actorId: string, clave: string, datos: VentaEntrada): Promise<VentaRecibida> {
+    const contenido = serializar({ productoCodigo: datos.productoCodigo, unidades: datos.unidades });
+    const operacion: IdentidadOperacion = { tipo: 'VENTA', origen: actorId, clave, contenido };
+    return this.transaccion(async client => {
+      const repetida = await this.buscarOperacion<VentaRecibida>(client, operacion);
+      if (repetida) return repetida;
+      const codigoJson = serializar(datos.productoCodigo), productoHash = digest(codigoJson);
+      const row = await this.bloquearStock(client, productoHash, codigoJson);
+      if (BigInt(row.unidades_disponibles) < BigInt(datos.unidades)) {
+        throw new TiendaError(409, 'STOCK_INSUFICIENTE', 'La venta supera las unidades disponibles.');
+      }
+      const vendidas = BigInt(row.unidades_vendidas) + BigInt(datos.unidades);
+      saldoRepresentable(vendidas);
+      await client.query(`UPDATE tienda_stock SET unidades_disponibles=unidades_disponibles-$1,
+        unidades_vendidas=$2, updated_at=now() WHERE producto_hash=$3`,
+      [String(datos.unidades), vendidas.toString(), productoHash]);
+      const ventaId = randomUUID();
+      await client.query('INSERT INTO tienda_ventas(venta_id,actor_json,producto_hash,unidades) VALUES($1,$2,$3,$4)',
+        [ventaId, serializar(actorId), productoHash, String(datos.unidades)]);
+      const resultado: VentaRecibida = { ventaId, estado: 'REGISTRADA', productoCodigo: datos.productoCodigo, unidades: datos.unidades };
+      await this.guardarOperacion(client, operacion, resultado, undefined, ventaId);
+      return resultado;
+    });
+  }
+
+  private async bloquearStock(client: PoolClient, hash: string, codigoJson: string): Promise<FilaStock> {
+    const row = (await client.query<FilaStock>(`SELECT producto_codigo_json, unidades_disponibles::text,
+      unidades_vendidas::text FROM tienda_stock WHERE producto_hash=$1 FOR UPDATE`, [hash])).rows[0];
+    if (!row) throw new TiendaError(404, 'PRODUCTO_NO_ENCONTRADO', 'La variante no tiene recepciones en la tienda.');
+    verificarIdentidad(row.producto_codigo_json, codigoJson);
+    return row;
+  }
+
+  private async buscarOperacion<T>(client: PoolClient, op: IdentidadOperacion): Promise<T | undefined> {
+    await this.bloquear(client, ['clave', op.tipo, op.origen, op.clave]);
+    const origenJson = serializar(op.origen), claveJson = serializar(op.clave);
+    const anterior = (await client.query<{ origen_json: string; clave_json: string; contenido: string; respuesta: string }>(
+      'SELECT origen_json,clave_json,contenido,respuesta FROM tienda_operaciones WHERE tipo=$1 AND origen_hash=$2 AND clave_hash=$3',
+      [op.tipo, digest(origenJson), digest(claveJson)],
+    )).rows[0];
+    if (!anterior) return undefined;
+    verificarIdentidad(anterior.origen_json, origenJson);
+    verificarIdentidad(anterior.clave_json, claveJson);
+    if (anterior.contenido !== op.contenido) {
+      throw new TiendaError(409, 'CLAVE_REUTILIZADA', 'La clave ya corresponde a otra solicitud.');
+    }
+    return JSON.parse(anterior.respuesta) as T;
+  }
+
+  private async guardarOperacion(client: PoolClient, op: IdentidadOperacion,
+    resultado: ReposicionRecibida | VentaRecibida, reposicionId?: string, ventaId?: string): Promise<void> {
+    const origenJson = serializar(op.origen), claveJson = serializar(op.clave);
+    await client.query(`INSERT INTO tienda_operaciones(tipo,origen_hash,origen_json,clave_hash,clave_json,contenido,respuesta,reposicion_id,venta_id)
+      VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+    [op.tipo, digest(origenJson), origenJson, digest(claveJson), claveJson, op.contenido, serializar(resultado), reposicionId ?? null, ventaId ?? null]);
+  }
+
+  private async bloquear(client: PoolClient, identidad: unknown[]): Promise<void> {
+    await client.query('SELECT pg_advisory_xact_lock(hashtextextended($1,0))', [serializar(['tienda', ...identidad])]);
+  }
+
+  private async transaccion<T>(aplicar: (client: PoolClient) => Promise<T>): Promise<T> {
+    const client = await this.pool.connect();
+    let errorDeConexion: Error | undefined;
+    try {
+      await client.query('BEGIN');
+      const resultado = await aplicar(client);
+      await client.query('COMMIT');
+      return resultado;
+    } catch (error) {
+      try { await client.query('ROLLBACK'); }
+      catch (rollbackError) { errorDeConexion = rollbackError instanceof Error ? rollbackError : new Error('No se pudo revertir la transacción.'); }
+      throw error;
+    } finally { client.release(errorDeConexion); }
+  }
+}

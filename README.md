@@ -12,7 +12,7 @@ Trabajo Práctico Integrador — Arquitectura de Software 2026
 
 ## Dominio
 
-Sistema integral de gestión de gimnasios orientado a membresías, pagos y comprobantes internos, reserva de clases, control de acceso y ocupación de sedes. Incluye la vinculación de empleados de Car Cruds con socios y el envío de información de membresías, además de la consulta de productos y stock de FAV.
+Sistema integral de gestión de gimnasios orientado a membresías, pagos y comprobantes internos, reserva de clases, control de acceso y ocupación de sedes. Incluye la vinculación de empleados de Car Cruds con socios y el envío de información de membresías, además de una tienda abastecida por FAV con consulta de catálogo, stock local, reposiciones y ventas administrativas.
 
 ## Objetivo
 
@@ -33,7 +33,7 @@ El sistema contemplará inicialmente:
 - Registro de ingresos y egresos por recepción desde la aplicación, sin dispositivos físicos y con validación de alternancia por socio y sede.
 - Consulta de ocupación actual de cada sede.
 - Consulta de empleados de Car Cruds, vinculación manual con socios y envío de información mensual de membresía, uso y pagos conforme al contrato acordado.
-- Consulta de productos y stock de una distribuidora desde Tienda, sin compras ni reposición.
+- Tienda única abastecida por FAV: consulta de catálogo, stock físico del gimnasio, reposiciones del proveedor y registro administrativo de ventas; sin compras online, devoluciones ni ajustes.
 
 ## Flujo principal
 
@@ -52,7 +52,7 @@ Las reglas de negocio, exclusiones y criterios de aceptación están en [ALCANCE
 | Socios y Membresías | Login JWT, permisos, altas administrativas, planes, solicitudes, pagos manuales/comprobantes y membresías, lecturas/vinculación Car Cruds, vista previa y envío mensual manual con persistencia e historial; POST anterior de empleados. | Conexión conjunta Car Cruds; políticas de reactivación, superposición/prorrateos y automatización de cambios de membresía. |
 | Clases y Reservas | Catálogo por sede/fechas, reservas, cancelación, espera FIFO y recuperación de promociones; PostgreSQL y dos réplicas. | Publicación administrativa de clases, consulta textual FTS y cancelación de reservas por cambios posteriores de membresía. |
 | Accesos y Ocupación | Recepción ADMIN: ingresos/egresos, historial y ocupación real; MongoDB transaccional, Redis medido e idempotencia durable. | Integración de hechos de uso con Car Cruds. |
-| Tienda | Servicio y sección web con JWT; informa `503 INTEGRACION_PENDIENTE`. | Acordar con FAV la consulta externa de stock, conexión y consumo real. |
+| Tienda | Stock local en PostgreSQL, reposiciones FAV con clave técnica, ventas ADMIN, idempotencia durable y panel. Contrato FAV 1.0.0 verificado localmente. | Consumo del catálogo/disponibilidad de FAV, aceptación del contrato, URL pública y prueba conjunta. |
 | Gateway y portal | NGINX, rutas, portal React, balanceo y logs de destinos. | Despliegue público y frontend completo de los flujos pendientes. |
 
 La integración con **Car Cruds** cambia la dirección del intercambio por indicación del profesor: Socios consulta empleados/estado y el ADMIN los vincula manualmente con socios. Desde el panel elige el mes, guarda/revisa una fotografía y confirma su envío; los reintentos conservan contenido, referencia, versión y fecha. Corregir o quitar el vínculo conserva el historial y no modifica membresías. El recorrido se verificó localmente; faltan URL/token operativos y prueba conjunta. Contrato externo **0.3.0**, configuración y uso en [la guía](docs/contracts/README.md#integracion-con-car-cruds) y [ADR-018](docs/adr/ADR-018-integracion-car-cruds.md).
@@ -69,8 +69,8 @@ Se utiliza Node.js 22, TypeScript y Fastify; React/Vite para el portal y NGINX c
 services/
   socios-membresias/     # Cuentas, habilitación e integración de empleados
   clases-reservas/       # Catálogo, reservas y espera
-  accesos-ocupacion/     # Estructura; dominio pendiente
-  tienda/               # Estructura; proveedor pendiente
+  accesos-ocupacion/     # Movimientos, ocupación MongoDB y caché Redis
+  tienda/               # Stock local, reposiciones y ventas; catálogo externo pendiente
 frontend/               # Portal React
 infra/                  # Imágenes, gateway e inicializadores de dependencias
 scripts/                # Inicio, bootstrap administrativo y verificaciones
@@ -100,8 +100,8 @@ El script conserva `.env`. Si ya existen volúmenes pero falta ese archivo, recu
 | [http://localhost:8080](http://localhost:8080) | Portal del socio y administración. |
 | [http://localhost:8080/consola.html](http://localhost:8080/consola.html) | Consola técnica de clases, reservas y trazas. |
 | `/health/socios`, `/health/clases` | Salud del proceso y conectividad con PostgreSQL. |
-| `/health/accesos`, `/health/tienda` | Accesos verifica MongoDB; Tienda informa estructura sin proveedor conectado. |
-| `/metrics/socios`, `/metrics/clases` | Métricas básicas compatibles con Prometheus. |
+| `/health/accesos`, `/health/tienda` | Verifican MongoDB y PostgreSQL de Tienda respectivamente; no acreditan conexión externa. |
+| `/metrics/socios`, `/metrics/clases`, `/metrics/accesos`, `/metrics/tienda` | Métricas compatibles con Prometheus; falta el tablero global. |
 
 Las rutas de salud son decisiones operativas para comprobar disponibilidad, no reglas de negocio. La configuración local usa HTTP; HTTPS y la URL compartida deben resolverse al publicar.
 
@@ -141,7 +141,8 @@ Ingresar DNI, nombre, email, contraseña y confirmación. Para acceder después,
 | Abrir «Empleados Car Cruds» como ADMIN | Con URL/token configurados, elegir empleado, buscar socio por DNI/email exacto y revisar antes de confirmar. Vínculo uno a uno, corrección/desvinculación con historial; membresía sin cambios. Sin proveedor se mantienen las consultas locales y la desvinculación. |
 | Preparar y enviar información mensual de un vínculo | Elegir mes, guardar/revisar vista previa y confirmar envío aparte. Sin datos fiables se muestra null; una respuesta incierta queda pendiente y el reintento usa la misma fotografía. [Guía](docs/contracts/README.md#preparar-y-enviar-desde-el-panel). |
 | Abrir gestión de membresías como ADMIN | Definir plan, elegir socio y fechas, crear solicitud, registrar cobro y confirmar después de verificarlo. Comprobante interno y habilitación atómicos. |
-| Abrir Tienda o reactivar períodos superpuestos | Integración y política pendientes respectivamente; no se simulan sus resultados. |
+| Abrir «Tienda y stock» como ADMIN | Consultar disponibles/vendidos y registrar unidades de una venta con confirmación. Ante respuesta incierta se conserva y reintenta la misma operación. |
+| Abrir catálogo de Tienda como socio o reactivar períodos superpuestos | Integración externa y política pendientes respectivamente; no se simulan sus resultados. |
 
 El JWT se guarda en memoria: recargar la página o recibir un 401 requiere nuevo login. En una base nueva, Yoga del 12/11/2026 tiene tres cupos y Pilates del mismo día está llena; los movimientos cambian esos valores. Las fechas de demostración son fijas: las clases iniciadas rechazan nuevas reservas, espera y cancelaciones.
 
@@ -202,7 +203,22 @@ SELECT reserva_id, clase_id, socio_id, estado FROM reservas;
 SELECT espera_id, clase_id, socio_id, orden, estado FROM lista_espera;
 ```
 
-Al reservar y luego cancelar desde la web, el registro pasa de `CONFIRMADA` a `CANCELADA`; no se borra. Para salir de psql, escribir `\q`. Accesos persiste movimientos, presencias, sedes y resultados idempotentes en MongoDB; guía en [ADR-019](docs/adr/ADR-019-accesos-mongodb-recepcion.md). Tienda no tiene base propia.
+Al reservar y luego cancelar desde la web, el registro pasa de `CONFIRMADA` a `CANCELADA`; no se borra. Para salir de psql, escribir `\q`. Accesos persiste movimientos, presencias, sedes y resultados idempotentes en MongoDB; guía en [ADR-019](docs/adr/ADR-019-accesos-mongodb-recepcion.md).
+
+Tienda tiene base y usuario propios. Para inspeccionar los movimientos desde el contenedor:
+
+```powershell
+docker compose exec postgres psql -U postgres -d tienda
+```
+
+```sql
+SELECT producto_codigo_json, unidades_disponibles, unidades_vendidas FROM tienda_stock;
+SELECT reposicion_id, proveedor_id, referencia_json, unidades, created_at FROM tienda_reposiciones;
+SELECT venta_id, actor_json, unidades, created_at FROM tienda_ventas;
+SELECT tipo, created_at, reposicion_id, venta_id FROM tienda_operaciones;
+```
+
+Los identificadores opacos se conservan serializados como JSON; no se consultan claves ni contraseñas. No modificar estas tablas para corregir stock desde fuera del servicio.
 
 ## Recepción y ocupación — etapa 1
 
@@ -221,6 +237,14 @@ ACCESOS_TEST_MODE=native MONGOD_BIN=/ruta/al/mongod npm run test:accesos
 
 El ensayo verifica pertenencia antes de limpiar sus recursos temporales. No usar bases existentes como destino. El ensayo original de etapa 1 no incorpora caché; etapa 2 agrega Redis sin modificar el cálculo/envío de Car Cruds.
 
+## Tienda y stock
+
+Iniciar con `npm run iniciar` y acceder como ADMIN a **Tienda y stock**. El inicio incorpora las credenciales nuevas ausentes y la base propia sin borrar datos. El stock empieza vacío: FAV registra las recepciones mediante el contrato compartido, con `X-API-Key` de `FAV_API_KEY` e `Idempotency-Key`. La clave se comparte por privado, nunca desde el portal.
+
+ADMIN selecciona la variante, indica las unidades vendidas y confirma. No se permite saldo negativo; si la respuesta es incierta, recargar y volver a ingresar permite reintentar la misma venta. No borrar la operación pendiente para crear otra. El catálogo externo del socio todavía informa integración pendiente; nombres y precios no se inventan.
+
+Rutas, ejemplos de Postman y errores: [guía FAV/Tienda](docs/contracts/fav-tienda.md). Reproducción de pruebas y límites: [EVIDENCIA-TIENDA](docs/EVIDENCIA-TIENDA.md).
+
 ## Pruebas y evidencia
 
 Instalar las dependencias locales antes de compilar o ejecutar las pruebas:
@@ -232,20 +256,21 @@ npm --prefix frontend ci --ignore-scripts
 
 | Comando | Qué comprueba |
 |---|---|
-| `npm test` | Compilación de los cuatro servicios y reglas/contratos; incluye HTTP externo controlado y API del frontend. Referencia anterior: 173/173 el 23/10/2026. Etapa Accesos: 187/187 el 30/10/2026; detalle y límites en EVIDENCIA-ACCESOS. |
+| `npm test` | Compilación de los cuatro servicios y reglas/contratos; incluye HTTP externo controlado y API del frontend. Verificación del 06/11/2026: 209/209, sin fallos ni omitidas. La evidencia de motores reales se conserva en los documentos de cada capacidad. |
 | `npm run frontend:build` | TypeScript y bundle de producción del portal. |
 | `npm run test:contrato-empleados` | Contrato y mock separado de empleados (11 pruebas). |
 | `npm run test:car-cruds` | Contrato externo 0.3.0, lecturas, permisos, vinculación, vista previa/envío, resultado incierto y reenvío exacto sin duplicar con proveedor controlado. |
 | `npm run test:postgres` | HTTP real, PostgreSQL efímero, dos instancias, permisos, reintentos/rollback de empleados, vínculos/fotografías Car Cruds, cuerpo inmutable, recuperación y concurrencia; último cupo, FIFO con fallas, traza y línea base de carga. |
 | `npm run test:balanceo` | Compose completo aislado, dos réplicas, distribución, escrituras concurrentes y caída/reemplazo sin reiniciar el gateway. |
+| `npm run test:tienda` | 18 pruebas HTTP/PostgreSQL reales: contrato FAV, permisos, idempotencia, concurrencia, reinicio, rollback, límites y caída de base; [evidencia](docs/EVIDENCIA-TIENDA.md). |
 
-Los dos últimos requieren Docker, usan recursos temporales propios, no cargan `.env` y los retiran al terminar. Los tests en memoria no acreditan durabilidad. Para desarrollar solo el portal: `npm run frontend:dev`, manteniendo el backend iniciado.
+Las pruebas de PostgreSQL, balanceo y Tienda requieren Docker, usan recursos temporales propios, no cargan `.env` y los retiran al terminar. Los tests en memoria no acreditan durabilidad. Para desarrollar solo el portal: `npm run frontend:dev`, manteniendo el backend iniciado.
 
 Los resultados de carga y sus límites están en [D13](docs/adr/ADR-013-capacidad-y-costos.md); la primera traza, en [D11](docs/adr/ADR-011-observabilidad.md); la caída controlada y sus cuatro 504 transitorios durante detección, en [POSTMORTEM](docs/POSTMORTEM.md). La operación estable posterior y la recuperación se verificaron; no se promete una transición sin errores ni capacidad máxima.
 
 ## Ramas, revisión e integración
 
-Los cambios de esta entrega se preparan en `entrega-2` y se revisan mediante PR hacia `main`. Antes de integrar, revisar diferencias, pruebas y coherencia documental. La versión evaluable debe quedar en `main` (§2.12). Las credenciales locales permanecen fuera de Git.
+El trabajo de cierre parte de `main` actualizado y se prepara en ramas de funcionalidad; la coordinación y contrato FAV están en `feat/integracion-tienda-proveedor`. Cada cambio se revisa mediante PR hacia `main`, comprobando diferencias, pruebas y coherencia documental. La versión evaluable debe quedar en `main` (§2.12). Las credenciales locales permanecen fuera de Git.
 
 ## Documentación
 
@@ -255,6 +280,8 @@ Los cambios de esta entrega se preparan en `entrega-2` y se revisan mediante PR 
 | [Arquitectura](docs/ARCHITECTURE.md) | Servicios, datos, comunicaciones, diagramas, decisiones y limitaciones (§3, §6.2–6.3). |
 | [ADR](docs/ARCHITECTURE.md#decisiones-arquitectónicas) | D1–D13 y decisiones adicionales; los reemplazados conservan su historia (§5). |
 | [Contrato e integración](docs/contracts/README.md) | Capacidad ofrecida, versión, ejemplos, errores, autenticación e idempotencia (§4.1). |
+| [FAV: contrato y guía](docs/contracts/fav-tienda.md) | Stock y reposiciones implementados y verificados localmente; aceptación, publicación y conexión conjunta pendientes (§4.1). |
+| [Plan de cierre](docs/PLAN-ENTREGA-3.md) | Etapas, verificaciones y decisiones pendientes para la presentación y defensa; se completa una etapa por vez. |
 | [Postmortem](docs/POSTMORTEM.md) | Ensayo local de caída: impacto, secuencia, detección, respuesta, causa y mejoras (§2.9 y §3). |
 
 E1 (§6.2) queda representada por alcance, arquitectura/diagramas, límites, estructura y contratos/mocks conservados. Para E2 (§6.3) hay flujo propio operativo, PostgreSQL, logs/traza y ADR; Car Cruds cuenta con contrato, lecturas, vinculación y envío manual verificados localmente, con conexión y prueba conjunta pendientes. D9 mantiene abierta la consulta de stock de FAV. La implementación completa de búsqueda, mensajería y frontend de las funciones restantes, además del despliegue y la integración real, sigue pendiente para los requisitos generales y la presentación final (§6, páginas 8–9).

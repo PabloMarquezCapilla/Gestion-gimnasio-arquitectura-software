@@ -27,6 +27,7 @@ services:
       PGPASSWORD: ${POSTGRES_ADMIN_PASSWORD:?Falta POSTGRES_ADMIN_PASSWORD en .env}
       SOCIOS_DB_PASSWORD: ${SOCIOS_DB_PASSWORD:?Falta SOCIOS_DB_PASSWORD en .env}
       CLASES_DB_PASSWORD: ${CLASES_DB_PASSWORD:?Falta CLASES_DB_PASSWORD en .env}
+      TIENDA_DB_PASSWORD: ${TIENDA_DB_PASSWORD:?Falta TIENDA_DB_PASSWORD en .env}
     volumes:
       - ./infra/postgres/init.sh:/opt/infra/postgres/init.sh:ro
     depends_on:
@@ -192,8 +193,13 @@ services:
         SERVICE: tienda
     environment:
       PORT: "3000"
+      DATABASE_URL: postgres://tienda:${TIENDA_DB_PASSWORD:?Falta TIENDA_DB_PASSWORD en .env}@postgres:5432/tienda
+      FAV_API_KEY: ${FAV_API_KEY:?Falta FAV_API_KEY en .env}
       AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:?Falta AUTH_JWT_SECRET en .env}
       AUTH_JWT_TTL_SECONDS: ${AUTH_JWT_TTL_SECONDS:-3600}
+    depends_on:
+      postgres-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
       interval: 5s

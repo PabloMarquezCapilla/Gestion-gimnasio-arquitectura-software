@@ -2,11 +2,21 @@
 
 **API interna de recepción, 30/10/2026:** [OpenAPI Accesos 1.0.0](openapi-accesos-v1.yaml), [ADR-019](../adr/ADR-019-accesos-mongodb-recepcion.md) y [evidencia](../EVIDENCIA-ACCESOS.md). Requiere JWT ADMIN, pasa por el gateway y no reemplaza ningún contrato externo. POST con Idempotency-Key; consultar/registrar ocupación e historial no concede permisos a SOCIO.
 
-**Estado:** 23/10/2026. Lecturas, vinculación administrativa y envío manual de fotografías implementados y verificados localmente. URL/token operativos y prueba conjunta pendientes. El POST anterior del gimnasio continúa disponible durante la transición.
+**Estado de Car Cruds:** lecturas, vinculación administrativa y envío manual de fotografías implementados y verificados localmente. URL/token operativos y prueba conjunta pendientes. El POST anterior del gimnasio continúa disponible durante la transición. El contrato adicional de FAV se describe por separado más abajo.
 
 El inicio, los usuarios de prueba y la consulta de bases se mantienen en el [README principal](../../README.md). Esta guía reúne contratos, reglas de intercambio y estados verificables; no registra una conexión externa que todavía no se probó.
 
 **Enunciado:** §3, página 4 (documentación); §4.1, páginas 5–6 (contrato, integración y pruebas); §5 D8/D9 e historia de decisiones, página 7; §6.3, página 8 (actualizar D8 si cambia el contrato).
+
+## Integración con FAV
+
+El acuerdo confirmado el 06/11/2026 incorpora ambos sentidos: Tienda consumirá el catálogo/disponibilidad de FAV y ofrece consulta del stock del gimnasio y recepción de reposiciones. El stock físico local pertenece a Tienda, para una única tienda; ADMIN registra ventas sin saldo negativo. Este contrato adicional no reemplaza Car Cruds.
+
+- [OpenAPI propio FAV 1.0.0](openapi-fav-v1.yaml): rutas, modelos, credenciales, idempotencia y códigos HTTP.
+- [Guía para FAV](fav-tienda.md): reglas, ejemplos de Postman, reintentos, errores y coordinación pendiente.
+- [ADR-022](../adr/ADR-022-tienda-y-consignaciones-fav.md): responsabilidad de stock propio y persistencia PostgreSQL con usuario/base exclusivos.
+
+**Estado:** consulta de stock, reposiciones y ventas administrativas implementadas y verificadas localmente. La [guía](fav-tienda.md) incluye la API interna de ventas, uso y errores; [EVIDENCIA-TIENDA](../EVIDENCIA-TIENDA.md) registra pruebas con PostgreSQL, navegador y NGINX. Faltan aceptación de FAV, rama externa acordada, publicación accesible y entrega privada de credenciales. Solo la consulta al catálogo externo `/api/v1/tienda/productos` continúa devolviendo `503 INTEGRACION_PENDIENTE`; su contrato se acordará por separado.
 
 ## Integracion con Car Cruds
 
@@ -92,7 +102,7 @@ El POST exige `employeeId`, `period`, `sourceReference`, `version` y `observedAt
 | `currency` | ARS, importes en centavos enteros no negativos; costo y pagos se presentan separados. |
 | `observedAt` | Instante real de elaboración/comprobación de la fotografía con zona RFC3339. Es el corte informado; la precedencia la determina `version`. |
 
-`null` significa desconocido; `false` y cero requieren información suficiente. Pagos y movimientos de Accesos no están implementados; tampoco se presume un historial completo de estados de membresía. El generador actual informa `member:true` si comprueba la habilitación al observar un instante del mes actual, o conserva una observación positiva anterior guardada del mismo empleado, socio y mes hasta el corte. En los demás casos informa `member:null`; no deduce un mes negativo de la situación actual. `used`, `costMinor` y `spendingMinor` permanecen en `null` y se omite moneda mientras no haya importes. Una fotografía de un mes anterior puede corregirse después, incluso si el empleado ahora está inactivo.
+`null` significa desconocido; `false` y cero requieren información suficiente. Pagos y movimientos de Accesos ya están implementados, pero sus hechos todavía no se conectan a la fotografía mensual; tampoco se presume un historial completo de estados de membresía. El generador actual informa `member:true` si comprueba la habilitación al observar un instante del mes actual, o conserva una observación positiva anterior guardada del mismo empleado, socio y mes hasta el corte. En los demás casos informa `member:null`; no deduce un mes negativo de la situación actual. `used`, `costMinor` y `spendingMinor` permanecen en `null` y se omite moneda mientras no haya importes. Una fotografía de un mes anterior puede corregirse después, incluso si el empleado ahora está inactivo.
 
 **Pendientes económicos:** meses parciales, distribución de fracciones de centavo y devoluciones/ajustes negativos. No se aplica una regla de redondeo ni una devolución sin acordarla. Los meses parciales mantienen `costMinor:null`; otros valores no demostrables o no representables también permanecen desconocidos o requieren revisión, sin convertirlos en cero.
 

@@ -38,7 +38,7 @@ export async function apiAccesosRegistrar(body: AccesosOrden, clave: string) {
   return result;
 }
 
-async function request<T>(path: string, options: RequestInit = {}, privateRequest = true): Promise<T> {
+async function request<T>(path: string, options: RequestInit = {}, privateRequest = true, expectedStatus?: number): Promise<T> {
   const tokenUsed = sessionToken;
   if (privateRequest && !tokenUsed) {
     throw new ApiError('Iniciá sesión para realizar esta operación.', 401, 'SESION_REQUERIDA');
@@ -73,8 +73,12 @@ async function request<T>(path: string, options: RequestInit = {}, privateReques
       ? 'La sesión venció o no es válida. Iniciá sesión nuevamente.'
       : 'El servidor no pudo completar la operación (' + response.status + ').'), response.status, error?.codigo);
   }
+  if (expectedStatus !== undefined && (response.status !== expectedStatus || response.redirected
+    || response.headers.get('Content-Type')?.split(';')[0].trim().toLowerCase() !== 'application/json')) {
+    throw new ApiError('El servidor no confirmó la respuesta esperada. Conservá la operación para revisarla o reintentar.', 502, 'RESPUESTA_INVALIDA');
+  }
   if (!data || typeof data !== 'object') {
-    throw new ApiError('El servidor devolvió una respuesta no válida.', response.status, 'RESPUESTA_INVALIDA');
+    throw new ApiError('El servidor devolvió una respuesta no válida.', expectedStatus === undefined ? response.status : 502, 'RESPUESTA_INVALIDA');
   }
   return data as T;
 }
@@ -109,6 +113,67 @@ export function apiObtenerSocio(socioId: string): Promise<AuthUser & { membresia
 export async function apiConsultarTienda(): Promise<never> {
   await request('/api/v1/tienda/productos');
   throw new ApiError('No se pudo interpretar la respuesta de la tienda.', 502, 'RESPUESTA_INVALIDA');
+}
+
+export interface StockItemTienda {
+  productoCodigo: string; unidadesDisponibles: number; unidadesVendidas: number;
+}
+export interface StockTienda { proveedorId: 'fav'; items: StockItemTienda[] }
+export interface VentaOrdenTienda { productoCodigo: string; unidades: number }
+export interface VentaTienda extends VentaOrdenTienda { ventaId: string; estado: 'REGISTRADA' }
+export interface VentaPendienteTienda { clave: string; body: VentaOrdenTienda }
+
+// Una respuesta de una vista anterior no puede retirar la siguiente venta.
+export function retirarVentaTiendaPendiente(storage: Pick<Storage, 'getItem' | 'removeItem'>,
+  storageKey: string, op: VentaPendienteTienda, esActual: () => boolean): boolean {
+  if (!esActual()) return false;
+  const raw = storage.getItem(storageKey);
+  if (raw === null) return true;
+  let actual: unknown;
+  try { actual = JSON.parse(raw); } catch { return false; }
+  if (!isRecord(actual) || !exactKeys(actual, ['clave', 'body']) || actual.clave !== op.clave
+    || !isRecord(actual.body) || !exactKeys(actual.body, ['productoCodigo', 'unidades'])
+    || actual.body.productoCodigo !== op.body.productoCodigo || actual.body.unidades !== op.body.unidades
+    || !esActual()) return false;
+  // Comparación y borrado son síncronos, sin ceder entre ambos.
+  storage.removeItem(storageKey);
+  return true;
+}
+
+const exactKeys = (value: Record<string, unknown>, keys: string[]) =>
+  Object.keys(value).length === keys.length && keys.every(key => Object.prototype.hasOwnProperty.call(value, key));
+function invalidStockTienda(): never {
+  throw new ApiError('El servidor devolvió información de stock no válida. Volvé a consultar.', 502, 'RESPUESTA_INVALIDA');
+}
+export async function apiConsultarStockTienda(): Promise<StockTienda> {
+  const value = await request<unknown>('/api/v1/tienda/stock', {}, true, 200);
+  if (!isRecord(value) || !exactKeys(value, ['proveedorId', 'items']) || value.proveedorId !== 'fav'
+    || !Array.isArray(value.items)) return invalidStockTienda();
+  const items = value.items.map(item => {
+    if (!isRecord(item) || !exactKeys(item, ['productoCodigo', 'unidadesDisponibles', 'unidadesVendidas'])
+      || !isText(item.productoCodigo) || !isNatural(item.unidadesDisponibles) || !isNatural(item.unidadesVendidas)) {
+      return invalidStockTienda();
+    }
+    return { productoCodigo: item.productoCodigo, unidadesDisponibles: item.unidadesDisponibles, unidadesVendidas: item.unidadesVendidas };
+  });
+  if (new Set(items.map(item => item.productoCodigo)).size !== items.length) return invalidStockTienda();
+  return { proveedorId: 'fav', items };
+}
+export async function apiRegistrarVentaTienda(body: VentaOrdenTienda, clave: string): Promise<VentaTienda> {
+  if (!isRecord(body) || !exactKeys(body, ['productoCodigo', 'unidades']) || !isText(body.productoCodigo)
+    || !isNatural(body.unidades) || body.unidades < 1 || !isText(clave) || /[\r\n]/.test(clave)) {
+    throw new ApiError('Indicá una variante, unidades enteras positivas y la clave de la venta.', 400, 'SOLICITUD_INVALIDA');
+  }
+  const value = await request<unknown>('/api/v1/tienda/ventas', {
+    method: 'POST', headers: { 'Idempotency-Key': clave },
+    body: JSON.stringify({ productoCodigo: body.productoCodigo, unidades: body.unidades }),
+  }, true, 201);
+  if (!isRecord(value) || !exactKeys(value, ['ventaId', 'estado', 'productoCodigo', 'unidades'])
+    || !isText(value.ventaId) || value.estado !== 'REGISTRADA'
+    || value.productoCodigo !== body.productoCodigo || value.unidades !== body.unidades) {
+    throw new ApiError('El servidor no confirmó esta venta. Conservá los datos para reintentar la misma operación.', 502, 'RESPUESTA_INVALIDA');
+  }
+  return { ventaId: value.ventaId, estado: 'REGISTRADA', productoCodigo: value.productoCodigo as string, unidades: value.unidades as number };
 }
 
 export interface BackendClaseDTO {

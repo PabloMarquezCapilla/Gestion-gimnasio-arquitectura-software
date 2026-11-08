@@ -506,3 +506,148 @@ test('Membresías: ni errores de red ni consultas ajenas se convierten en éxito
  globalThis.fetch=async()=>json({items:[{solicitudId:'ajena'}]});await assert.rejects(api.apiSolicitudesMembresia(1,'socio-1'),{status:502});
  globalThis.fetch=async()=>json({});await assert.rejects(api.apiPlanesMembresia(),{status:502});
 });
+
+const ventaTienda = { ventaId: 'venta-ficticia-001', estado: 'REGISTRADA', productoCodigo: 'var-ficticia-ñ / M', unidades: 3 };
+const ordenVentaTienda = { productoCodigo: ventaTienda.productoCodigo, unidades: 3 };
+
+test('Tienda stock administra existencias con JWT propio; conserva cero y no usa la credencial FAV', async () => {
+  api.setApiSession('jwt-admin-tienda');
+  for (const items of [[], [{ productoCodigo: 'var-ficticia-ñ / M', unidadesDisponibles: 0, unidadesVendidas: 10 }]]) {
+    globalThis.fetch = async (url, options) => {
+      assert.equal(url, '/api/v1/tienda/stock');
+      assert.equal(options.headers.get('Authorization'), 'Bearer jwt-admin-tienda');
+      assert.equal(options.headers.has('X-API-Key'), false);
+      assert.equal(options.body, undefined);
+      return json({ proveedorId: 'fav', items });
+    };
+    assert.deepEqual(await api.apiConsultarStockTienda(), { proveedorId: 'fav', items });
+  }
+});
+
+test('Tienda stock rechaza esquemas incompletos, códigos duplicados y cantidades inseguras sin fabricar existencias', async () => {
+  api.setApiSession('jwt-admin-tienda');
+  const item = { productoCodigo: 'var-ficticia', unidadesDisponibles: 2, unidadesVendidas: 0 };
+  for (const value of [null, [], {}, { proveedorId: 'otro', items: [] }, { proveedorId: 'fav', items: null },
+    { proveedorId: 'fav', items: [item, item] }, { proveedorId: 'fav', items: [{}] },
+    ...[{ productoCodigo: '' }, { unidadesDisponibles: -1 }, { unidadesVendidas: 1.5 },
+      { unidadesDisponibles: Number.MAX_SAFE_INTEGER + 1 }, { unidadesVendidas: '3' }, { precio: 100 }]
+      .map(change => ({ proveedorId: 'fav', items: [{ ...item, ...change }] }))]) {
+    globalThis.fetch = async () => json(value);
+    await assert.rejects(api.apiConsultarStockTienda(), { status: 502, codigo: 'RESPUESTA_INVALIDA' });
+  }
+  globalThis.fetch = async () => json({ proveedorId: 'fav', items: [] }, 201);
+  await assert.rejects(api.apiConsultarStockTienda(), { status: 502 });
+});
+
+test('Tienda venta envía variante exacta, unidades y la misma clave en cada reintento explícito', async () => {
+  api.setApiSession('jwt-admin-tienda');
+  let calls = 0;
+  globalThis.fetch = async (url, options) => {
+    calls++;
+    assert.equal(url, '/api/v1/tienda/ventas');
+    assert.equal(options.method, 'POST');
+    assert.equal(options.headers.get('Authorization'), 'Bearer jwt-admin-tienda');
+    assert.equal(options.headers.get('Content-Type'), 'application/json');
+    assert.equal(options.headers.get('Idempotency-Key'), 'clave-venta-ficticia');
+    assert.equal(options.headers.has('X-API-Key'), false);
+    assert.deepEqual(JSON.parse(options.body), ordenVentaTienda);
+    return json(ventaTienda, 201);
+  };
+  assert.deepEqual(await api.apiRegistrarVentaTienda(ordenVentaTienda, 'clave-venta-ficticia'), ventaTienda);
+  assert.deepEqual(await api.apiRegistrarVentaTienda(ordenVentaTienda, 'clave-venta-ficticia'), ventaTienda);
+  assert.equal(calls, 2);
+});
+
+test('Tienda venta rechaza datos locales inválidos antes de efectuar una escritura', async () => {
+  api.setApiSession('jwt-admin-tienda');
+  let calls = 0;
+  globalThis.fetch = async () => { calls++; return json(ventaTienda, 201); };
+  for (const body of [null, {}, { ...ordenVentaTienda, productoCodigo: ' ' },
+    ...[0, -1, 1.5, Number.MAX_SAFE_INTEGER + 1, '3'].map(unidades => ({ ...ordenVentaTienda, unidades })),
+    { ...ordenVentaTienda, actorId: 'otro' }]) {
+    await assert.rejects(api.apiRegistrarVentaTienda(body, 'clave-valida'), { status: 400 });
+  }
+  for (const key of ['', ' ', 'clave\r\nOtra-Cabecera: valor']) {
+    await assert.rejects(api.apiRegistrarVentaTienda(ordenVentaTienda, key), { status: 400 });
+  }
+  assert.equal(calls, 0);
+});
+
+test('Tienda venta requiere 201 y confirmación de la misma variante y unidades; no acepta éxito incompleto', async () => {
+  api.setApiSession('jwt-admin-tienda');
+  for (const status of [200, 202]) {
+    globalThis.fetch = async () => json(ventaTienda, status);
+    await assert.rejects(api.apiRegistrarVentaTienda(ordenVentaTienda, 'clave'), { status: 502, codigo: 'RESPUESTA_INVALIDA' });
+  }
+  for (const value of [undefined, {}, { ...ventaTienda, ventaId: '' }, { ...ventaTienda, estado: 'PENDIENTE' },
+    { ...ventaTienda, productoCodigo: 'otra' }, { ...ventaTienda, unidades: 2 }, { ...ventaTienda, saldo: 5 }]) {
+    globalThis.fetch = async () => json(value, 201);
+    await assert.rejects(api.apiRegistrarVentaTienda(ordenVentaTienda, 'clave'), { status: 502, codigo: 'RESPUESTA_INVALIDA' });
+  }
+  globalThis.fetch = async () => new Response(JSON.stringify(ventaTienda), { status: 201, headers: { 'Content-Type': 'text/html' } });
+  await assert.rejects(api.apiRegistrarVentaTienda(ordenVentaTienda, 'clave'), { status: 502 });
+});
+
+test('Tienda stock y ventas conservan errores de negocio, indisponibilidad y red sin reintentar ni cerrar sesión', async () => {
+  api.setApiSession('jwt-admin-tienda');
+  let calls = 0;
+  for (const status of [403, 409, 503]) {
+    globalThis.fetch = async () => { calls++; return json({ codigo: 'ERROR_CONTROLADO', mensaje: 'Revisar operación' }, status); };
+    await assert.rejects(api.apiConsultarStockTienda(), { status, codigo: 'ERROR_CONTROLADO' });
+    await assert.rejects(api.apiRegistrarVentaTienda(ordenVentaTienda, 'clave'), { status, codigo: 'ERROR_CONTROLADO' });
+  }
+  globalThis.fetch = async () => { calls++; throw new TypeError('Sin conexión'); };
+  await assert.rejects(api.apiRegistrarVentaTienda(ordenVentaTienda, 'clave'), { status: 0, codigo: 'ERROR_RED' });
+  assert.equal(calls, 7);
+  globalThis.fetch = async (_url, options) => {
+    assert.equal(options.headers.get('Authorization'), 'Bearer jwt-admin-tienda');
+    return json({ proveedorId: 'fav', items: [] });
+  };
+  assert.deepEqual(await api.apiConsultarStockTienda(), { proveedorId: 'fav', items: [] });
+});
+
+test('Tienda aplica el manejo central de JWT vencido y no vuelve a enviar una venta sin sesión', async () => {
+  let expired = 0, calls = 0;
+  api.setApiSession('jwt-admin-tienda', () => { expired++; });
+  globalThis.fetch = async () => { calls++; return json({ codigo: 'NO_AUTENTICADO', mensaje: 'Sesión vencida' }, 401); };
+  await assert.rejects(api.apiRegistrarVentaTienda(ordenVentaTienda, 'clave'), { status: 401 });
+  await assert.rejects(api.apiConsultarStockTienda(), { codigo: 'SESION_REQUERIDA' });
+  await assert.rejects(api.apiRegistrarVentaTienda(ordenVentaTienda, 'clave'), { codigo: 'SESION_REQUERIDA' });
+  assert.equal(expired, 1); assert.equal(calls, 1);
+});
+
+test('una respuesta tardía de una vista anterior no borra la siguiente venta pendiente', async () => {
+  api.setApiSession('jwt-admin-tienda');
+  const key = 'pulse.tienda.venta-pendiente.admin-ficticio';
+  const primera = { clave: 'venta-primera', body: ordenVentaTienda };
+  const siguiente = { clave: 'venta-siguiente', body: { ...ordenVentaTienda, unidades: 1 } };
+  const records = new Map([[key, JSON.stringify(primera)]]);
+  const storage = { getItem: k => records.get(k) ?? null, removeItem: k => records.delete(k) };
+  let resolverPrimera, vistaActual = true, llamadas = 0;
+  globalThis.fetch = async () => {
+    llamadas++;
+    return llamadas === 1 ? new Promise(resolve => { resolverPrimera = resolve; }) : json(ventaTienda, 201);
+  };
+  const tardia = api.apiRegistrarVentaTienda(primera.body, primera.clave).then(() =>
+    api.retirarVentaTiendaPendiente(storage, key, primera, () => vistaActual));
+  vistaActual = false; // Se desmontó el panel que inició la primera petición.
+  await api.apiRegistrarVentaTienda(primera.body, primera.clave); // La nueva vista recuperó su recibo.
+  assert.equal(api.retirarVentaTiendaPendiente(storage, key, primera, () => true), true);
+  records.set(key, JSON.stringify(siguiente));
+  resolverPrimera(json(ventaTienda, 201));
+  assert.equal(await tardia, false);
+  assert.deepEqual(JSON.parse(records.get(key)), siguiente);
+});
+
+test('la limpieza de una venta comprueba clave y cuerpo y conserva un registro diferente', () => {
+  const key = 'venta-pendiente';
+  const original = { clave: 'misma-clave', body: ordenVentaTienda };
+  let record = JSON.stringify({ ...original, body: { ...original.body, unidades: 1 } });
+  let eliminaciones = 0;
+  const storage = { getItem: () => record, removeItem: () => { record = null; eliminaciones++; } };
+  assert.equal(api.retirarVentaTiendaPendiente(storage, key, original, () => true), false);
+  assert.equal(eliminaciones, 0);
+  record = JSON.stringify(original);
+  assert.equal(api.retirarVentaTiendaPendiente(storage, key, original, () => true), true);
+  assert.equal(eliminaciones, 1);
+});
