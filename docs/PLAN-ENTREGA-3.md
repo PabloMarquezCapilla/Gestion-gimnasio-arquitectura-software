@@ -1,6 +1,6 @@
 # Plan de cierre de entrega 3
 
-**Estado:** 06/11/2026. Base sincronizada con `main`, commit `b6e34dd`; trabajo actual en `feat/integracion-tienda-proveedor`.
+**Estado.** 07/11/2026. PR #7 de Tienda integrada en `main`, commit `837df58`. Paso 4 consolidado en la rama local `feat/membresias-eventos` sobre esa base. Publicación de esta rama pendiente.
 **Referencia:** presentación grupal, páginas 8–9 del enunciado. La defensa individual de la página 9 tiene verificaciones adicionales, identificadas abajo.
 
 ## Forma de trabajo
@@ -35,12 +35,13 @@ Se conservaron pagos/planes/membresías, reservas/FIFO, Accesos con MongoDB, cac
 - **Cierre:** consulta real integrada al flujo, test de contrato, validación de respuestas, timeout y errores visibles sin inventar catálogo o stock cero. Coordinar prueba conjunta en ambos sentidos.
 - **Documentación:** D9, guía de integración, configuración y evidencia de fallas. **Enunciado:** §4.1, páginas 5–6; presentación, página 8.
 
-## 4. Cambios de membresía y mensajería — pendiente
+## 4. Cambios de membresía y mensajería — implementado y verificado localmente
 
-- Completar el comando administrativo requerido para cambios de habilitación y el evento `MembresiaActualizada` mediante Outbox → RabbitMQ → consumidor idempotente/Inbox, con tratamiento de mensajes fallidos.
-- Aplicar la cancelación de reservas futuras afectadas y liberar/reasignar cupos respetando FIFO. RabbitMQ configurado no equivale a este flujo implementado.
+- ADMIN suspende una membresía elegida inmediatamente, manteniendo fechas y pagos, según decisión confirmada el 07/11. Reactivación conserva su pendiente. Comando idempotente y panel incorporados.
+- Evento `MembresiaActualizada` versión 1 para suspensión mediante Outbox → RabbitMQ → Inbox, reintentos acotados y DLQ. Cancela reservas futuras afectadas y reutiliza recuperación FIFO. Proyección y bloqueo por socio evitan escrituras posteriores al consumo con evaluaciones HTTP antiguas.
 - **Cierre:** comprobar cambio y evento atómicos, duplicados, caída/reinicio, reentrega, mensajes no procesables y efectos sin reservas/cupos duplicados.
 - **Documentación:** D4/D5/D10, contrato versionado del evento y recuperación. **Enunciado:** §2.5, página 2; presentación, página 9; RN-R08/CA-R09 del alcance.
+- **Verificación.** 12 pruebas PostgreSQL/RabbitMQ, 213 de regresión, 20 de pagos, regresión PostgreSQL y compilación frontend aprobadas. Compose/NGINX comprobó suspensión y replay, cancelación y promoción con trabajadores reales y dos réplicas. Recorrido manual nuevo del panel pendiente. [Evidencia](EVIDENCIA-EVENTOS-MEMBRESIA.md).
 
 ## 5. Búsqueda y administración mínima de clases — pendiente
 
@@ -73,6 +74,7 @@ Se conservaron pagos/planes/membresías, reservas/FIFO, Accesos con MongoDB, cac
 
 - Consultar alojamiento/presupuesto, desplegar la capacidad en nube con URL pública y secretos fuera del repositorio; coordinar conectividad con ambos grupos.
 - Ejecutar regresión integrada, contratos, consistencia/concurrencia, carga y fallas; analizar capacidad/costos y revisar la frescura de ocupación con el negocio sin rehacer Redis.
+- Revisar los avisos previos de dependencias Fastify/fast-uri detectados el 07/11 y verificar su actualización antes del cierre.
 - **Cierre:** frontend hasta las capacidades compartidas, servicios y dos almacenamientos operativos, caché medida, búsqueda, evento y pruebas conjuntas; documentación sin contradicciones y limitaciones explícitas.
 - Actualizar diagramas e índice ADR conservando decisiones reemplazadas. Revisar cambios y pruebas antes de la PR; la versión evaluable debe quedar en `main`.
 - **Documentación:** README, alcance, arquitectura, D13 y evidencia. **Enunciado:** §2.11–2.12/§3, páginas 3–4; presentación y defensa, páginas 8–9.

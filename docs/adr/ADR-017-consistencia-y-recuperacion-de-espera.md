@@ -12,7 +12,7 @@ Cancelar y validar remotamente a todos los candidatos dentro de una transacción
 
 ## Decisión
 
-1. **Escrituras locales atómicas.** Reserva, espera, cancelación y promoción bloquean primero la fila de la clase y luego consultan sus reservas y espera. Capacidad, inicio, duplicados y prioridad se vuelven a comprobar dentro de la transacción. Los índices únicos parciales impiden dos reservas confirmadas o dos esperas pendientes del mismo socio para la misma clase. En memoria se usa exclusión por clase, conservando las mismas reglas.
+1. **Escrituras locales atómicas.** Reserva, espera y promoción serializan por socio antes de bloquear clase, para coordinarse con el evento de suspensión concretado en D5 el 07/11/2026. La cancelación conserva su bloqueo local de clase. Se revalidan capacidad, inicio, proyección de suspensión, duplicados y prioridad dentro de la transacción. Los índices únicos parciales impiden duplicados activos. En memoria las pruebas HTTP conservan exclusión por clase y la mensajería operativa exige PostgreSQL.
 2. **Validación fuera de los bloqueos.** `ReservasService` consulta Socios para el momento actual y para el inicio de la clase antes de reservar o entrar a espera. Las dos lecturas se ejecutan en paralelo. Una falla remota produce 503 sin confirmar una reserva; una respuesta válida no habilitada produce 422. Una renovación futura no oculta la membresía que cubre el momento actual.
 3. **Cancelación local.** Antes del inicio se cancela la reserva aunque Socios no responda. La respuesta incluye `reasignacionPendiente` cuando queda un candidato por evaluar. Una solicitud nueva no puede ocupar el cupo mientras haya espera pendiente; volver a reservar después de cancelar sigue permitido si no perjudica esa prioridad.
 4. **Promoción recuperable.** Un trabajador del servidor busca clases futuras con cupo y espera pendiente. Obtiene el primer candidato, valida su membresía fuera de la transacción y vuelve a bloquear la clase para comprobar que sigue siendo el primero, que no comenzó la clase y que existe cupo. Solo entonces confirma la reserva y marca la espera promovida, atómicamente.
@@ -23,7 +23,7 @@ Cancelar y validar remotamente a todos los candidatos dentro de una transacción
 
 Se descarta rechazar la cancelación por una caída de Socios y se descarta consultar la red bajo un bloqueo SQL. El cupo puede quedar temporalmente sin asignar mientras se recupera Socios; la prioridad se mantiene y la reasignación es eventual. El resultado de validación remota es una comprobación puntual: no existe una transacción distribuida entre ambas bases.
 
-La cancelación automática de reservas por una suspensión posterior de membresía requiere el evento de dominio de D5 y sigue pendiente; no debe confundirse con esta recuperación de promociones.
+La suspensión administrativa y su evento de D5 se concretaron el 07/11/2026. Clases cancela las reservas futuras afectadas junto con Inbox y recupera sus cupos mediante este mismo trabajador FIFO. [Contrato y operación](../contracts/membresias-eventos.md), [evidencia](../EVIDENCIA-EVENTOS-MEMBRESIA.md).
 
 ## Verificación
 
@@ -45,4 +45,4 @@ Pruebas de aplicación y repositorio en `services/clases-reservas/test/reservas.
 
 ### Planes y pagos manuales — etapa 3
 
-[ADR-021](ADR-021-planes-pagos-membresias.md) serializa por socio dentro de Socios y confirma pago, comprobante, membresía y resultado idempotente juntos. No modifica los bloqueos/FIFO de Clases ni introduce transacción distribuida. Se verifica habilitación de nuevas membresías por HTTP y se conserva la dependencia pendiente de eventos para suspensiones posteriores.
+[ADR-021](ADR-021-planes-pagos-membresias.md) conserva pago, comprobante, membresía y resultado juntos. Las validaciones HTTP de Clases continúan. D5 concreta además suspensiones mediante Outbox/RabbitMQ/Inbox, sin transacción distribuida y con la prioridad FIFO existente.

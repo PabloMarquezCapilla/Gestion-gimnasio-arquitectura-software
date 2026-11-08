@@ -1,5 +1,7 @@
 # ADR-021 — Planes, confirmación manual y habilitación transaccional
 
+**Actualización del 07/11/2026.** La suspensión administrativa y el flujo RabbitMQ se concretan en [D5](ADR-005-comunicacion-entre-servicios.md), con [contrato actualizado](../contracts/membresias-eventos.md) y [evidencia](../EVIDENCIA-EVENTOS-MEMBRESIA.md). Las exclusiones siguientes describen la etapa original de pagos. Reactivación e imputación mensual siguen pendientes.
+
 **Estado:** implementado para el flujo administrativo definido, 30/10/2026. Amplía D3/D4 y la autenticación de ADR-016; no cambia contratos externos, FIFO, MongoDB ni Redis.
 
 ## Fuentes y reglas confirmadas

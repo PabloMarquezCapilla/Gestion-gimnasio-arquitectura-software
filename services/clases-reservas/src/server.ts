@@ -1,4 +1,7 @@
 import { Pool } from 'pg';
+import { PostgresMembresiasEventos } from './membresias-eventos.postgres';
+import { MembresiasEventosService } from './application/membresias-eventos.service';
+import { ConsumidorMembresias } from './membresias-eventos.rabbit';
 import { buildApp } from './app';
 import { PostgresClaseRepository, MemoryClaseRepository } from './repository';
 import { HttpSociosClient, MockSociosClient } from './clients/socios.client';
@@ -20,6 +23,9 @@ async function start() {
   if (!Number.isInteger(retryMs) || retryMs < 100) throw new Error('RESERVAS_REINTENTO_MS debe ser al menos 100.');
 
   const databaseUrl = process.env.DATABASE_URL;
+  if (process.env.NODE_ENV === 'production' && !process.env.RABBITMQ_URL) {
+    throw new Error('Producción requiere RABBITMQ_URL para consumir cambios de membresía.');
+  }
   const sociosUrl = process.env.SOCIOS_SERVICE_URL;
   const usarMemoria = ['1', 'true'].includes(process.env.USE_MEMORY_DB ?? '');
   const permitirFallback = ['1', 'true'].includes(process.env.ALLOW_MEMORY_FALLBACK ?? '');
@@ -27,6 +33,7 @@ async function start() {
     throw new Error('Producción requiere DATABASE_URL y SOCIOS_SERVICE_URL; no admite memoria ni Socios simulado.');
   }
   let repository;
+  let eventosRepository: PostgresMembresiasEventos | undefined;
   let closeRepository: (() => Promise<void>) | undefined;
 
   if (databaseUrl && !usarMemoria) {
@@ -41,6 +48,7 @@ async function start() {
       closeRepository = () => pool.end();
       const pgRepo = new PostgresClaseRepository(pool);
       await pgRepo.inicializarEsquema();
+      eventosRepository = new PostgresMembresiasEventos(pool);
       console.log('[clases-reservas] Conectado a PostgreSQL y esquema inicializado.');
       repository = pgRepo;
     } catch (err) {
@@ -80,9 +88,13 @@ async function start() {
       .finally(() => { active = undefined; });
   };
   const worker = setInterval(processPending, retryMs);
+  const consumidor = eventosRepository && process.env.RABBITMQ_URL
+    ? new ConsumidorMembresias(process.env.RABBITMQ_URL,new MembresiasEventosService(eventosRepository),app.log) : undefined;
+  app.addHook('onListen',async () => { consumidor?.iniciar(); });
   worker.unref();
   app.addHook('onClose', async () => {
     clearInterval(worker);
+    await consumidor?.cerrar();
     await active;
     await closeRepository?.();
   });

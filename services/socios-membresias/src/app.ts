@@ -184,6 +184,14 @@ export function buildSociosApp(options: SociosAppOptions = {}): FastifyInstance 
     async (request) => sociosService.solicitarMembresia(identidad(request), request.params.socioId),
   );
 
+  app.get<{ Params: { socioId: string } }>('/api/v1/socios/:socioId/membresias',
+    { onRequest: autenticar },async (request,reply) => {
+      sociosService.exigirPropietario(identidad(request),request.params.socioId);
+      reply.header('Cache-Control','no-store');
+      await sociosService.consultarSocio(request.params.socioId);
+      return { items:await repository.obtenerMembresias(request.params.socioId) };
+    });
+
   const controlesCarCruds = [
     async (_request: FastifyRequest, reply: import('fastify').FastifyReply) => { reply.header('Cache-Control', 'no-store'); },
     autenticar, administrador,

@@ -46,6 +46,8 @@ El bloqueo por clase serializa escrituras sobre esa clase; su costo depende de l
 
 ## Verificación
 
+**Suspensiones, 07/11/2026.** `membresias_outbox` pertenece a Socios. Clases posee `membresias_inbox` y `membresias_suspendidas`. Migraciones aditivas, estado/evento/resultado atómicos en origen y cancelación/Inbox/proyección atómicos en destino. Las escrituras de reserva/espera/promoción y el consumidor bloquean socio antes de clase. Se mantiene propiedad exclusiva y entrega al menos una vez. [D5](ADR-005-comunicacion-entre-servicios.md) y [verificación específica](../EVIDENCIA-EVENTOS-MEMBRESIA.md).
+
 `npm run test:postgres` usa PostgreSQL 17 efímero, HTTP real e instancias con pools independientes: unicidad concurrente, alta externa/replay tras recrear app, rollback, último cupo, cancelación y recuperación FIFO. Para Car Cruds verifica carreras de vínculo/preparación/reclamo, historial, versiones/referencia, prueba positiva del mismo socio/mes, cuerpo inmutable, recuperación por lease/UUID y rollback de cabecera/fotografía. Los adaptadores en memoria no acreditan durabilidad. Pagos manuales se verifican separadamente con PostgreSQL real mediante `npm run test:membresias`, incluyendo rollback de comprobante, concurrencia y actualización de esquema; ver ADR-021. Accesos utiliza MongoDB real; pruebas y límites en [EVIDENCIA-ACCESOS](../EVIDENCIA-ACCESOS.md).
 
 La etapa 3 agrega cinco tablas sin modificar las solicitudes externas históricas: [ADR-021](ADR-021-planes-pagos-membresias.md). No se eliminan ni reparan datos del usuario al migrar.

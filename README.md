@@ -49,8 +49,8 @@ Las reglas de negocio, exclusiones y criterios de aceptación están en [ALCANCE
 
 | Componente | Disponible | Pendiente |
 |---|---|---|
-| Socios y Membresías | Login JWT, permisos, altas administrativas, planes, solicitudes, pagos manuales/comprobantes y membresías, lecturas/vinculación Car Cruds, vista previa y envío mensual manual con persistencia e historial; POST anterior de empleados. | Conexión conjunta Car Cruds; políticas de reactivación, superposición/prorrateos y automatización de cambios de membresía. |
-| Clases y Reservas | Catálogo por sede/fechas, reservas, cancelación, espera FIFO y recuperación de promociones; PostgreSQL y dos réplicas. | Publicación administrativa de clases, consulta textual FTS y cancelación de reservas por cambios posteriores de membresía. |
+| Socios y Membresías | Login JWT, permisos, altas administrativas, planes, pagos/comprobantes, suspensión inmediata con Outbox, lecturas/vínculos y fotografías Car Cruds y POST anterior de empleados. | Conexión conjunta Car Cruds y fuentes mensuales, políticas de reactivación y superposición/prorrateos. |
+| Clases y Reservas | Catálogo por sede/fechas, reservas, cancelación, espera FIFO y recuperación, consumo de suspensiones mediante Inbox/RabbitMQ con cancelación de reservas futuras afectadas. PostgreSQL y dos réplicas. | Publicación administrativa de clases, consulta textual FTS y retiro voluntario de espera. |
 | Accesos y Ocupación | Recepción ADMIN: ingresos/egresos, historial y ocupación real; MongoDB transaccional, Redis medido e idempotencia durable. | Integración de hechos de uso con Car Cruds. |
 | Tienda | Stock local en PostgreSQL, reposiciones FAV con clave técnica, ventas ADMIN, idempotencia durable y panel. Contrato FAV 1.0.0 verificado localmente. | Consumo del catálogo/disponibilidad de FAV, aceptación del contrato, URL pública y prueba conjunta. |
 | Gateway y portal | NGINX, rutas, portal React, balanceo y logs de destinos. | Despliegue público y frontend completo de los flujos pendientes. |
@@ -63,7 +63,7 @@ El **POST anterior `/api/v1/integraciones/empleados`**, contrato propio **1.0.1*
 
 ## Arquitectura y estructura
 
-Se utiliza Node.js 22, TypeScript y Fastify; React/Vite para el portal y NGINX como entrada. Clases aplica Hexagonal y Socios, Capas. PostgreSQL 17 está integrado; MongoDB 8.0 está integrado en Accesos; RabbitMQ 4.1 continúa configurado sin eventos de dominio operativos. Redis 8.2.11 acelera la ocupación con cache-aside.
+Se utiliza Node.js 22, TypeScript y Fastify, React/Vite para el portal y NGINX como entrada. Clases aplica Hexagonal y Socios, Capas. PostgreSQL 17, MongoDB 8.0 en Accesos y Redis 8.2.11 para ocupación están integrados. RabbitMQ 4.1 propaga suspensiones mediante Outbox/Inbox, reintentos y DLQ. [Uso, contrato y diagnóstico de suspensiones](docs/contracts/membresias-eventos.md), [evidencia](docs/EVIDENCIA-EVENTOS-MEMBRESIA.md).
 
 ```text
 services/
@@ -256,13 +256,14 @@ npm --prefix frontend ci --ignore-scripts
 
 | Comando | Qué comprueba |
 |---|---|
-| `npm test` | Compilación de los cuatro servicios y reglas/contratos; incluye HTTP externo controlado y API del frontend. Verificación del 06/11/2026: 209/209, sin fallos ni omitidas. La evidencia de motores reales se conserva en los documentos de cada capacidad. |
+| `npm test` | Compilación de los cuatro servicios y reglas/contratos, incluyendo HTTP externo controlado y API del frontend. Verificación del 07/11/2026 con 213/213, sin fallos ni omitidas. Las evidencias de motores reales se conservan por capacidad. |
 | `npm run frontend:build` | TypeScript y bundle de producción del portal. |
 | `npm run test:contrato-empleados` | Contrato y mock separado de empleados (11 pruebas). |
 | `npm run test:car-cruds` | Contrato externo 0.3.0, lecturas, permisos, vinculación, vista previa/envío, resultado incierto y reenvío exacto sin duplicar con proveedor controlado. |
 | `npm run test:postgres` | HTTP real, PostgreSQL efímero, dos instancias, permisos, reintentos/rollback de empleados, vínculos/fotografías Car Cruds, cuerpo inmutable, recuperación y concurrencia; último cupo, FIFO con fallas, traza y línea base de carga. |
 | `npm run test:balanceo` | Compose completo aislado, dos réplicas, distribución, escrituras concurrentes y caída/reemplazo sin reiniciar el gateway. |
 | `npm run test:tienda` | 18 pruebas HTTP/PostgreSQL reales: contrato FAV, permisos, idempotencia, concurrencia, reinicio, rollback, límites y caída de base; [evidencia](docs/EVIDENCIA-TIENDA.md). |
+| `npm run test:eventos` | 12 pruebas PostgreSQL/RabbitMQ reales de suspensión, atomicidad, duplicados, carreras, períodos, FIFO, reintentos, DLQ y recuperación del broker. [Evidencia](docs/EVIDENCIA-EVENTOS-MEMBRESIA.md). |
 
 Las pruebas de PostgreSQL, balanceo y Tienda requieren Docker, usan recursos temporales propios, no cargan `.env` y los retiran al terminar. Los tests en memoria no acreditan durabilidad. Para desarrollar solo el portal: `npm run frontend:dev`, manteniendo el backend iniciado.
 
@@ -284,7 +285,7 @@ El trabajo de cierre parte de `main` actualizado y se prepara en ramas de funcio
 | [Plan de cierre](docs/PLAN-ENTREGA-3.md) | Etapas, verificaciones y decisiones pendientes para la presentación y defensa; se completa una etapa por vez. |
 | [Postmortem](docs/POSTMORTEM.md) | Ensayo local de caída: impacto, secuencia, detección, respuesta, causa y mejoras (§2.9 y §3). |
 
-E1 (§6.2) queda representada por alcance, arquitectura/diagramas, límites, estructura y contratos/mocks conservados. Para E2 (§6.3) hay flujo propio operativo, PostgreSQL, logs/traza y ADR; Car Cruds cuenta con contrato, lecturas, vinculación y envío manual verificados localmente, con conexión y prueba conjunta pendientes. D9 mantiene abierta la consulta de stock de FAV. La implementación completa de búsqueda, mensajería y frontend de las funciones restantes, además del despliegue y la integración real, sigue pendiente para los requisitos generales y la presentación final (§6, páginas 8–9).
+E1 (§6.2) conserva alcance, arquitectura/diagramas, límites, estructura y contratos/mocks. E2 (§6.3) conserva flujo propio, PostgreSQL, logs/traza y ADR. Para la presentación final (§6, páginas 8–9), suspensión/mensajería están verificadas localmente. Siguen pendientes búsqueda y administración de clases, retiro de espera, fuentes mensuales y conexión conjunta Car Cruds, consulta externa de FAV, observabilidad final y despliegue. El [plan de entrega 3](docs/PLAN-ENTREGA-3.md) detalla el orden y sus dependencias.
 
 ## Caché Redis de ocupación (etapa 2)
 

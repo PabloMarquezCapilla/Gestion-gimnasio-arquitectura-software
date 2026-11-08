@@ -16,6 +16,32 @@ const json = (data, status = 200) => new Response(JSON.stringify(data), {
   status, headers: { 'Content-Type': 'application/json' },
 });
 
+test('Suspensión usa JWT y clave estable, y distingue guardado de respuesta inválida',async()=>{
+  api.setApiSession('jwt-ficticio');
+  const resultado={membresiaId:'mem-1',socioId:'socio-1',estado:'SUSPENDIDA',eventId:'e01bc7ee-36e0-48d9-b260-118fb7ad96fc',
+    suspendidaEn:'2026-11-07T15:00:00Z',fechaInicio:'2026-11-01T00:00:00Z',fechaFin:'2026-11-30T23:59:59Z'};
+  globalThis.fetch=async(url,options)=>{
+    assert.equal(url,'/api/v1/membresias/mem-1/suspender');assert.equal(options.headers.get('Authorization'),'Bearer jwt-ficticio');
+    assert.equal(options.headers.get('Idempotency-Key'),'suspension-estable');assert.deepEqual(JSON.parse(options.body),{});return json(resultado);
+  };
+  assert.deepEqual(await api.apiOperacionMembresia('/api/v1/membresias/mem-1/suspender','POST',{},'suspension-estable'),resultado);
+  globalThis.fetch=async()=>json(resultado,201);
+  await assert.rejects(api.apiOperacionMembresia('/api/v1/membresias/mem-1/suspender','POST',{},'suspension-estable'),{status:502});
+  globalThis.fetch=async()=>json({...resultado,membresiaId:'otra'});
+  await assert.rejects(api.apiOperacionMembresia('/api/v1/membresias/mem-1/suspender','POST',{},'suspension-estable'),{status:502});
+  globalThis.fetch=async()=>json({codigo:'ERROR_INTERNO'},500);
+  await assert.rejects(api.apiOperacionMembresia('/api/v1/membresias/mem-1/suspender','POST',{},'suspension-estable'),{status:500});
+});
+
+test('Historial de membresías verifica propietario, períodos y estados',async()=>{
+  api.setApiSession('jwt-ficticio');
+  const membresia={membresiaId:'mem-1',socioId:'socio-1',tipoPlan:'Plan',estado:'SUSPENDIDA',fechaInicio:'2026-11-01T00:00:00Z',fechaFin:'2026-11-30T23:59:59Z'};
+  globalThis.fetch=async url=>{assert.equal(url,'/api/v1/socios/socio-1/membresias');return json({items:[membresia]});};
+  assert.deepEqual((await api.apiHistorialMembresias('socio-1')).items,[membresia]);
+  globalThis.fetch=async()=>json({items:[{...membresia,socioId:'otro'}]});
+  await assert.rejects(api.apiHistorialMembresias('socio-1'),{status:502});
+});
+
 test('Accesos envía JWT, clave idempotente y cuerpo sin modificar al gateway', async () => {
   api.setApiSession('jwt-ficticio');
   const body = { sedeId: 'sede-1', socioId: 'socio-1', tipo: 'INGRESO' };

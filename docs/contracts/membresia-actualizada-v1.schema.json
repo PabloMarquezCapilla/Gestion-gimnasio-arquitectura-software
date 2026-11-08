@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:gimnasio:eventos:membresia-actualizada:1.0.0",
+  "title": "MembresiaActualizada — suspensión",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "eventId",
+    "tipo",
+    "schemaVersion",
+    "cambio",
+    "ocurridoEn",
+    "socioId",
+    "membresiaId",
+    "estado",
+    "fechaInicio",
+    "fechaFin",
+    "actorId"
+  ],
+  "properties": {
+    "eventId": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "tipo": {
+      "const": "MembresiaActualizada"
+    },
+    "schemaVersion": {
+      "const": 1
+    },
+    "cambio": {
+      "const": "SUSPENSION"
+    },
+    "estado": {
+      "const": "SUSPENDIDA"
+    },
+    "socioId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 50
+    },
+    "membresiaId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 50
+    },
+    "actorId": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 50
+    },
+    "ocurridoEn": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "fechaInicio": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "fechaFin": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "traceparent": {
+      "type": "string",
+      "pattern": "^00-[0-9a-f]{32}-[0-9a-f]{16}-[0-9a-f]{2}$"
+    }
+  },
+  "examples": [
+    {
+      "eventId": "e01bc7ee-36e0-48d9-b260-118fb7ad96fc",
+      "tipo": "MembresiaActualizada",
+      "schemaVersion": 1,
+      "cambio": "SUSPENSION",
+      "estado": "SUSPENDIDA",
+      "socioId": "socio-ficticio",
+      "membresiaId": "mem-ficticia",
+      "actorId": "admin-ficticio",
+      "ocurridoEn": "2026-11-07T15:00:00Z",
+      "fechaInicio": "2026-11-01T00:00:00Z",
+      "fechaFin": "2026-11-30T23:59:59Z"
+    }
+  ]
+}

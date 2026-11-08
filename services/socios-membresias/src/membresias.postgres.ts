@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { guardarSuspension } from './membresias.eventos';
 import { Pool, PoolClient } from 'pg';
 import { ComandoGestion, GestionRepository, PlanGestion, SolicitudGestion, falloGestion } from './membresias.gestion';
 
@@ -80,6 +81,21 @@ export class PostgresGestionMembresias implements GestionRepository {
   if (op === 'estadoPlan') {
    if (!(await c.query('UPDATE planes_membresia SET estado=$1 WHERE plan_id=$2 RETURNING plan_id',[d.estado,d.id])).rowCount) throw falloGestion('PLAN_NO_ENCONTRADO','No se encontró el plan.',404);
    return (await c.query(planSelect+' WHERE plan_id=$1',[d.id])).rows.map(r=>({...r,importeMinor:Number(r.importeMinor)}))[0];
+  }
+  if (op === 'suspenderMembresia') {
+   const original = (await c.query('SELECT socio_id FROM membresias WHERE membresia_id=$1',[d.id])).rows[0];
+   if (!original) throw falloGestion('MEMBRESIA_NO_ENCONTRADA','No se encontró la membresía.',404);
+   await c.query('SELECT socio_id FROM socios WHERE socio_id=$1 FOR UPDATE',[original.socio_id]);
+   const membresia = (await c.query('SELECT * FROM membresias WHERE membresia_id=$1 FOR UPDATE',[d.id])).rows[0];
+   let evento = (await c.query('SELECT evento FROM membresias_outbox WHERE membresia_id=$1',[d.id])).rows[0]?.evento;
+   if (membresia.estado === 'VENCIDA') throw falloGestion('TRANSICION_INVALIDA','La membresía registrada como vencida no admite suspensión.');
+   if (!evento) {
+    await c.query("UPDATE membresias SET estado='SUSPENDIDA',updated_at=clock_timestamp() WHERE membresia_id=$1",[d.id]);
+    evento = await guardarSuspension(c,membresia,actor);
+   }
+   return { membresiaId: membresia.membresia_id, socioId: membresia.socio_id, estado: 'SUSPENDIDA',
+    fechaInicio: membresia.fecha_inicio.toISOString(),fechaFin: membresia.fecha_fin.toISOString(),
+    eventId: evento.eventId, suspendidaEn: evento.ocurridoEn };
   }
   let s: SolicitudGestion | undefined;
   let socioId = d.socioId as string;

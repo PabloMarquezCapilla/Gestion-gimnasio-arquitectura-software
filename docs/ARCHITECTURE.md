@@ -37,7 +37,7 @@ ADMIN → panel React → NGINX `/api/v1/accesos/*` → Accesos. El ingreso cons
 1. El portal obtiene catálogo, reservas y espera propias con `GET /api/v1/reservas/clases` y Bearer JWT. Las consultas históricas `/api/v1/clases` conservan `X-API-Key` y el contrato anterior.
 2. Antes del inicio, `POST /api/v1/reservas` recibe `claseId` y, si se eligió, `ingresarEsperaSiLlena`. La identidad se toma del token; solo ADMIN puede indicar otro socio.
 3. Clases consulta en paralelo a Socios para ahora y para la fecha de clase, con `X-Service-Key`. Cada verificación tiene presupuesto de 3000 ms, incluido cuerpo y como máximo un reintento. Una respuesta desconocida produce indisponibilidad, no habilitación.
-4. La escritura bloquea primero la fila de la clase, vuelve a verificar inicio, duplicados, cupo y prioridad de espera y confirma la reserva o la espera voluntaria. Los índices únicos parciales respaldan las restricciones.
+4. La escritura serializa por socio y bloquea la clase. Revalida inicio, suspensiones ya consumidas, duplicados, cupo y prioridad de espera antes de confirmar reserva o espera voluntaria. Los índices únicos parciales respaldan las restricciones.
 5. Una cancelación anterior al inicio se guarda sin depender de Socios. Si hay espera, el cupo conserva esa prioridad. El trabajador valida al primero fuera del bloqueo y confirma la promoción atómicamente; si hay falla de red, conserva al candidato y reintenta. Una inhabilitación comprobada lo retira y permite evaluar al siguiente.
 
 El trabajador recupera el trabajo de las tablas persistidas al iniciar y cada 5 s por defecto, sin superponer pasadas en una instancia. Varias instancias pueden competir; la transacción comprueba nuevamente el estado. No hay una transacción distribuida entre las bases: las validaciones remotas son puntuales. Detalle en [D4 vigente](adr/ADR-017-consistencia-y-recuperacion-de-espera.md) y [D5](adr/ADR-005-comunicacion-entre-servicios.md).
@@ -68,9 +68,9 @@ La API de FAV y los movimientos locales están implementados con PostgreSQL 17 p
 
 [ADR-022](adr/ADR-022-tienda-y-consignaciones-fav.md) conserva el cambio respecto del límite anterior y [EVIDENCIA-TIENDA](EVIDENCIA-TIENDA.md) documenta los ensayos locales. Publicación, aceptación de FAV y comunicación conjunta siguen pendientes; Car Cruds mantiene su capacidad independiente.
 
-### Mensajería prevista
+### Mensajería de suspensiones
 
-RabbitMQ está configurado. Se conserva el diseño `MembresiaActualizada` con Outbox en Socios, consumidor idempotente/Inbox en Clases y cola de mensajes fallidos. Publicador, consumidor y recuperación aún no están implementados; la suspensión posterior no cancela automáticamente reservas futuras todavía. [D5](adr/ADR-005-comunicacion-entre-servicios.md).
+ADMIN suspende una membresía elegida inmediatamente conservando sus fechas. Socios guarda estado, evento Outbox y resultado juntos y publica con confirmación fuera de SQL. Clases guarda Inbox, proyección y cancelación de reservas futuras afectadas en una transacción, y confirma la entrega después del commit. Reasignación reutiliza FIFO. Reintentos de 1, 5 y 15 s y DLQ conservan mensajes fallidos. Existe consistencia eventual hasta el consumo. [D5](adr/ADR-005-comunicacion-entre-servicios.md), [contratos](contracts/membresias-eventos.md) y [evidencia](EVIDENCIA-EVENTOS-MEMBRESIA.md).
 
 ## Balanceo y observabilidad
 
@@ -126,8 +126,8 @@ flowchart TB
         accesos -->|Transacciones · propiedad exclusiva| dbAccesos[("Base de Datos Accesos<br/>MongoDB 8.0 · presencias y movimientos")]
         tienda -->|Transacciones · propiedad exclusiva| dbTienda[("Base de Datos Tienda · PostgreSQL 17<br/>Stock, reposiciones, ventas e idempotencia<br/>Única tienda del gimnasio")]
         
-        socios -.->|Diseño pendiente: Outbox y publicación| rabbitmq["RabbitMQ 4.1 configurado"]
-        rabbitmq -.->|Diseño pendiente: consumo e Inbox| clases
+        socios -->|Outbox y publicación confirmada| rabbitmq["RabbitMQ 4.1<br/>MembresiaActualizada v1 · suspensión<br/>Cola durable y DLQ"]
+        rabbitmq -->|Consumo · Inbox y cancelación atómicos| clases
     end
     carcruds["Car Cruds · Empleados<br/>OpenAPI 0.3.0<br/>Empleados, estado e informe receptor"]
     socios -->|GET empleados/estado · Bearer gym<br/>Cliente implementado; conexión por coordinar| carcruds
@@ -181,7 +181,7 @@ sequenceDiagram
 - **Dominio pendiente:** políticas para reactivación, superposición, acumulación/prorrateo, credenciales de empleados y publicación de clases. Planes, solicitudes, pagos/comprobantes y nuevos períodos explícitos no superpuestos están implementados (ADR-021). Accesos ya implementa movimientos y ocupación; su caché está implementada; el consumo desde Car Cruds queda pendiente. El frontend no simula éxito de esas funciones.
 - **Integración externa:** Car Cruds tiene contrato fijado, lecturas, vínculo y envío durable probados localmente; faltan la imputación mensual de los nuevos cobros/ingresos y la prueba conjunta con conexión operativa. Tienda tiene stock/reposiciones/ventas locales con PostgreSQL, pero no consume todavía catálogo/disponibilidad de FAV. La publicación accesible, aceptación y pruebas entre grupos siguen pendientes (§4.1).
 - **Búsqueda y caché:** FTS/GIN creado pero sin consulta textual; Redis sobre ocupación implementado y medido localmente. Compose aislado fue verificado según [EVIDENCIA-MEMBRESIAS](EVIDENCIA-MEMBRESIAS.md); despliegue público y demanda de producción pendientes.
-- **Mensajería:** broker configurado sin evento publicado/consumido, Inbox/Outbox ni DLQ; reservas futuras no se cancelan automáticamente por una suspensión posterior.
+- **Mensajería.** Suspensión, Outbox/RabbitMQ/Inbox, cancelación y DLQ implementados. Consistencia eventual hasta consumo, broker único y revisión manual de DLQ. Reactivación requiere ampliar evento y proyección.
 - **Disponibilidad:** un gateway, una instancia PostgreSQL y MongoDB de un nodo. Dos réplicas HTTP no eliminan esos puntos de falla ni los errores durante detección. No hay despliegue multizona ni protección completa por circuit breaker/límite de concurrencia.
 - **Identidad:** Clases y Tienda validan el JWT hasta su vencimiento; no hay revocación inmediata ni refresh tokens. La configuración actual del POST admite un origen externo por entorno.
 - **Operación:** faltan tableros/alertas, prueba de carga sostenida y presupuesto definitivo. Las mediciones locales no acreditan SLO ni capacidad máxima. El postmortem registra un ensayo local, no la jornada completa con proveedor.
@@ -201,7 +201,7 @@ Estas limitaciones mantienen visibles los requisitos generales y de la presentac
 | **D3** | Persistencia relacional y documental | PostgreSQL propio en Socios/Clases/Tienda; MongoDB en Accesos; movimientos de Tienda transaccionales | [ADR-003](adr/ADR-003-persistencia.md) |
 | **D4 anterior** | Consistencia y concurrencia | Reemplazada por ADR-017; antecedente | [ADR-004](adr/ADR-004-consistencia-y-concurrencia.md) |
 | **D4 vigente** | Consistencia y recuperación FIFO | Cancelación local y promoción recuperable verificadas | [ADR-017](adr/ADR-017-consistencia-y-recuperacion-de-espera.md) |
-| **D5** | Comunicación entre servicios (Síncrona y Asíncrona) | HTTP y POST externo operativos; mensajería pendiente | [ADR-005](adr/ADR-005-comunicacion-entre-servicios.md) |
+| **D5** | Comunicación síncrona y asíncrona | HTTP conservado y suspensión mediante Outbox/RabbitMQ/Inbox, cancelación y DLQ | [ADR-005](adr/ADR-005-comunicacion-entre-servicios.md) |
 | **D6** | Búsqueda | Catálogo filtrado; FTS preparado, consulta textual pendiente | [ADR-006](adr/ADR-006-busqueda.md) |
 | **D7** | Caché | Redis implementado y medido; ADR-020 concreta ADR-007 | [ADR-007](adr/ADR-007-cache.md) |
 | **D8 inicial** | Consulta de clases | Reemplazado; contrato y pruebas conservados | [ADR-008](adr/ADR-008-contrato-propio.md) |
@@ -228,4 +228,4 @@ La coherencia es eventual: una invalidación fallida o un proceso que cae despu�
 
 React → NGINX → Socios: gestión ADMIN y consulta del propietario; Clases sigue validando habilitación mediante HTTP. `membresias.gestion.ts` valida comandos; `membresias.http.ts` autentica y registra métricas/logs; `membresias.postgres.ts` serializa por socio y guarda pago confirmado, membresía, comprobante y resultado idempotente juntos. Las nuevas tablas son `planes_membresia`, `solicitudes_planes`, `pagos_membresia`, `comprobantes_membresia` y `operaciones_membresia`, separadas de solicitudes externas históricas.
 
-No hay tarifas demo nuevas, fecha final inferida ni activación desde React. ADMIN configura plan y período y confirma manualmente el cobro verificado. Renovación es otro período explícito sin superposición; las políticas restantes se mantienen abiertas. Ver [ADR-021](adr/ADR-021-planes-pagos-membresias.md) y [evidencia](EVIDENCIA-MEMBRESIAS.md). No cambia el cálculo/contrato de Clases, la política FIFO, Accesos/Redis ni el contrato Car Cruds; automatización de suspensiones por RabbitMQ pendiente.
+ADMIN configura plan y período y confirma manualmente el cobro verificado. Renovación es otro período explícito sin superposición y las políticas restantes se mantienen abiertas. [ADR-021](adr/ADR-021-planes-pagos-membresias.md) y [evidencia de pagos](EVIDENCIA-MEMBRESIAS.md) conservan esa etapa. El 07/11 se concreta suspensión y propagación RabbitMQ con D5, manteniendo FIFO y los contratos entre grupos.

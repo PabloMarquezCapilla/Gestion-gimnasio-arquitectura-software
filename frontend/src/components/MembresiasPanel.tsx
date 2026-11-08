@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ApiError, apiOperacionMembresia, apiPlanesMembresia, apiSociosAdministracion, apiSolicitudesMembresia } from '../services/api';
-import type { PlanMembresia, SolicitudMembresia, SocioAdministrativo } from '../services/api';
+import { ApiError, apiHistorialMembresias, apiOperacionMembresia, apiPlanesMembresia, apiSociosAdministracion, apiSolicitudesMembresia } from '../services/api';
+import type { MembresiaAdministrativa, PlanMembresia, SolicitudMembresia, SocioAdministrativo } from '../services/api';
 const button = 'rounded-lg border border-outline-variant px-4 py-2 text-sm font-semibold disabled:opacity-50 hover:bg-surface-container-high';
 const input = 'block bg-surface-container border border-outline-variant rounded-lg p-2 w-full';
 const box = 'rounded-xl border border-outline-variant bg-surface-container-low p-4 space-y-3';
@@ -8,7 +8,7 @@ const texto = (e: unknown) => e instanceof Error ? e.message : 'No se pudo compl
 type Operacion = { path: string; method: 'POST' | 'PUT'; body: object; clave: string };
 function recuperar(key: string): Operacion | null {
  try { const p=JSON.parse(sessionStorage.getItem(key)??'null');
-  return p && /^\/api\/v1\/(planes|solicitudes|pagos|socios)(\/[A-Za-z0-9_-]+)*$/.test(p.path) && ['POST','PUT'].includes(p.method) && typeof p.body==='object' && p.body && typeof p.clave==='string' ? p : null;
+  return p && /^\/api\/v1\/(planes|solicitudes|pagos|socios|membresias)(\/[A-Za-z0-9_-]+)*$/.test(p.path) && ['POST','PUT'].includes(p.method) && typeof p.body==='object' && p.body && typeof p.clave==='string' ? p : null;
  } catch { return null; }
 }
 export function SolicitudesVista({ items }: { items: SolicitudMembresia[] }) {
@@ -33,21 +33,34 @@ export function MembresiasPanel({ actorId,onNuevoSocio,filtro='' }: { actorId: s
  const [planes,setPlanes]=useState<PlanMembresia[]>([]),[socios,setSocios]=useState<SocioAdministrativo[]>([]),[items,setItems]=useState<SolicitudMembresia[]>([]);
  const [pagina,setPagina]=useState(1),[loading,setLoading]=useState(false),[saving,setSaving]=useState(false),[error,setError]=useState(''),[status,setStatus]=useState('');
  const [socioId,setSocioId]=useState(''),[planId,setPlanId]=useState(''),[inicio,setInicio]=useState(''),[fin,setFin]=useState('');
+ const [membresias,setMembresias]=useState<MembresiaAdministrativa[]>([]),[errorMembresias,setErrorMembresias]=useState('');
+ const [revisionMembresias,setRevisionMembresias]=useState(0);
  const [nombre,setNombre]=useState(''),[importe,setImporte]=useState(''),[moneda,setMoneda]=useState('');
  const [referencias,setReferencias]=useState<Record<string,string>>({}),[verificados,setVerificados]=useState<Record<string,boolean>>({});
  const mutation=useRef(false);
- const refresh=useCallback(async()=>{setLoading(true);setError('');try{
+ const generation=useRef(0),refreshId=useRef(0);
+ useEffect(()=>{generation.current++;return()=>{generation.current++;refreshId.current++;};},[]);
+ const refresh=useCallback(async()=>{const id=++refreshId.current;setLoading(true);setError('');try{
   const [p,s,r]=await Promise.all([apiPlanesMembresia(),apiSociosAdministracion(pagina),apiSolicitudesMembresia(pagina)]);
+  if(id!==refreshId.current)return;
   setPlanes(p.items);setSocios(s.items);setItems(r.items);
- }catch(e){setError(texto(e));}finally{setLoading(false);}},[pagina]);
+ }catch(e){if(id===refreshId.current)setError(texto(e));}finally{if(id===refreshId.current)setLoading(false);}},[pagina]);
  useEffect(()=>{void refresh();},[refresh]);
+ useEffect(()=>{
+  let actual=true;setMembresias([]);setErrorMembresias('');
+  if(socioId)void apiHistorialMembresias(socioId).then(r=>{if(actual)setMembresias(r.items);}).catch(e=>{if(actual)setErrorMembresias(texto(e));});
+  return()=>{actual=false;};
+ },[socioId,revisionMembresias]);
  const ejecutar=async(op:Operacion)=>{
   if(mutation.current)return;mutation.current=true;setSaving(true);setError('');setStatus('');
+  const currentGeneration=generation.current,contenido=JSON.stringify(op);
+  const retirar=()=>{if(sessionStorage.getItem(storageKey)===contenido)sessionStorage.removeItem(storageKey);};
   try{sessionStorage.setItem(storageKey,JSON.stringify(op));setPendiente(op);
    await apiOperacionMembresia(op.path,op.method,op.body,op.clave);
-   sessionStorage.removeItem(storageKey);setPendiente(null);setStatus('Operación confirmada por el servidor.');setVerificados({});await refresh();
-  }catch(e){if(e instanceof ApiError && e.status>=400 && e.status<500 && ![401,408,429].includes(e.status)){sessionStorage.removeItem(storageKey);setPendiente(null);}setError(texto(e));}
-  finally{mutation.current=false;setSaving(false);}
+   if(currentGeneration!==generation.current)return;
+   retirar();setPendiente(null);setStatus(op.path.endsWith('/suspender')?'Suspensión guardada. La cancelación de reservas futuras se procesa mediante eventos.':'Operación confirmada por el servidor.');setVerificados({});setRevisionMembresias(r=>r+1);await refresh();
+  }catch(e){if(currentGeneration!==generation.current)return;if(e instanceof ApiError && e.status>=400 && e.status<500 && ![401,408,409,429].includes(e.status)){retirar();setPendiente(null);}setError(texto(e));}
+  finally{mutation.current=false;if(currentGeneration===generation.current)setSaving(false);}
  };
  const enviar=(path:string,body:object,method:'POST'|'PUT'='POST')=>ejecutar({path,body,method,clave:crypto.randomUUID()});
  const disabled=saving||!!pendiente||loading;
@@ -75,6 +88,16 @@ export function MembresiasPanel({ actorId,onNuevoSocio,filtro='' }: { actorId: s
     <p className="text-xs">Fechas explícitas en tu zona horaria. No se calculan meses ni se acumulan días. Las superposiciones requieren revisión.</p><button className={button} disabled={disabled||!planId||!socioId}>Crear solicitud</button>
    </form>
   </section></div>
+  {socioId&&<section className={box}><h2 className="font-bold">Membresías del socio seleccionado</h2>
+   <button className={button} disabled={disabled} onClick={()=>setRevisionMembresias(r=>r+1)}>Actualizar membresías</button>
+   {errorMembresias&&<p role="alert">{errorMembresias}</p>}
+   {membresias.map(m=><article key={m.membresiaId} className={box}><p>{m.tipoPlan} · {m.estado} · {m.membresiaId}</p>
+    <p>{new Date(m.fechaInicio).toLocaleString('es-AR')} — {new Date(m.fechaFin).toLocaleString('es-AR')}</p>
+    {m.estado==='HABILITADA'&&<button className={button} disabled={disabled} onClick={()=>{
+     if(window.confirm('¿Suspender esta membresía inmediatamente? Se mantienen sus fechas y se cancelarán las reservas futuras afectadas.'))void enviar('/api/v1/membresias/'+encodeURIComponent(m.membresiaId)+'/suspender',{});
+    }}>Suspender membresía</button>}
+   </article>)}
+  </section>}
   <section className={box}><h2 className="font-bold">Solicitudes y cobros — página {pagina}</h2><SolicitudesVista items={items}/>
    {items.filter(s=>s.estado==='PENDIENTE').map(s=><div key={s.solicitudId} className={box}><h3>Operar solicitud {s.solicitudId}</h3>
     {!s.pago?<form onSubmit={e=>{e.preventDefault();void enviar('/api/v1/solicitudes/'+s.solicitudId+'/pagos',{referencia:referencias[s.solicitudId]??'',importeMinor:s.importeMinor,moneda:s.moneda});}}><label>Referencia única del cobro<input aria-label={'Referencia '+s.solicitudId} required pattern="[A-Za-z0-9][A-Za-z0-9_-]{7,99}" className={input} value={referencias[s.solicitudId]??''} onChange={e=>setReferencias({...referencias,[s.solicitudId]:e.target.value})} disabled={disabled}/></label><p>Registrar {s.importeMinor} unidades mínimas {s.moneda}. No activa la membresía.</p><button className={button} disabled={disabled}>Registrar pago pendiente</button></form>:<div><label><input type="checkbox" disabled={disabled} checked={verificados[s.solicitudId]??false} onChange={e=>setVerificados({...verificados,[s.solicitudId]:e.target.checked})}/> Verifiqué el cobro completo de esta solicitud</label><button className={button} disabled={disabled||!verificados[s.solicitudId]} onClick={()=>void enviar('/api/v1/pagos/'+s.pago!.pagoId+'/confirmar',{})}>Confirmar pago verificado</button></div>}

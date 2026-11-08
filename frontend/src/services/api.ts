@@ -408,8 +408,8 @@ export interface SolicitudMembresia {
   comprobante?: { comprobanteId: string; pagoId: string; membresiaId: string; confirmadoEn: string } | null;
 }
 const invalidMembresias = (): never => { throw new ApiError('Respuesta de membresía no válida. Conservá la misma operación para reintentar.', 502, 'RESPUESTA_INVALIDA'); };
-async function requestGestion<T>(path: string, options: RequestInit = {}): Promise<T> {
-  try { return await request<T>(path,options); }
+async function requestGestion<T>(path: string, options: RequestInit = {}, expectedStatus?: number): Promise<T> {
+  try { return await request<T>(path,options,true,expectedStatus); }
   catch(e) { if(e instanceof ApiError && e.status>=200 && e.status<300) return invalidMembresias(); throw e; }
 }
 
@@ -445,12 +445,18 @@ export async function apiSolicitudesMembresia(pagina: number, socioId?: string) 
   const items=v.items.map(solicitudMembresia); if(socioId&&items.some(s=>s.socioId!==socioId))return invalidMembresias();return {items};
 }
 export async function apiOperacionMembresia(path: string, method: 'POST' | 'PUT', body: object, clave: string) {
-  const value=await requestGestion<unknown>(path,{method,headers:{'Idempotency-Key':clave},body:JSON.stringify(body)});
+  const value=await requestGestion<unknown>(path,{method,headers:{'Idempotency-Key':clave},body:JSON.stringify(body)},path.startsWith('/api/v1/membresias/')?200:undefined);
   const b=body as Record<string,unknown>;
   if(path.startsWith('/api/v1/planes')) {
     const p=planMembresia(value);
     if(path==='/api/v1/planes'?(p.nombre!==String(b.nombre).trim()||p.importeMinor!==b.importeMinor||p.moneda!==b.moneda):(path!=='/api/v1/planes/'+p.planId+'/estado'||p.estado!==b.estado))return invalidMembresias();
     return p;
+  }
+  if(path.startsWith('/api/v1/membresias/')) {
+    if(!isRecord(value)||!isText(value.membresiaId)||path!=='/api/v1/membresias/'+encodeURIComponent(value.membresiaId)+'/suspender'
+      ||value.estado!=='SUSPENDIDA'||!isText(value.socioId)||!isText(value.eventId)||!/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value.eventId)||!isDate(value.suspendidaEn)
+      ||!isDate(value.fechaInicio)||!isDate(value.fechaFin)||Date.parse(value.fechaInicio)>Date.parse(value.fechaFin))return invalidMembresias();
+    return value;
   }
   const s=solicitudMembresia(value);
   if(path.endsWith('/confirmar')) { if(path!=='/api/v1/pagos/'+s.pago?.pagoId+'/confirmar'||s.estado!=='CONFIRMADA')return invalidMembresias(); }
@@ -458,4 +464,19 @@ export async function apiOperacionMembresia(path: string, method: 'POST' | 'PUT'
   else if(path.endsWith('/pagos')) { if(path!=='/api/v1/solicitudes/'+s.solicitudId+'/pagos'||s.pago?.referencia!==b.referencia||s.importeMinor!==b.importeMinor||s.moneda!==b.moneda)return invalidMembresias(); }
   else if(path!=='/api/v1/socios/'+encodeURIComponent(s.socioId)+'/solicitudes'||s.planId!==b.planId||Date.parse(s.fechaInicio)!==Date.parse(String(b.fechaInicio))||Date.parse(s.fechaFin)!==Date.parse(String(b.fechaFin)))return invalidMembresias();
   return s;
+}
+
+export interface MembresiaAdministrativa {
+  membresiaId: string; socioId: string; tipoPlan: string; estado: 'HABILITADA'|'SUSPENDIDA'|'VENCIDA';
+  fechaInicio: string; fechaFin: string;
+}
+export async function apiHistorialMembresias(socioId: string) {
+  const v = await requestGestion<unknown>('/api/v1/socios/'+encodeURIComponent(socioId)+'/membresias',{},200);
+  if(!isRecord(v)||!Array.isArray(v.items))return invalidMembresias();
+  const items = v.items.map(m => {
+    if(!isRecord(m)||!isText(m.membresiaId)||m.socioId!==socioId||!isText(m.tipoPlan)
+      ||!['HABILITADA','SUSPENDIDA','VENCIDA'].includes(String(m.estado))||!isDate(m.fechaInicio)||!isDate(m.fechaFin))return invalidMembresias();
+    return m as unknown as MembresiaAdministrativa;
+  });
+  return {items};
 }

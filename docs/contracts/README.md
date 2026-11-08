@@ -18,6 +18,10 @@ El acuerdo confirmado el 06/11/2026 incorpora ambos sentidos: Tienda consumirá 
 
 **Estado:** consulta de stock, reposiciones y ventas administrativas implementadas y verificadas localmente. La [guía](fav-tienda.md) incluye la API interna de ventas, uso y errores; [EVIDENCIA-TIENDA](../EVIDENCIA-TIENDA.md) registra pruebas con PostgreSQL, navegador y NGINX. Faltan aceptación de FAV, rama externa acordada, publicación accesible y entrega privada de credenciales. Solo la consulta al catálogo externo `/api/v1/tienda/productos` continúa devolviendo `503 INTEGRACION_PENDIENTE`; su contrato se acordará por separado.
 
+## Suspensiones y evento interno
+
+[OpenAPI Membresías 1.1.0](openapi-membresias-v1.yaml) agrega historial por propietario y suspensión idempotente por ADMIN. [Guía](membresias-eventos.md), [JSON Schema del evento 1.0.0](membresia-actualizada-v1.schema.json) y [evidencia](../EVIDENCIA-EVENTOS-MEMBRESIA.md) describen Outbox/RabbitMQ/Inbox, cancelaciones y recuperación. Conserva las operaciones de pagos 1.0.0 y los contratos entre grupos.
+
 ## Integracion con Car Cruds
 
 **Responsable en el gimnasio:** Socios y Membresías, con su arquitectura en Capas. Car Cruds conserva empleados y el informe receptor; el gimnasio conserva socios, membresías, vínculos, auditoría y registro durable de fotografías e intentos.

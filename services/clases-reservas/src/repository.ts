@@ -1,5 +1,6 @@
 import { Pool, PoolClient } from 'pg';
 import { randomUUID } from 'node:crypto';
+import { CLASES_EVENTOS_DDL, bloquearSocioReservas, suspensionImpideReserva } from './membresias-eventos.postgres';
 import { IClaseRepository, Instante, OpcionesReserva, ResultadoPromocion } from './ports';
 export { IClaseRepository } from './ports';
 
@@ -351,6 +352,7 @@ export class PostgresClaseRepository implements IClaseRepository {
         CREATE INDEX IF NOT EXISTS idx_clases_fts ON clases USING GIN (documento_busqueda);
       `);
 
+      await client.query(CLASES_EVENTOS_DDL);
       const countRes = await client.query('SELECT count(*)::int AS count FROM clases');
       if (countRes.rows[0].count === 0) {
         for (const c of mockClasses) {
@@ -490,10 +492,12 @@ export class PostgresClaseRepository implements IClaseRepository {
   private async conClase<T>(
     claseId: string,
     operation: (client: PoolClient, clase: { clase_id: string; capacidad: number; inicio: Date; publicada: boolean } | null) => Promise<T>,
+    socioId?: string,
   ): Promise<T> {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
+      if (socioId) await bloquearSocioReservas(client,socioId);
       const row = await client.query(
         'SELECT clase_id, capacidad, inicio, publicada FROM clases WHERE clase_id = $1 FOR UPDATE', [claseId],
       );
@@ -545,6 +549,7 @@ export class PostgresClaseRepository implements IClaseRepository {
       const ahora = instante(opciones?.ahora);
       if (!clase?.publicada) return { exito: false, codigo: 'CLASE_NO_ENCONTRADA' };
       if (Date.parse(ahora) >= clase.inicio.getTime()) return { exito: false, codigo: 'CLASE_INICIADA' };
+      if (await suspensionImpideReserva(client,socioId,ahora,clase.inicio)) return { exito: false, codigo: 'MEMBRESIA_NO_HABILITADA' };
       const dup = await client.query("SELECT 1 FROM reservas WHERE clase_id=$1 AND socio_id=$2 AND estado='CONFIRMADA'", [claseId, socioId]);
       if (dup.rowCount) return { exito: false, codigo: 'RESERVA_DUPLICADA' };
       const count = await client.query("SELECT COUNT(*)::int AS ocupados FROM reservas WHERE clase_id=$1 AND estado='CONFIRMADA'", [claseId]);
@@ -561,7 +566,7 @@ export class PostgresClaseRepository implements IClaseRepository {
         [reserva.reservaId, claseId, socioId, ahora],
       );
       return { exito: true, reserva };
-    });
+    },socioId);
   }
 
   async ingresarListaEspera(claseId: string, socioId: string, momento?: Instante) {
@@ -569,6 +574,7 @@ export class PostgresClaseRepository implements IClaseRepository {
       const ahora = instante(momento);
       if (!clase?.publicada) return { exito: false, codigo: 'CLASE_NO_ENCONTRADA' };
       if (Date.parse(ahora) >= clase.inicio.getTime()) return { exito: false, codigo: 'CLASE_INICIADA' };
+      if (await suspensionImpideReserva(client,socioId,ahora,clase.inicio)) return { exito: false, codigo: 'MEMBRESIA_NO_HABILITADA' };
       const dup = await client.query("SELECT 1 FROM reservas WHERE clase_id=$1 AND socio_id=$2 AND estado='CONFIRMADA'", [claseId, socioId]);
       if (dup.rowCount) return { exito: false, codigo: 'TIENE_RESERVA_CONFIRMADA' };
       const count = await client.query("SELECT COUNT(*)::int AS ocupados FROM reservas WHERE clase_id=$1 AND estado='CONFIRMADA'", [claseId]);
@@ -576,7 +582,7 @@ export class PostgresClaseRepository implements IClaseRepository {
         return { exito: false, codigo: 'CLASE_CON_CUPOS' };
       }
       return this.agregarEspera(client, claseId, socioId, ahora);
-    });
+    },socioId);
   }
 
   async cancelarReserva(reservaId: string, momento?: Instante): Promise<ResultadoCancelacion> {
@@ -621,6 +627,8 @@ export class PostgresClaseRepository implements IClaseRepository {
   }
 
   async aplicarEvaluacionEspera(claseId: string, esperaId: string, habilitado: boolean, momento: Instante): Promise<ResultadoPromocion> {
+    const espera = (await this.pool.query('SELECT socio_id FROM lista_espera WHERE espera_id=$1 AND clase_id=$2',[esperaId,claseId])).rows[0];
+    if (!espera) return { estado: 'CAMBIO' };
     return this.conClase<ResultadoPromocion>(claseId, async (client, clase) => {
       const ahora = instante(momento);
       if (!clase || Date.parse(ahora) >= clase.inicio.getTime()) return { estado: 'CLASE_INICIADA' };
@@ -628,7 +636,7 @@ export class PostgresClaseRepository implements IClaseRepository {
       if (count.rows[0].ocupados >= clase.capacidad) return { estado: 'SIN_CUPO' };
       const primero = await this.primero(client, claseId);
       if (!primero || primero.espera_id !== esperaId) return { estado: 'CAMBIO' };
-      if (!habilitado) {
+      if (!habilitado || await suspensionImpideReserva(client,primero.socio_id,ahora,clase.inicio)) {
         await client.query("UPDATE lista_espera SET estado='CANCELADO',updated_at=$2 WHERE espera_id=$1", [esperaId, ahora]);
         return { estado: 'RETIRADO' };
       }
@@ -641,7 +649,7 @@ export class PostgresClaseRepository implements IClaseRepository {
         [reservaId, claseId, primero.socio_id, ahora],
       );
       return { estado: 'PROMOVIDO', promocion: { socioId: primero.socio_id, reservaId } };
-    });
+    },espera.socio_id);
   }
 
   async listarClasesConEsperaYCupo(ahora: string): Promise<string[]> {

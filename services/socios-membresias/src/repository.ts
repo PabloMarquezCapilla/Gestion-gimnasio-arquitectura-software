@@ -1,4 +1,5 @@
 import { GESTION_MEMBRESIAS_DDL } from './membresias.postgres';
+import { MEMBRESIAS_EVENTOS_DDL } from './membresias.eventos';
 import { Pool } from 'pg';
 import { randomUUID } from 'node:crypto';
 import { Socio, Membresia } from './types';
@@ -415,6 +416,7 @@ export class PostgresSociosRepository implements ISociosRepository {
 
       await client.query(CAR_CRUDS_EVIDENCIAS_DDL);
       await client.query(GESTION_MEMBRESIAS_DDL);
+      await client.query(MEMBRESIAS_EVENTOS_DDL);
 
       // Seed if empty or upsert seeded users
       for (const s of SEED_SOCIOS) {

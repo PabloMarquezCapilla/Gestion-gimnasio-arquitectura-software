@@ -215,6 +215,33 @@ try {
   assert.equal(Object.keys(summary(recovered).instancias).length, 2, 'La nueva réplica debe reincorporarse al tráfico');
   assert.equal(await compose('ps', '--quiet', 'gateway'), gatewayId);
   assert.equal(await run('docker', ['inspect', '--format', '{{.State.StartedAt}}', gatewayId]), gatewayStartedAt);
+  // Recorrido normal del comando administrativo y trabajadores reales de los servidores.
+  await compose('exec','-T','postgres','psql','-U','postgres','-d','clases','-v','ON_ERROR_STOP=1','-c',
+    "INSERT INTO clases(clase_id,nombre,sede_id,inicio,fin,capacidad,publicada) VALUES('evento-compose','Evento ficticio','sede-demo-01','"+classStart+"','"+classEnd+"',1,true)");
+  assert.equal((await request('/api/v1/reservas',{token:tokens[1],body:{claseId:'evento-compose'}})).status,201);
+  assert.equal((await request('/api/v1/clases/evento-compose/espera',{token:tokens[2],body:{}})).status,201);
+  assert.equal((await request('/api/v1/membresias/mem-002/suspender',{token:tokens[2],body:{},idempotencyKey:'no-admin-suspension'})).status,403);
+  const suspensionRequest={token:adminLogin.data.token,body:{},idempotencyKey:'suspension-compose-ficticia'};
+  const suspension=await request('/api/v1/membresias/mem-002/suspender',suspensionRequest);
+  assert.equal(suspension.status,200);assert.equal(suspension.data.estado,'SUSPENDIDA');
+  assert.deepEqual((await request('/api/v1/membresias/mem-002/suspender',suspensionRequest)).data,suspension.data);
+  let eventoVerificado=false;
+  const eventDeadline=Date.now()+25000;
+  while(Date.now()<eventDeadline){
+    const [suspendido,promovido]=await Promise.all([
+      request('/api/v1/reservas/clases',{token:tokens[1]}),request('/api/v1/reservas/clases',{token:tokens[2]}),
+    ]);
+    if(suspendido.status===200&&promovido.status===200
+      &&!suspendido.data.reservasSocio.some(r=>r.claseId==='evento-compose')
+      &&promovido.data?.reservasSocio.some(r=>r.claseId==='evento-compose'&&r.estado==='CONFIRMADA')){eventoVerificado=true;break;}
+    await pause(300);
+  }
+  assert.ok(eventoVerificado,'Suspensión por gateway debe cancelar y promover mediante RabbitMQ y los workers reales');
+  const historialEvento=await request('/api/v1/clases/evento-compose/reservas',{token:adminLogin.data.token});
+  assert.equal(historialEvento.status,200);
+  assert.equal(historialEvento.data.reservas.filter(r=>r.socioId==='socio-demo-02'&&r.estado==='CANCELADA').length,1);
+  assert.equal(historialEvento.data.reservas.filter(r=>r.socioId==='socio-demo-03'&&r.estado==='CONFIRMADA').length,1);
+  console.log('Evento por NGINX y procesos reales: suspensión/replay, cancelación y promoción FIFO verificados.');
   const logs = await compose('logs', '--no-color', '--no-log-prefix', 'gateway');
   const entries = logs.split('\n').flatMap(line => { try { return [JSON.parse(line)]; } catch { return []; } });
   const proxied = entries.filter(entry => entry.uri?.startsWith('/api/v1/clases') && entry.upstream_addr);
@@ -225,12 +252,18 @@ try {
     transicionRecuperacion: summary(recoveryTransition), recuperacion: summary(recovered),
     escrituras: { intentos: 12, confirmadas: 1, conflictos: 11 },
     tienda: { reposiciones: 1, ventas: 1, disponibles: 19, vendidas: 2, repeticionesSinDuplicacion: true },
+    eventoMembresia: { suspensionGuardada: true, cancelacionYPromocionFifo: eventoVerificado },
     gatewayReiniciado: false, registrosProxy: proxied.length,
     reintentosObservados: proxied.filter(entry => entry.upstream_status?.includes(',')).length };
   console.log(JSON.stringify(report, null, 2));
   console.log('Balanceo verificado. Los valores son evidencia de este ensayo local, no una garantía de disponibilidad ni capacidad.');
 } catch (error) {
   if (started) {
+    const workerLogs=await compose('logs','--no-color','--no-log-prefix','socios-membresias','clases-reservas','rabbitmq').catch(()=>'');
+    console.error(workerLogs.split('\n').filter(line=>/outbox|inbox|Evento|RabbitMQ|membresía|membresias.v1|closing AMQP|authentication|access.*refused/i.test(line)).slice(-40).join('\n'));
+    for(const [database,sql] of [['socios','SELECT event_id,publicado_en,reclamar_hasta FROM membresias_outbox'],['clases',"SELECT event_id,canceladas FROM membresias_inbox; SELECT socio_id,estado FROM reservas WHERE clase_id='evento-compose'"]]) {
+      console.error(await compose('exec','-T','postgres','psql','-U','postgres','-d',database,'-c',sql).catch(()=>''));
+    }
     const diagnostic = await compose('logs', '--no-color', '--no-log-prefix', '--tail', '35', 'gateway', 'clases-reservas')
       .catch(() => 'No se pudieron consultar los logs temporales.');
     console.error('Diagnóstico del ensayo temporal:\n' + diagnostic);
