@@ -8,6 +8,12 @@
 
 ## Responsabilidades y reglas
 
+### Revisión de la rama externa del 07/11/2026
+
+Se volvió a revisar `development` en `adb9838023ddd5d4340f8bc7a95b38fdbc695845`, sin cambios desde la inspección anterior. Su contrato 1.0.0 publica `GET /v1/productos` con variantes y precios, sin stock. El código también implementa disponibilidad por variante en `GET /inventario/v1/disponibilidad?variantes=...`, pero esa operación todavía debe incorporarse al contrato compartido y confirmarse con FAV. El cliente de reposiciones conserva las rutas y campos compatibles con esta guía y sigue tratando todos los 4xx salvo 429 como rechazos definitivos. La coordinación de errores indicada abajo sigue pendiente. [Contrato de FAV](https://github.com/JuanHernandez-99/Fav-del-universo/blob/adb9838023ddd5d4340f8bc7a95b38fdbc695845/docs/contracts/catalogo-pedidos-v1.openapi.yaml), [cliente de FAV](https://github.com/JuanHernandez-99/Fav-del-universo/blob/adb9838023ddd5d4340f8bc7a95b38fdbc695845/services/inventario/internal/adaptadores/gimnasio/cliente.go).
+
+Antes de conectar el consumo faltan su confirmación de rama/versión, URL accesible y autenticación por canal privado. Las direcciones `localhost` de sus ejemplos corresponden al equipo que ejecuta FAV. La prueba conjunta verificará catálogo, disponibilidad y recepción de entregas con datos ficticios.
+
 FAV conserva su catálogo, variantes y existencias de la distribuidora. Tienda administra el stock físico recibido en el gimnasio: **una única tienda, sin separación por sede**, en su base PostgreSQL `tienda` con usuario propio. Los servicios se comunican por API; ninguno consulta bases de datos ajenas.
 
 - `productoCodigo` identifica exactamente una **variante de FAV** (`varianteId`), incluyendo talle y color; no es el identificador del producto general.
