@@ -1,6 +1,6 @@
 # Plan de cierre de entrega 3
 
-**Estado.** 07/11/2026. PR #7 de Tienda integrada en `main`, commit `837df58`. Paso 4 consolidado en la rama local `feat/membresias-eventos` sobre esa base. Publicación de esta rama pendiente.
+**Estado.** 07/11/2026. PR #7 de Tienda integrada en `main`, commit `837df58`. Paso 4 consolidado en `6a7e6ca` de la rama local `feat/membresias-eventos`. Publicación de esta rama y recorrido manual del panel pendientes. La siguiente etapa está planificada y su implementación requiere revisar las decisiones indicadas abajo.
 **Referencia:** presentación grupal, páginas 8–9 del enunciado. La defensa individual de la página 9 tiene verificaciones adicionales, identificadas abajo.
 
 ## Forma de trabajo
@@ -49,6 +49,26 @@ Se conservaron pagos/planes/membresías, reservas/FIFO, Accesos con MongoDB, cac
 - Consultar antes las reglas faltantes sobre modificaciones de clases con reservas; no introducir restricciones de reserva adicionales ni CRUD ajenos al alcance.
 - **Cierre:** probar coincidencias, permisos, páginas y actualización del índice ante cambios; ensayar su mantenimiento/reconstrucción.
 - **Documentación:** D6, contrato interno y criterios de aceptación. **Enunciado:** §2.2/2.6, página 2; presentación, página 9.
+
+### Orden propuesto para el paso 5
+
+Se reutilizan Clases y Reservas, su arquitectura Hexagonal, PostgreSQL FTS/GIN y los campos existentes de nombre, actividad, profesor, sede, inicio, fin y capacidad. Cada bloque termina con explicación del cambio, documentación y sus verificaciones antes de avanzar al siguiente.
+
+| Bloque | Trabajo | Cómo comprobarlo |
+|---|---|---|
+| 5.1 Acordar las reglas | Confirmar alta/publicación mínima, tratamiento de clases iniciadas y si se permite modificar una clase publicada con reservas o espera. Fijar campos obligatorios y criterios de orden. | Decisiones registradas en alcance, D6 y contrato antes de implementar reglas nuevas. |
+| 5.2 Búsqueda en backend | Conectar texto en nombre/actividad/profesor al vector español existente. Combinar los filtros del alcance con paginación y orden estable. Reutilizar la consulta del portal y conservar el comportamiento de la API histórica. | Pruebas PostgreSQL/HTTP de coincidencias, filtros combinados, orden, páginas, entradas inválidas y datos previos. La búsqueda usa el índice y conserva las reglas de cupo. |
+| 5.3 Búsqueda en el portal | Conectar texto, filtros, orden y navegación entre páginas al backend. Distinguir carga, resultados vacíos y error. Conservar reserva y espera desde los resultados. | Recorrido del socio y pruebas del cliente web, incluidas respuestas tardías al cambiar filtros o páginas. |
+| 5.4 Publicación administrativa | Implementar alta/publicación con JWT ADMIN, validación de los campos y uso de sedes existentes de Accesos mediante API. Incorporar el formulario correspondiente. Aplicar sólo las reglas de modificación que se hayan confirmado. | Permisos, datos y sede válidos, concurrencia/reintentos del alta y visibilidad de la clase publicada en la búsqueda. Una dependencia caída no fabrica una sede válida. |
+| 5.5 Índice y cierre | Verificar actualización del vector/GIN al publicar y ante las modificaciones admitidas. Ensayar reconstrucción del índice y repetir el recorrido por gateway. Actualizar D6, contrato interno, alcance y evidencia correspondiente. | Clase nueva encontrada, cambios reflejados, resultados equivalentes antes/después de reconstruir, regresión de reservas/FIFO y compilación del portal. |
+
+**Decisiones abiertas antes de programar.** El alcance confirma publicación por ADMIN y búsqueda con filtros, páginas y orden. Todavía debemos acordar si habrá edición de clases publicadas, qué campos podrán cambiar y qué sucederá si ya existen reservas o espera. También confirmar las condiciones de fecha para publicar y los órdenes ofrecidos. El plan no aprueba automáticamente cambios de horario, reducción de capacidad, cancelación de clases o notificaciones.
+
+**Cierre pendiente del paso 4.** Probar manualmente selección de socio, historial y suspensión en el portal, comprobar que una recarga refleja el estado real y observar la cancelación/reasignación. Las APIs y trabajadores reales ya se verificaron en Compose. Los avisos previos de dependencias permanecen en la revisión final de la etapa 9.
+
+### Continuación después del paso 5
+
+Seguir con el retiro de espera y revisión del recorrido propio del paso 6, las fuentes y conexión Car Cruds del paso 7, observabilidad/fallas del paso 8 y despliegue/cierre del paso 9. La conexión de FAV del paso 3 se retoma cuando estén confirmados contrato y acceso. Las definiciones económicas, de alojamiento y de servicios externos se consultan antes de sus implementaciones dependientes.
 
 ## 6. Cierre del recorrido del socio — pendiente
 
