@@ -1,4 +1,4 @@
-import { randomBytes } from 'node:crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { hostname } from 'node:os';
 import Fastify from 'fastify';
 import jwt from '@fastify/jwt';
@@ -10,7 +10,10 @@ export interface AccesosOptions {
   repository: AccesosRepository; socios: SociosClient; jwtSecret: string;
   jwtTtlSeconds?: number; clock?: () => Date; logger?: boolean | Record<string, unknown>;
   ocupacionCache?: OcupacionCache;
+  serviceKey?: string;
 }
+const instante = (value: unknown): value is string =>
+  typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{3})?Z$/.test(value) && Number.isFinite(Date.parse(value));
 export function buildAccesosApp(options: AccesosOptions) {
   const ttl = options.jwtTtlSeconds ?? 3600;
   if (options.jwtSecret.trim().length < 32 || !Number.isSafeInteger(ttl) || ttl < 1) throw new Error('Configuración JWT de Accesos inválida.');
@@ -104,6 +107,21 @@ export function buildAccesosApp(options: AccesosOptions) {
     const pagina = numero(q.pagina, 1, 1000000); const tamanio = numero(q.tamanio, 20, 100);
     await service.exigirSede(q.sedeId);
     return { items: await repo.historial(q.sedeId, q.socioId as string | undefined, pagina, tamanio), pagina, tamanio };
+  });
+  // Solo red interna (el gateway no publica /internal/): Socios informa "used" a Car Cruds.
+  app.get<{ Querystring: Record<string, unknown> }>('/internal/v1/accesos/uso', async request => {
+    const key = request.headers['x-service-key'];
+    const esperada = options.serviceKey ?? '';
+    const digest = (value: string) => createHash('sha256').update(value).digest();
+    if (!esperada || typeof key !== 'string' || !timingSafeEqual(digest(key), digest(esperada))) {
+      throw new AccesosError(401, 'NO_AUTENTICADO', 'Clave técnica ausente o inválida.');
+    }
+    const q = request.query;
+    if (Object.keys(q).some(k => !['socioId', 'desde', 'hasta'].includes(k)) || !identificador(q.socioId)
+      || !instante(q.desde) || !instante(q.hasta) || Date.parse(q.desde) >= Date.parse(q.hasta)) throw parametros();
+    // Fechas normalizadas al mismo formato ISO con milisegundos con que se guardan los movimientos.
+    const desde = new Date(q.desde).toISOString(), hasta = new Date(q.hasta).toISOString();
+    return { socioId: q.socioId, desde, hasta, huboIngreso: await repo.huboIngreso(q.socioId, desde, hasta) };
   });
   app.setErrorHandler((error, request, reply) => {
     if (error instanceof AccesosError) {

@@ -437,31 +437,63 @@ test('respuestas sin confirmación de reserva o espera no producen éxito', asyn
   await assert.rejects(api.apiCancelarReserva('reserva-1'), { status: 502 });
 });
 
-test('Tienda conserva el error de integración pendiente y la sesión; nunca inventa productos', async () => {
+const catalogoTienda = { origen: 'FAV', actualizadoEn: '2026-11-09T12:00:00.000Z', pagina: 1, tamanio: 12, total: 1, items: [
+  { productoId: 'prod-remera', nombre: 'Remera básica', categoria: 'remeras',
+    variantes: [{ productoCodigo: 'var-remera-m', talle: 'M', color: 'Blanco', precioMinor: 1500000, unidadesDisponibles: 3 }] }] };
+const compraTienda = { compraId: '7d9f2c1e-4b3a-4e8f-9c2d-1a0b3c4d5e6f', estado: 'REGISTRADA', totalMinor: 3000000, currency: 'ARS',
+  creadaEn: '2026-11-09T12:00:00.000Z', items: [{ productoCodigo: 'var-remera-m', nombre: 'Remera básica', talle: 'M', color: 'Blanco',
+    unidades: 2, precioUnitarioMinor: 1500000, subtotalMinor: 3000000 }] };
+
+test('Tienda consulta el catálogo con filtros y conserva los errores del proveedor; nunca inventa productos', async () => {
   api.setApiSession('jwt-tienda-ficticio');
-  let calls = 0;
+  let urlPedida;
   globalThis.fetch = async (url, options) => {
-    calls++;
-    assert.equal(url, '/api/v1/tienda/productos');
+    urlPedida = url;
     assert.equal(options.headers.get('Authorization'), 'Bearer jwt-tienda-ficticio');
-    return json({ codigo: 'INTEGRACION_PENDIENTE', mensaje: 'La consulta todavía no está habilitada.' }, 503);
+    return json(catalogoTienda);
   };
-  await assert.rejects(api.apiConsultarTienda(), { status: 503, codigo: 'INTEGRACION_PENDIENTE' });
-  await assert.rejects(api.apiConsultarTienda(), { status: 503 });
-  assert.equal(calls, 2);
+  assert.deepEqual(await api.apiCatalogoTienda({ categoria: 'remeras', talle: 'M' }), catalogoTienda);
+  assert.equal(urlPedida, '/api/v1/tienda/productos?categoria=remeras&talle=M');
+  globalThis.fetch = async () => json({ codigo: 'PROVEEDOR_NO_DISPONIBLE', mensaje: 'El catálogo de FAV no está disponible.' }, 503);
+  await assert.rejects(api.apiCatalogoTienda(), { status: 503, codigo: 'PROVEEDOR_NO_DISPONIBLE' });
   globalThis.fetch = async () => { throw new TypeError('Red caída'); };
-  await assert.rejects(api.apiConsultarTienda(), { codigo: 'ERROR_RED' });
-  globalThis.fetch = async () => json({ items: [] });
-  await assert.rejects(api.apiConsultarTienda(), { codigo: 'RESPUESTA_INVALIDA' });
+  await assert.rejects(api.apiCatalogoTienda(), { codigo: 'ERROR_RED' });
+  for (const roto of [{ items: [] }, { ...catalogoTienda, origen: 'OTRO' },
+    { ...catalogoTienda, items: [{ ...catalogoTienda.items[0], variantes: [{ ...catalogoTienda.items[0].variantes[0], unidadesDisponibles: 0 }] }] }]) {
+    globalThis.fetch = async () => json(roto);
+    await assert.rejects(api.apiCatalogoTienda(), { codigo: 'RESPUESTA_INVALIDA' });
+  }
+});
+
+test('Tienda compra con Idempotency-Key y exige que la respuesta corresponda al carrito', async () => {
+  api.setApiSession('jwt-tienda-ficticio');
+  const op = { clave: 'clave-compra-1', items: [{ productoCodigo: 'var-remera-m', unidades: 2 }] };
+  globalThis.fetch = async (url, options) => {
+    assert.equal(url, '/api/v1/tienda/compras');
+    assert.equal(options.method, 'POST');
+    assert.equal(options.headers.get('Idempotency-Key'), 'clave-compra-1');
+    assert.deepEqual(JSON.parse(options.body), { items: op.items });
+    return json(compraTienda, 201);
+  };
+  assert.deepEqual(await api.apiComprarTienda(op), compraTienda);
+  globalThis.fetch = async () => json({ ...compraTienda, items: [{ ...compraTienda.items[0], unidades: 1 }] }, 201);
+  await assert.rejects(api.apiComprarTienda(op), { codigo: 'RESPUESTA_INVALIDA' });
+  globalThis.fetch = async () => json(compraTienda, 200);
+  await assert.rejects(api.apiComprarTienda(op), { codigo: 'RESPUESTA_INVALIDA' });
+  globalThis.fetch = async () => json({ codigo: 'STOCK_INSUFICIENTE', mensaje: 'No alcanzan las unidades.' }, 409);
+  await assert.rejects(api.apiComprarTienda(op), { status: 409, codigo: 'STOCK_INSUFICIENTE' });
+  await assert.rejects(api.apiComprarTienda({ clave: 'k', items: [] }), { codigo: 'SOLICITUD_INVALIDA' });
+  globalThis.fetch = async () => json({ pagina: 1, tamanio: 10, total: 1, items: [compraTienda] });
+  assert.equal((await api.apiMisCompras()).items[0].compraId, compraTienda.compraId);
 });
 
 test('Tienda participa del cierre de sesión ante un JWT rechazado', async () => {
   let expired = 0;
   api.setApiSession('jwt-tienda-ficticio', () => { expired++; });
   globalThis.fetch = async () => json({ codigo: 'NO_AUTENTICADO', mensaje: 'Sesión vencida' }, 401);
-  await assert.rejects(api.apiConsultarTienda(), { status: 401 });
+  await assert.rejects(api.apiCatalogoTienda(), { status: 401 });
   assert.equal(expired, 1);
-  await assert.rejects(api.apiConsultarTienda(), { codigo: 'SESION_REQUERIDA' });
+  await assert.rejects(api.apiCatalogoTienda(), { codigo: 'SESION_REQUERIDA' });
 });
 
 const employeeId = 'empleado / con?caracteres';

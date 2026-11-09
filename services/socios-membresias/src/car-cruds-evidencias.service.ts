@@ -1,5 +1,7 @@
 import type { CarCrudsClient, FotografiaCarCruds } from './car-cruds.service';
-import type { CarCrudsEvidenciasRepository, FuenteFotografia, RegistroFotografia } from './car-cruds-evidencias.repository';
+import type { CarCrudsEvidenciasRepository, ContratoConfirmado, FuenteFotografia, RegistroFotografia } from './car-cruds-evidencias.repository';
+import type { VinculoCarCruds } from './car-cruds-vinculos.repository';
+import type { AccesosUsoClient } from './clients/accesos.client';
 import { CarCrudsError } from './clients/car-cruds.client';
 import { SociosError } from './errors';
 import { seleccionarMembresia } from './services';
@@ -14,12 +16,63 @@ export function mesArgentina(fecha: Date): string {
     + partes.find(p => p.type === 'month')!.value;
 }
 
+// Mes calendario en America/Argentina/Buenos_Aires (UTC-3 fijo, sin horario de verano).
+export function limitesMes(period: string): { desde: Date; hasta: Date } {
+  const [anio, mes] = period.split('-').map(Number);
+  return { desde: new Date(Date.UTC(anio, mes - 1, 1, 3)), hasta: new Date(Date.UTC(anio, mes, 1, 3)) };
+}
+
+const DIA_MS = 86_400_000;
+const MES_PROMEDIO_MS = 30.436875 * DIA_MS;
+
+// Perfil de Car Cruds 0.3.0: pagos efectivos confirmados dentro del mes hasta el corte.
+// Una moneda distinta de ARS no se suma ni se convierte: el importe queda desconocido.
+export function gastoDelMes(contratos: ContratoConfirmado[] | undefined, desde: Date, hasta: Date, corte: Date): number | null {
+  if (!contratos) return null;
+  const fin = Math.min(hasta.getTime(), corte.getTime() + 1);
+  const delMes = contratos.filter(c => Date.parse(c.confirmadoEn) >= desde.getTime() && Date.parse(c.confirmadoEn) < fin);
+  if (delMes.some(c => c.moneda !== 'ARS')) return null;
+  const total = delMes.reduce((suma, c) => suma + c.importeMinor, 0);
+  return Number.isSafeInteger(total) ? total : null;
+}
+
+// Perfil de Car Cruds 0.3.0: costo neto por mes completo = importe / meses contratados.
+// Solo si un único plan confirmado cubre el mes entero; un mes parcial o ambiguo queda null.
+export function costoMensual(contratos: ContratoConfirmado[] | undefined, desde: Date, hasta: Date, corte: Date): number | null {
+  if (!contratos) return null;
+  const cubren = contratos.filter(c => Date.parse(c.confirmadoEn) <= corte.getTime()
+    && Date.parse(c.fechaInicio) <= desde.getTime() && Date.parse(c.fechaFin) >= hasta.getTime() - DIA_MS);
+  if (cubren.length !== 1 || cubren[0].moneda !== 'ARS') return null;
+  const meses = Math.max(1, Math.round((Date.parse(cubren[0].fechaFin) - Date.parse(cubren[0].fechaInicio)) / MES_PROMEDIO_MS));
+  return Math.round(cubren[0].importeMinor / meses);
+}
+
+export interface DependenciasEvidencias {
+  accesos?: AccesosUsoClient;
+  obtenerVinculo?: (employeeId: string) => Promise<VinculoCarCruds>;
+}
+
 export class CarCrudsEvidenciasService {
   constructor(
     private readonly repository: CarCrudsEvidenciasRepository,
     private readonly client: CarCrudsClient | undefined,
     private readonly clock: () => Date,
+    private readonly dependencias: DependenciasEvidencias = {},
   ) {}
+
+  // El uso vive en Accesos: se consulta antes de la transacción local y solo se
+  // aplica si el vínculo no cambió entretanto. Sin respuesta, used=null.
+  private async usoDelMes(employeeId: string, period: string, fecha: string, contexto?: TraceContext) {
+    const { accesos, obtenerVinculo } = this.dependencias;
+    if (!accesos || !obtenerVinculo) return undefined;
+    const vinculo = await obtenerVinculo(employeeId);
+    if (!vinculo.socioId) return undefined;
+    const { desde, hasta } = limitesMes(period);
+    const corte = new Date(Math.min(hasta.getTime(), Date.parse(fecha) + 1));
+    if (corte <= desde) return undefined;
+    const used = await accesos.huboIngreso(vinculo.socioId, desde, corte, contexto);
+    return used === undefined ? undefined : { socioId: vinculo.socioId, used };
+  }
 
   async consultar(identidad: Identidad, employeeId: string, query: unknown) {
     this.administrador(identidad);
@@ -28,7 +81,7 @@ export class CarCrudsEvidenciasService {
     return { items: await this.repository.obtenerFotografias(this.employeeId(employeeId), period) };
   }
 
-  preparar(identidad: Identidad, employeeId: string, value: unknown, query: unknown): Promise<RegistroFotografia> {
+  async preparar(identidad: Identidad, employeeId: string, value: unknown, query: unknown, contexto?: TraceContext): Promise<RegistroFotografia> {
     this.administrador(identidad);
     this.objeto(query, []);
     const body = this.objeto(value, ['period', 'versionVinculoEsperada', 'versionAnteriorEsperada', 'confirmarCambioVinculo']);
@@ -38,12 +91,14 @@ export class CarCrudsEvidenciasService {
     this.booleanoOpcional(body.confirmarCambioVinculo);
     const id = this.employeeId(employeeId);
     const fecha = this.clock().toISOString();
+    const uso = await this.usoDelMes(id, period, fecha, contexto);
     return this.repository.prepararFotografia({
       employeeId: id, period, fecha, administradorId: identidad.socioId,
       versionVinculoEsperada: body.versionVinculoEsperada as number,
       versionAnteriorEsperada: body.versionAnteriorEsperada as number,
       confirmarCambioVinculo: body.confirmarCambioVinculo === true,
-      generar: (fuente, sourceReference, version) => this.generar(fuente, id, period, fecha, sourceReference, version),
+      generar: (fuente, sourceReference, version) => this.generar(fuente, id, period, fecha, sourceReference, version,
+        uso && uso.socioId === fuente.socio?.socioId ? uso.used : null),
     });
   }
 
@@ -86,6 +141,7 @@ export class CarCrudsEvidenciasService {
 
   private generar(
     fuente: FuenteFotografia, employeeId: string, period: string, observedAt: string, sourceReference: string, version: number,
+    used: boolean | null = null,
   ): FotografiaCarCruds {
     if (!fuente.socio) throw new SociosError(404, 'SOCIO_NO_ENCONTRADO', 'No se encontró el socio vinculado.');
     const instante = Date.parse(observedAt);
@@ -96,10 +152,15 @@ export class CarCrudsEvidenciasService {
       && membresia?.estado === 'HABILITADA'
       && Date.parse(membresia.createdAt) <= instante && Date.parse(membresia.updatedAt) <= instante
       && Date.parse(membresia.fechaInicio) <= instante && instante <= Date.parse(membresia.fechaFin);
+    const { desde, hasta } = limitesMes(period);
+    const corte = new Date(observedAt);
+    const costMinor = costoMensual(fuente.contratos, desde, hasta, corte);
+    const spendingMinor = gastoDelMes(fuente.contratos, desde, hasta, corte);
     return {
       employeeId, period, sourceReference, version, observedAt,
       member: fuente.miembroObservadoEnPeriodo === true || period === mesArgentina(new Date(observedAt)) && vigenteAhora ? true : null,
-      used: null, costMinor: null, spendingMinor: null,
+      used, costMinor, spendingMinor,
+      ...(costMinor !== null || spendingMinor !== null ? { currency: 'ARS' as const } : {}),
     };
   }
 

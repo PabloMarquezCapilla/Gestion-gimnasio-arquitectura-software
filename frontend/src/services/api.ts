@@ -116,11 +116,89 @@ export function apiObtenerSocio(socioId: string): Promise<AuthUser & { membresia
   return request('/api/v1/socios/' + encodeURIComponent(socioId));
 }
 
-// La estructura solo informa indisponibilidad hasta acordar el contrato real.
-// No interpretar una respuesta desconocida como un catálogo vacío o stock cero.
-export async function apiConsultarTienda(): Promise<never> {
-  await request('/api/v1/tienda/productos');
-  throw new ApiError('No se pudo interpretar la respuesta de la tienda.', 502, 'RESPUESTA_INVALIDA');
+export interface VarianteTienda {
+  productoCodigo: string; talle: string; color: string; precioMinor: number; unidadesDisponibles: number;
+}
+export interface ProductoTienda {
+  productoId: string; nombre: string; categoria: string; descripcion?: string; fotoUrl?: string; variantes: VarianteTienda[];
+}
+export interface CatalogoTienda {
+  origen: 'FAV' | 'CACHE_DEGRADADA'; actualizadoEn: string; pagina: number; tamanio: number; total: number; items: ProductoTienda[];
+}
+export interface ItemCompraTienda {
+  productoCodigo: string; nombre: string; talle: string; color: string; unidades: number; precioUnitarioMinor: number; subtotalMinor: number;
+}
+export interface CompraTienda {
+  compraId: string; estado: 'REGISTRADA'; items: ItemCompraTienda[]; totalMinor: number; currency: 'ARS'; creadaEn: string;
+}
+export interface CompraPendienteTienda { clave: string; items: VentaOrdenTienda[] }
+
+// Contrato openapi-tienda-socios-v1: una respuesta desconocida nunca se muestra como catálogo vacío.
+function invalidCatalogoTienda(): never {
+  throw new ApiError('El servidor devolvió un catálogo no válido. Volvé a consultar.', 502, 'RESPUESTA_INVALIDA');
+}
+const opcionalTexto = (value: unknown) => value === undefined || isText(value);
+export async function apiCatalogoTienda(filtros: { categoria?: string; talle?: string; pagina?: number } = {}): Promise<CatalogoTienda> {
+  const query = new URLSearchParams();
+  if (filtros.categoria) query.set('categoria', filtros.categoria);
+  if (filtros.talle) query.set('talle', filtros.talle);
+  if (filtros.pagina && filtros.pagina > 1) query.set('pagina', String(filtros.pagina));
+  const value = await request<unknown>('/api/v1/tienda/productos' + (query.toString() ? '?' + query : ''), {}, true, 200);
+  if (!isRecord(value) || !exactKeys(value, ['origen', 'actualizadoEn', 'pagina', 'tamanio', 'total', 'items'])
+    || !['FAV', 'CACHE_DEGRADADA'].includes(value.origen as string) || !isText(value.actualizadoEn)
+    || !isNatural(value.pagina) || !isNatural(value.tamanio) || !isNatural(value.total) || !Array.isArray(value.items)) return invalidCatalogoTienda();
+  const items = value.items.map((producto: unknown) => {
+    if (!isRecord(producto) || !isText(producto.productoId) || !isText(producto.nombre) || !isText(producto.categoria)
+      || !opcionalTexto(producto.descripcion) || !opcionalTexto(producto.fotoUrl) || !Array.isArray(producto.variantes)
+      || Object.keys(producto).some(key => !['productoId', 'nombre', 'categoria', 'descripcion', 'fotoUrl', 'variantes'].includes(key))) {
+      return invalidCatalogoTienda();
+    }
+    const variantes = producto.variantes.map((variante: unknown) => {
+      if (!isRecord(variante) || !exactKeys(variante, ['productoCodigo', 'talle', 'color', 'precioMinor', 'unidadesDisponibles'])
+        || !isText(variante.productoCodigo) || !isText(variante.talle) || !isText(variante.color)
+        || !isNatural(variante.precioMinor) || !isNatural(variante.unidadesDisponibles) || variante.unidadesDisponibles < 1) {
+        return invalidCatalogoTienda();
+      }
+      return variante as unknown as VarianteTienda;
+    });
+    return { ...(producto as unknown as ProductoTienda), variantes };
+  });
+  return { ...(value as unknown as CatalogoTienda), items };
+}
+
+function validarCompraTienda(value: unknown): CompraTienda {
+  const invalida = () => new ApiError('El servidor no confirmó la compra. Conservá el carrito para reintentar la misma operación.', 502, 'RESPUESTA_INVALIDA');
+  if (!isRecord(value) || !exactKeys(value, ['compraId', 'estado', 'items', 'totalMinor', 'currency', 'creadaEn'])
+    || !isText(value.compraId) || value.estado !== 'REGISTRADA' || value.currency !== 'ARS' || !isText(value.creadaEn)
+    || !isNatural(value.totalMinor) || !Array.isArray(value.items) || !value.items.length) throw invalida();
+  for (const item of value.items as unknown[]) {
+    if (!isRecord(item) || !exactKeys(item, ['productoCodigo', 'nombre', 'talle', 'color', 'unidades', 'precioUnitarioMinor', 'subtotalMinor'])
+      || !isText(item.productoCodigo) || !isNatural(item.unidades) || !isNatural(item.precioUnitarioMinor) || !isNatural(item.subtotalMinor)) throw invalida();
+  }
+  return value as unknown as CompraTienda;
+}
+export async function apiComprarTienda(op: CompraPendienteTienda): Promise<CompraTienda> {
+  if (!isText(op.clave) || /[\r\n]/.test(op.clave) || !op.items.length) {
+    throw new ApiError('El carrito está vacío.', 400, 'SOLICITUD_INVALIDA');
+  }
+  const value = await request<unknown>('/api/v1/tienda/compras', {
+    method: 'POST', headers: { 'Idempotency-Key': op.clave },
+    body: JSON.stringify({ items: op.items.map(({ productoCodigo, unidades }) => ({ productoCodigo, unidades })) }),
+  }, true, 201);
+  const compra = validarCompraTienda(value);
+  // La respuesta debe corresponder exactamente al carrito enviado con esa clave.
+  if (compra.items.length !== op.items.length || op.items.some(item =>
+    !compra.items.some(c => c.productoCodigo === item.productoCodigo && c.unidades === item.unidades))) {
+    throw new ApiError('El servidor no confirmó esta compra. Conservá el carrito para reintentar la misma operación.', 502, 'RESPUESTA_INVALIDA');
+  }
+  return compra;
+}
+export async function apiMisCompras(pagina = 1): Promise<{ pagina: number; tamanio: number; total: number; items: CompraTienda[] }> {
+  const value = await request<unknown>('/api/v1/tienda/compras' + (pagina > 1 ? '?pagina=' + pagina : ''), {}, true, 200);
+  if (!isRecord(value) || !exactKeys(value, ['pagina', 'tamanio', 'total', 'items']) || !isNatural(value.total) || !Array.isArray(value.items)) {
+    throw new ApiError('El servidor devolvió compras no válidas.', 502, 'RESPUESTA_INVALIDA');
+  }
+  return { pagina: value.pagina as number, tamanio: value.tamanio as number, total: value.total, items: value.items.map(validarCompraTienda) };
 }
 
 export interface StockItemTienda {

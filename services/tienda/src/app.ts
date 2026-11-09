@@ -2,7 +2,7 @@ import Fastify from 'fastify';
 import fastifyJwt from '@fastify/jwt';
 import { createHash, randomBytes, timingSafeEqual } from 'node:crypto';
 import { TiendaError, TiendaStockRepository, TiendaStockService } from './stock';
-import { IntegracionPendienteError, TiendaService } from './services';
+import { CatalogoFavService } from './catalogo';
 
 interface TiendaOptions {
   jwtSecret?: string;
@@ -11,6 +11,27 @@ interface TiendaOptions {
   logger?: boolean | Record<string, unknown>;
   stockRepository?: TiendaStockRepository;
   favApiKey?: string;
+  catalogo?: CatalogoFavService;
+}
+
+function entero(value: unknown, porDefecto: number, max: number): number {
+  if (value === undefined) return porDefecto;
+  if (typeof value !== 'string' || !/^[1-9][0-9]{0,5}$/.test(value) || Number(value) > max) {
+    throw new TiendaError(400, 'SOLICITUD_INVALIDA', `La paginación admite enteros positivos de hasta ${max}.`);
+  }
+  return Number(value);
+}
+function soloParametros(query: unknown, permitidos: string[]): Record<string, unknown> {
+  const valores = query as Record<string, unknown>;
+  if (Object.keys(valores).some(key => !permitidos.includes(key))) {
+    throw new TiendaError(400, 'SOLICITUD_INVALIDA', 'Parámetros admitidos: ' + permitidos.join(', ') + '.');
+  }
+  return valores;
+}
+function textoOpcional(value: unknown, campo: string): string | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string' || !value.trim() || value.length > 100) throw new TiendaError(400, 'SOLICITUD_INVALIDA', `El filtro ${campo} no es válido.`);
+  return value;
 }
 
 export function buildTiendaApp(options: TiendaOptions = {}) {
@@ -22,7 +43,7 @@ export function buildTiendaApp(options: TiendaOptions = {}) {
   const app = Fastify({ logger: options.logger ?? false });
   // Mantener 415 del contrato; Fastify también admite text/plain por defecto.
   app.removeContentTypeParser('text/plain');
-  const service = new TiendaService();
+  const catalogo = options.catalogo ?? new CatalogoFavService(undefined);
   const stock = options.stockRepository ? new TiendaStockService(options.stockRepository) : undefined;
   const favApiKey = options.favApiKey ?? process.env.FAV_API_KEY ?? '';
   const stockService = () => {
@@ -54,22 +75,40 @@ export function buildTiendaApp(options: TiendaOptions = {}) {
       servicio: 'tienda', estado: 'estructura', integracion: 'PENDIENTE_CONTRATO', persistencia: 'ninguna',
     };
     await options.stockRepository.comprobarSalud();
+    // La salud de Tienda no depende de FAV: el catálogo degrada sin sacar la instancia del balanceo.
     return { servicio: 'tienda', estado: 'operativo', persistencia: 'postgresql',
-      integracion: 'CATALOGO_FAV_PENDIENTE', consignaciones: favApiKey ? 'CONFIGURADA' : 'PENDIENTE_CREDENCIAL' };
+      integracion: catalogo.configurado ? 'CATALOGO_FAV_CONFIGURADO' : 'CATALOGO_FAV_PENDIENTE_CREDENCIAL',
+      circuitoFav: catalogo.estadoCircuito, consignaciones: favApiKey ? 'CONFIGURADA' : 'PENDIENTE_CREDENCIAL' };
   });
-  app.get('/metrics', async (_request, reply) => reply.type('text/plain; version=0.0.4').send([
-    '# TYPE http_requests_total counter', `http_requests_total{service="tienda"} ${requests}`,
-    '# TYPE http_errors_total counter', `http_errors_total{service="tienda"} ${errors}`,
-    '# TYPE tienda_movimientos_total counter',
-    ...Array.from(operations, ([labels, n]) => `tienda_movimientos_total{service="tienda",${labels}} ${n}`), '',
-  ].join('\n')));
+  app.get('/metrics', async (_request, reply) => {
+    const c = catalogo.contadores;
+    const estado = catalogo.estadoCircuito;
+    return reply.type('text/plain; version=0.0.4').send([
+      '# TYPE http_requests_total counter', `http_requests_total{service="tienda"} ${requests}`,
+      '# TYPE http_errors_total counter', `http_errors_total{service="tienda"} ${errors}`,
+      '# TYPE tienda_movimientos_total counter',
+      ...Array.from(operations, ([labels, n]) => `tienda_movimientos_total{service="tienda",${labels}} ${n}`),
+      '# TYPE tienda_catalogo_respuestas_total counter',
+      `tienda_catalogo_respuestas_total{service="tienda",origen="cache_fresca"} ${c.cacheFresca}`,
+      `tienda_catalogo_respuestas_total{service="tienda",origen="cache_degradada"} ${c.cacheDegradada}`,
+      '# TYPE tienda_fav_consultas_total counter', `tienda_fav_consultas_total{service="tienda"} ${c.consultasFav}`,
+      '# TYPE tienda_fav_fallos_total counter', `tienda_fav_fallos_total{service="tienda"} ${c.fallosFav}`,
+      '# TYPE tienda_fav_rechazos_circuito_total counter', `tienda_fav_rechazos_circuito_total{service="tienda"} ${c.rechazosCircuito}`,
+      '# TYPE tienda_fav_circuito_estado gauge',
+      ...(['CERRADO', 'ABIERTO', 'SEMIABIERTO'] as const).map(e => `tienda_fav_circuito_estado{service="tienda",estado="${e}"} ${e === estado ? 1 : 0}`),
+      '',
+    ].join('\n'));
+  });
+  const digest = (value: string) => createHash('sha256').update(value).digest();
   const autenticarFav = async (request: import('fastify').FastifyRequest) => {
     const key = request.headers['x-api-key'];
     if (typeof key !== 'string' || !key.trim()) throw new TiendaError(401, 'NO_AUTENTICADO', 'Clave de consumidor ausente o inválida.');
     if (!favApiKey) throw new TiendaError(503, 'SERVICIO_NO_DISPONIBLE', 'La credencial de FAV no está configurada.');
-    const digest = (value: string) => createHash('sha256').update(value).digest();
     if (!timingSafeEqual(digest(key), digest(favApiKey))) throw new TiendaError(401, 'NO_AUTENTICADO', 'Clave de consumidor ausente o inválida.');
   };
+  const contexto = (reply: import('fastify').FastifyReply) => ({
+    traceparent: String(reply.getHeader('traceparent') ?? ''), correlationId: String(reply.getHeader('X-Correlation-ID') ?? ''),
+  });
   const autenticarUsuario = async (request: import('fastify').FastifyRequest, reply: import('fastify').FastifyReply) => {
     try {
       const now = clock().getTime();
@@ -119,13 +158,29 @@ export function buildTiendaApp(options: TiendaOptions = {}) {
     return reply.code(201).send(await movimiento(request, 'venta', () => stockService().vender(
       (request.user as { sub: string }).sub, request.headers['idempotency-key'], request.body)));
   });
-  app.get('/api/v1/tienda/productos', {
-    onRequest: autenticarUsuario,
-  }, () => service.consultarProductos());
+  app.get('/api/v1/tienda/productos', { onRequest: autenticarUsuario }, async (request, reply) => {
+    const query = soloParametros(request.query, ['categoria', 'talle', 'pagina', 'tamanio']);
+    const filtros = { categoria: textoOpcional(query.categoria, 'categoria'), talle: textoOpcional(query.talle, 'talle'),
+      pagina: entero(query.pagina, 1, 10000), tamanio: entero(query.tamanio, 12, 50) };
+    const pagina = await catalogo.consultar(async () => (await stockService().consultarStock()).items, filtros, contexto(reply));
+    if (pagina.origen === 'CACHE_DEGRADADA') request.log.warn({ codigo: 'CATALOGO_DEGRADADO', actualizadoEn: pagina.actualizadoEn }, 'Catálogo de FAV servido desde caché vencida');
+    return pagina;
+  });
+  const socio = async (request: import('fastify').FastifyRequest) => {
+    if ((request.user as { rol: string }).rol !== 'SOCIO') throw new TiendaError(403, 'ACCESO_DENEGADO', 'Las compras de la tienda son para socios; ADMIN registra ventas de mostrador.');
+  };
+  app.post('/api/v1/tienda/compras', { onRequest: [autenticarUsuario, socio] }, async (request, reply) => {
+    sinQuery(request.query);
+    const socioId = (request.user as { sub: string }).sub;
+    return reply.code(201).send(await movimiento(request, 'compra', () => stockService().comprar(
+      socioId, request.headers['idempotency-key'], request.body,
+      async codigos => catalogo.precios(codigos, contexto(reply)), clock())));
+  });
+  app.get('/api/v1/tienda/compras', { onRequest: [autenticarUsuario, socio] }, async request => {
+    const query = soloParametros(request.query, ['pagina', 'tamanio']);
+    return stockService().compras((request.user as { sub: string }).sub, entero(query.pagina, 1, 10000), entero(query.tamanio, 10, 50));
+  });
   app.setErrorHandler((error, request, reply) => {
-    if (error instanceof IntegracionPendienteError) {
-      return reply.code(503).send({ codigo: error.codigo, mensaje: error.message });
-    }
     if (error instanceof TiendaError) return reply.code(error.statusCode).send({ codigo: error.codigo, mensaje: error.message });
     const detail = typeof error === 'object' && error !== null ? error as { code?: unknown; statusCode?: unknown } : {};
     const code = typeof detail.code === 'string' ? detail.code : '';

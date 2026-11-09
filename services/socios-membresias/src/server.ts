@@ -7,6 +7,7 @@ import { PostgresSociosRepository, MemorySociosRepository, ISociosRepository } f
 import { configuracionAuth } from './security';
 import { credencialesEmpleadosDesdeEntorno } from './empleados.http';
 import { carCrudsConfigDesdeEntorno, HttpCarCrudsClient } from './clients/car-cruds.client';
+import { HttpAccesosUsoClient } from './clients/accesos.client';
 
 async function start() {
   // Validar secretos antes de inicializar el almacenamiento o abrir el puerto.
@@ -55,6 +56,8 @@ async function start() {
     ...auth,
     empleadosCredenciales,
     carCrudsClient,
+    accesosClient: process.env.ACCESOS_SERVICE_URL?.trim()
+      ? new HttpAccesosUsoClient(process.env.ACCESOS_SERVICE_URL.trim(), auth.internalApiKey) : undefined,
     logger: { redact: ['req.headers.authorization', 'req.headers.x-service-key', 'req.headers.x-api-key', 'req.headers.idempotency-key'] },
   });
   if (pool) {

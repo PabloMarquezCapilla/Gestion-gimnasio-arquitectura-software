@@ -28,12 +28,12 @@ Se conservaron pagos/planes/membresías, reservas/FIFO, Accesos con MongoDB, cac
 - **Cierre:** resultados finales y límites en [EVIDENCIA-TIENDA](EVIDENCIA-TIENDA.md). El consumo de catálogo, aceptación de FAV, URL pública y prueba conjunta pertenecen a las etapas 3 y 9.
 - **Documentación:** D3, ADR-022, contrato, arquitectura y evidencia. **Enunciado:** §2.1–2.2/2.8, §4.1 y presentación, páginas 8–9.
 
-## 3. Consulta de productos y stock de FAV — pendiente de acuerdo externo
+## 3. Consulta de productos de FAV y compra de socios — implementado y verificado localmente (09/11/2026)
 
-- Confirmar su rama vigente: `feature-inventario` ya no existe; `main` y `development` se inspeccionaron como análisis, sin elegir una unilateralmente.
-- Fijar su contrato de productos y stock, URL y autenticación. Reutilizar portal → gateway → Tienda; el cliente HTTP externo pertenece a Tienda.
-- **Cierre:** consulta real integrada al flujo, test de contrato, validación de respuestas, timeout y errores visibles sin inventar catálogo o stock cero. Coordinar prueba conjunta en ambos sentidos.
-- **Documentación:** D9, guía de integración, configuración y evidencia de fallas. **Enunciado:** §4.1, páginas 5–6; presentación, página 8.
+- Contrato de FAV `catalogo-pedidos` 1.1.0 fijado desde `development` `b9cb3e4` en [fav-catalogo-pedidos-1.1.0.openapi.yaml](contracts/fav-catalogo-pedidos-1.1.0.openapi.yaml). El cliente pertenece a Tienda: portal → gateway → Tienda → FAV.
+- El catálogo cruza los productos de FAV con el stock consignado local. Los socios compran desde la web con precio tomado en el servidor y descuento atómico e idempotente. Protección: timeout, reintento, circuit breaker y caché degradada. [ADR-023](adr/ADR-023-compra-de-socios-en-tienda.md), [ADR-024](adr/ADR-024-circuit-breaker-fav.md) y contrato propio [openapi-tienda-socios-v1.yaml](contracts/openapi-tienda-socios-v1.yaml).
+- **Verificación:** test de contrato del cliente contra el OpenAPI fijado; tests del circuito, del catálogo degradado y de las compras; `npm run test:tienda` con PostgreSQL real y dos instancias, donde 10 compradores simultáneos por la última unidad dan exactamente una compra.
+- **Pendiente:** URL y clave reales de FAV por canal privado, y prueba conjunta en ambos sentidos.
 
 ## 4. Cambios de membresía y mensajería — completo y verificado localmente
 
@@ -78,7 +78,14 @@ El retiro de espera y el recorrido propio del paso 6 están verificados. Contin�
 - **Cierre:** pruebas de propietario, repetición, límite temporal y carrera con promoción; recorrido web sin botones que simulen éxito.
 - **Documentación:** alcance, contrato y limitaciones. **Enunciado:** frontend completo, página 8; reglas acordadas del proyecto.
 
-## 7. Car Cruds y fuentes mensuales — pendiente de cierre
+## 7. Car Cruds y fuentes mensuales — fuentes conectadas; prueba conjunta pendiente
+
+**09/11/2026:** el informe mensual completa los tres hechos según el perfil 0.3.0 y ADR-018:
+- `used`: ingresos aceptados en Accesos, mediante el endpoint interno `GET /internal/v1/accesos/uso` con `X-Service-Key`.
+- `costMinor`: importe del único plan confirmado que cubre el mes completo, dividido por los meses contratados; un mes parcial o ambiguo queda `null`.
+- `spendingMinor`: pagos confirmados del mes hasta el corte.
+
+Si Accesos no responde, `used` queda en `null` y el informe se genera igual. El test de contrato `car-cruds-campos.test.mjs` valida el payload completo contra el OpenAPI fijado. Faltan URL y token y la prueba conjunta.
 
 - Conservar su cliente, vínculo y envío durable independientes de FAV. Conectar los hechos comprobables de pagos e ingresos, respetando propietarios, período, corte y fotografía inmutable.
 - Acordar lo económico aún abierto antes de calcularlo; no inferir asistencia desde reservas ni convertir información desconocida en cero. Obtener URL/token por canal privado.

@@ -2,6 +2,7 @@
 
 **Estado:** alcance, contrato y PostgreSQL confirmados por el equipo; backend de stock/reposiciones y panel de ventas implementados y verificados localmente con HTTP/PostgreSQL, Chrome y Compose/NGINX. Publicación, consumo del catálogo y validación conjunta pendientes.
 **Fecha:** 06/11/2026.
+**Reemplazada parcialmente por:** [ADR-023](ADR-023-compra-de-socios-en-tienda.md) (09/11/2026). Los socios ahora compran desde el portal; esas compras también descuentan este stock. El resto de la decisión sigue vigente.
 **Reemplaza:** [ADR-015, D1](ADR-015-limites-con-tienda.md), que limitaba Tienda a lectura sin persistencia. Complementa D8 y [D9](ADR-009-consumo-del-proveedor.md); no reemplaza Car Cruds ni su ADR-018.
 **Enunciado:** §3, página 4; §4.1, páginas 5–6; §5 D1/D3/D8/D9 e historia de decisiones, páginas 6–7; presentación grupal, páginas 8–9.
 

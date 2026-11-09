@@ -124,6 +124,6 @@ console.log('La clave X-API-Key está en CAPACIDAD_API_KEY dentro de .env.');
 console.log('Administrador inicial: ejecutar npm run crear-admin y completar los datos del grupo.');
 console.log(`Capacidad de empleados operativa: POST http://localhost:${port}/api/v1/integraciones/empleados`);
 console.log('Usar X-API-Key de EMPLEADOS_API_KEY e Idempotency-Key. El origen local predeterminado es ficticio; el mock separado sigue disponible con npm run mock:empleados.');
-console.log('Tienda: stock y ventas desde administración. La consulta al catálogo externo sigue pendiente.');
+console.log('Tienda: stock y ventas desde administración; socios compran ropa de FAV desde el portal. Catálogo de FAV: configurar FAV_CATALOGO_BASE_URL y FAV_CATALOGO_API_KEY (o npm run mock:fav).');
 console.log('FAV puede consultar /api/v1/consignaciones/stock?proveedorId=fav y enviar POST /api/v1/consignaciones/reposiciones.');
 console.log('Usar X-API-Key de FAV_API_KEY e Idempotency-Key en reposiciones. La clave se comparte solo por canal privado.');

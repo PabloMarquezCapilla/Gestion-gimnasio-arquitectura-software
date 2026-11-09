@@ -1,8 +1,8 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { Pool, PoolClient } from 'pg';
 import {
-  ReposicionEntrada, ReposicionRecibida, StockItem, TiendaError, TiendaStockRepository,
-  VentaEntrada, VentaRecibida,
+  CompraEntrada, CompraRegistrada, ItemCompra, PaginaCompras, ReposicionEntrada, ReposicionRecibida, StockItem,
+  TiendaError, TiendaStockRepository, VentaEntrada, VentaRecibida,
 } from './stock';
 
 // Los IDs del contrato son opacos, sin un límite de longitud. El JSON de cada
@@ -52,6 +52,26 @@ CREATE TABLE IF NOT EXISTS tienda_operaciones (
   PRIMARY KEY (tipo, origen_hash, clave_hash),
   CHECK ((tipo = 'REPOSICION' AND reposicion_id IS NOT NULL AND venta_id IS NULL)
     OR (tipo = 'VENTA' AND venta_id IS NOT NULL AND reposicion_id IS NULL))
+);
+CREATE TABLE IF NOT EXISTS tienda_compras (
+  compra_id UUID PRIMARY KEY,
+  socio_hash CHAR(64) NOT NULL,
+  socio_json TEXT NOT NULL,
+  clave_hash CHAR(64) NOT NULL,
+  clave_json TEXT NOT NULL,
+  contenido TEXT NOT NULL,
+  respuesta TEXT NOT NULL,
+  total_minor BIGINT NOT NULL CHECK (total_minor BETWEEN 0 AND 9007199254740991),
+  created_at TIMESTAMPTZ NOT NULL,
+  UNIQUE (socio_hash, clave_hash)
+);
+CREATE INDEX IF NOT EXISTS tienda_compras_socio_fecha ON tienda_compras(socio_hash, created_at DESC, compra_id);
+CREATE TABLE IF NOT EXISTS tienda_compra_items (
+  compra_id UUID NOT NULL REFERENCES tienda_compras(compra_id),
+  producto_hash CHAR(64) NOT NULL REFERENCES tienda_stock(producto_hash),
+  unidades BIGINT NOT NULL CHECK (unidades BETWEEN 1 AND 10),
+  precio_unitario_minor BIGINT NOT NULL CHECK (precio_unitario_minor >= 0),
+  PRIMARY KEY (compra_id, producto_hash)
 );
 `;
 
@@ -166,6 +186,79 @@ export class PostgresTiendaStockRepository implements TiendaStockRepository {
       await this.guardarOperacion(client, operacion, resultado, undefined, ventaId);
       return resultado;
     });
+  }
+
+  async buscarCompra(socioId: string, clave: string, datos: CompraEntrada): Promise<CompraRegistrada | undefined> {
+    return this.compraPrevia(this.pool, socioId, clave, serializar(datos.items));
+  }
+
+  async registrarCompra(socioId: string, clave: string, datos: CompraEntrada, items: ItemCompra[], creadaEn: Date): Promise<CompraRegistrada> {
+    const contenido = serializar(datos.items);
+    return this.transaccion(async client => {
+      await this.bloquear(client, ['compra', socioId, clave]);
+      const repetida = await this.compraPrevia(client, socioId, clave, contenido);
+      if (repetida) return repetida;
+      // Filas bloqueadas en orden de hash: dos compras cruzadas no se interbloquean.
+      const productos = items.map(item => {
+        const codigoJson = serializar(item.productoCodigo);
+        return { item, codigoJson, hash: digest(codigoJson) };
+      }).sort((a, b) => a.hash < b.hash ? -1 : 1);
+      const filas = new Map((await client.query<FilaStock & { producto_hash: string }>(`SELECT producto_hash, producto_codigo_json,
+        unidades_disponibles::text, unidades_vendidas::text FROM tienda_stock WHERE producto_hash = ANY($1::char(64)[])
+        ORDER BY producto_hash FOR UPDATE`, [productos.map(p => p.hash)])).rows.map(row => [row.producto_hash, row]));
+      const faltantes = productos.filter(({ item, hash }) => {
+        const fila = filas.get(hash);
+        return !fila || BigInt(fila.unidades_disponibles) < BigInt(item.unidades);
+      }).map(({ item }) => item.productoCodigo);
+      if (faltantes.length) {
+        throw new TiendaError(409, 'STOCK_INSUFICIENTE', 'No alcanzan las unidades de: ' + faltantes.join(', ') + '. No se descontó nada.');
+      }
+      const compraId = randomUUID();
+      const totalMinor = items.reduce((total, item) => total + item.subtotalMinor, 0);
+      if (!Number.isSafeInteger(totalMinor)) throw new TiendaError(422, 'STOCK_NO_REPRESENTABLE', 'El total de la compra no puede representarse de forma segura.');
+      const resultado: CompraRegistrada = { compraId, estado: 'REGISTRADA', items, totalMinor, currency: 'ARS', creadaEn: creadaEn.toISOString() };
+      const socioJson = serializar(socioId), claveJson = serializar(clave);
+      await client.query(`INSERT INTO tienda_compras(compra_id,socio_hash,socio_json,clave_hash,clave_json,contenido,respuesta,total_minor,created_at)
+        VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)`,
+      [compraId, digest(socioJson), socioJson, digest(claveJson), claveJson, contenido, serializar(resultado), String(totalMinor), resultado.creadaEn]);
+      for (const { item, codigoJson, hash } of productos) {
+        verificarIdentidad(filas.get(hash)!.producto_codigo_json, codigoJson);
+        const vendidas = BigInt(filas.get(hash)!.unidades_vendidas) + BigInt(item.unidades);
+        saldoRepresentable(vendidas);
+        await client.query(`UPDATE tienda_stock SET unidades_disponibles=unidades_disponibles-$1,
+          unidades_vendidas=$2, updated_at=now() WHERE producto_hash=$3`, [String(item.unidades), vendidas.toString(), hash]);
+        await client.query('INSERT INTO tienda_compra_items(compra_id,producto_hash,unidades,precio_unitario_minor) VALUES($1,$2,$3,$4)',
+          [compraId, hash, String(item.unidades), String(item.precioUnitarioMinor)]);
+      }
+      return resultado;
+    });
+  }
+
+  async listarCompras(socioId: string, pagina: number, tamanio: number): Promise<PaginaCompras> {
+    const socioJson = serializar(socioId);
+    const [filas, total] = await Promise.all([
+      this.pool.query<{ socio_json: string; respuesta: string }>(`SELECT socio_json, respuesta FROM tienda_compras
+        WHERE socio_hash=$1 ORDER BY created_at DESC, compra_id LIMIT $2 OFFSET $3`,
+      [digest(socioJson), tamanio, (pagina - 1) * tamanio]),
+      this.pool.query<{ total: string }>('SELECT count(*)::text AS total FROM tienda_compras WHERE socio_hash=$1', [digest(socioJson)]),
+    ]);
+    return {
+      pagina, tamanio, total: seguro(total.rows[0].total),
+      items: filas.rows.map(row => { verificarIdentidad(row.socio_json, socioJson); return JSON.parse(row.respuesta) as CompraRegistrada; }),
+    };
+  }
+
+  private async compraPrevia(db: Pool | PoolClient, socioId: string, clave: string, contenido: string): Promise<CompraRegistrada | undefined> {
+    const socioJson = serializar(socioId), claveJson = serializar(clave);
+    const anterior = (await db.query<{ socio_json: string; clave_json: string; contenido: string; respuesta: string }>(
+      'SELECT socio_json, clave_json, contenido, respuesta FROM tienda_compras WHERE socio_hash=$1 AND clave_hash=$2',
+      [digest(socioJson), digest(claveJson)],
+    )).rows[0];
+    if (!anterior) return undefined;
+    verificarIdentidad(anterior.socio_json, socioJson);
+    verificarIdentidad(anterior.clave_json, claveJson);
+    if (anterior.contenido !== contenido) throw new TiendaError(409, 'CLAVE_REUTILIZADA', 'La clave ya corresponde a otra compra.');
+    return JSON.parse(anterior.respuesta) as CompraRegistrada;
   }
 
   private async bloquearStock(client: PoolClient, hash: string, codigoJson: string): Promise<FilaStock> {

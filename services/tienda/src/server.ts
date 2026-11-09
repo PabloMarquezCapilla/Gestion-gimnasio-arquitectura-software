@@ -1,6 +1,9 @@
 import { buildTiendaApp } from './app';
 import { Pool } from 'pg';
 import { PostgresTiendaStockRepository } from './stock.postgres';
+import { CatalogoFavService } from './catalogo';
+import { CircuitBreaker } from './circuit-breaker';
+import { FavError, HttpFavCatalogoClient, favCatalogoConfigDesdeEntorno } from './clients/fav-catalogo.client';
 
 async function start() {
   const port = Number(process.env.PORT ?? 3000);
@@ -8,12 +11,22 @@ async function start() {
   const databaseUrl = process.env.DATABASE_URL;
   if (!databaseUrl) throw new Error('Configurar DATABASE_URL de la base propia de Tienda.');
   if (!(process.env.FAV_API_KEY ?? '').trim()) throw new Error('Configurar FAV_API_KEY para la capacidad compartida.');
+  const favConfig = favCatalogoConfigDesdeEntorno();
   const pool = new Pool({ connectionString: databaseUrl, max: 10, connectionTimeoutMillis: 3000, statement_timeout: 5000, lock_timeout: 3000 });
   const repository = new PostgresTiendaStockRepository(pool);
   let app: ReturnType<typeof buildTiendaApp>;
   try {
-    app = buildTiendaApp({ stockRepository: repository, logger: { base: { service: 'tienda' },
-      redact: ['req.headers.authorization', 'req.headers.x-api-key', 'req.headers.idempotency-key'] } });
+    let alCambiarCircuito: (anterior: string, nuevo: string) => void = () => {};
+    const catalogo = new CatalogoFavService(favConfig ? new HttpFavCatalogoClient(favConfig) : undefined, {
+      breaker: new CircuitBreaker({
+        cuentaComoFallo: error => !(error instanceof FavError) || error.esIndisponibilidad,
+        alCambiar: (anterior, nuevo) => alCambiarCircuito(anterior, nuevo),
+      }),
+    });
+    app = buildTiendaApp({ stockRepository: repository, catalogo, logger: { base: { service: 'tienda' },
+      redact: ['req.headers.authorization', 'req.headers.x-api-key', 'req.headers.x-service-key', 'req.headers.idempotency-key'] } });
+    const log = app.log;
+    alCambiarCircuito = (anterior, nuevo) => log.warn({ codigo: 'CIRCUITO_FAV', anterior, nuevo }, 'Cambio de estado del circuito hacia FAV');
     await repository.inicializarEsquema();
   } catch {
     await pool.end();

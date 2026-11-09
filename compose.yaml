@@ -112,6 +112,8 @@ services:
       CAR_CRUDS_BASE_URL: ${CAR_CRUDS_BASE_URL:-}
       CAR_CRUDS_TOKEN: ${CAR_CRUDS_TOKEN:-}
       CAR_CRUDS_TIMEOUT_MS: ${CAR_CRUDS_TIMEOUT_MS:-3000}
+      # Uso efectivo (ingresos) para el informe mensual a Car Cruds; si no responde, used=null.
+      ACCESOS_SERVICE_URL: http://accesos-ocupacion:3000
       RABBITMQ_URL: amqp://gimnasio:${RABBITMQ_PASSWORD:?Falta RABBITMQ_PASSWORD en .env}@rabbitmq:5672/gimnasio
     depends_on:
       postgres-init:
@@ -195,8 +197,14 @@ services:
       PORT: "3000"
       DATABASE_URL: postgres://tienda:${TIENDA_DB_PASSWORD:?Falta TIENDA_DB_PASSWORD en .env}@postgres:5432/tienda
       FAV_API_KEY: ${FAV_API_KEY:?Falta FAV_API_KEY en .env}
+      FAV_CATALOGO_BASE_URL: ${FAV_CATALOGO_BASE_URL:-}
+      FAV_CATALOGO_API_KEY: ${FAV_CATALOGO_API_KEY:-}
+      FAV_CATALOGO_TIMEOUT_MS: ${FAV_CATALOGO_TIMEOUT_MS:-3000}
       AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:?Falta AUTH_JWT_SECRET en .env}
       AUTH_JWT_TTL_SECONDS: ${AUTH_JWT_TTL_SECONDS:-3600}
+    extra_hosts:
+      # Permite apuntar al mock de FAV que corre en la máquina (npm run mock:fav).
+      - "host.docker.internal:host-gateway"
     depends_on:
       postgres-init:
         condition: service_completed_successfully

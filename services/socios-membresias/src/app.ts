@@ -15,6 +15,7 @@ import { CarCrudsClient, CarCrudsService } from './car-cruds.service';
 import { CarCrudsError } from './clients/car-cruds.client';
 import { CarCrudsVinculosService } from './car-cruds-vinculos.service';
 import { CarCrudsEvidenciasService } from './car-cruds-evidencias.service';
+import type { AccesosUsoClient } from './clients/accesos.client';
 
 export interface SociosAppOptions {
   repository?: ISociosRepository;
@@ -26,6 +27,7 @@ export interface SociosAppOptions {
   clock?: () => Date;
   empleadosCredenciales?: readonly CredencialEmpleados[];
   carCrudsClient?: CarCrudsClient;
+  accesosClient?: AccesosUsoClient;
 }
 
 export function buildSociosApp(options: SociosAppOptions = {}): FastifyInstance {
@@ -37,7 +39,9 @@ export function buildSociosApp(options: SociosAppOptions = {}): FastifyInstance 
   const authService = new AuthService(repository, sociosService, clock);
   const carCrudsService = new CarCrudsService(options.carCrudsClient);
   const vinculosCarCrudsService = new CarCrudsVinculosService(repository, carCrudsService, clock);
-  const evidenciasCarCrudsService = new CarCrudsEvidenciasService(repository, options.carCrudsClient, clock);
+  const evidenciasCarCrudsService = new CarCrudsEvidenciasService(repository, options.carCrudsClient, clock, {
+    accesos: options.accesosClient, obtenerVinculo: employeeId => repository.obtenerVinculoCarCruds(employeeId),
+  });
   const identidades = new WeakMap<FastifyRequest, Identidad>();
   const solicitudesInternas = new WeakSet<FastifyRequest>();
   const instanceId = hostname();
@@ -248,7 +252,7 @@ export function buildSociosApp(options: SociosAppOptions = {}): FastifyInstance 
     '/api/v1/integraciones/car-cruds/empleados/:employeeId/fotografias',
     { onRequest: controlesCarCruds },
     async (request, reply) => reply.code(201).send(await evidenciasCarCrudsService.preparar(
-      identidad(request), request.params.employeeId, request.body, request.query,
+      identidad(request), request.params.employeeId, request.body, request.query, request.traceContext,
     )),
   );
   app.post<{ Params: { fotografiaId: string } }>(

@@ -54,7 +54,7 @@ En ese panel, ADMIN elige el mes y prepara una fotografía durable antes de revi
 
 Las llamadas parten directamente del backend con Bearer de aplicación `gym`. El cliente valida el contrato fijado y aplica un presupuesto total configurable de 3000 ms por defecto, incluido cuerpo. Las lecturas permiten un reintento máximo ante red/502/503/504; cada envío hace un solo POST. Rechaza redirecciones, cuerpos mayores a 1 MiB, números inseguros y respuestas incompatibles. Una credencial externa rechazada conserva la sesión JWT: las lecturas responden 502 y el envío queda en revisión. Sin URL/token, consultar al proveedor o enviar responde `503 CAR_CRUDS_NO_CONFIGURADO`; las vistas previas, historial y resto del portal continúan.
 
-Car Cruds es propietario de empleados, estado laboral e informe receptor. El gimnasio conserva socios/membresías, vínculos, auditoría y fotografías/envíos. Accesos registra ingresos efectivos; su consumo por Car Cruds queda para otra etapa y no se leen sus tablas desde Socios. Pagos, ingresos e historia insuficientes se informan como desconocidos. La fuente actual comprueba afiliación positiva al observar el mes actual y conserva pruebas positivas anteriores del mismo socio/mes; no inventa negativos. Consultar/vincular no habilita una membresía, y una baja laboral no la cancela automáticamente.
+Car Cruds es propietario de empleados, estado laboral e informe receptor. El gimnasio conserva socios/membresías, vínculos, auditoría y fotografías/envíos. Accesos registra ingresos efectivos. Socios no lee sus colecciones: consulta `GET /internal/v1/accesos/uso` con `X-Service-Key` (2 s, un reintento) para `used`. `costMinor` y `spendingMinor` salen de planes y pagos confirmados propios. Lo que no responde o no alcanza se informa como desconocido (`null`). La fuente actual comprueba afiliación positiva al observar el mes actual y conserva pruebas positivas anteriores del mismo socio/mes; no inventa negativos. Consultar/vincular no habilita una membresía, y una baja laboral no la cancela automáticamente.
 
 El [contrato externo 0.3.0 y el perfil mensual](contracts/README.md#integracion-con-car-cruds) y [D8 vigente](adr/ADR-018-integracion-car-cruds.md) documentan el diseño y las rutas propias. Se verificaron lecturas/envíos con HTTP controlado, persistencia/recuperación con PostgreSQL real y pantalla con datos ficticios; faltan URL/token y prueba conjunta. El POST receptor pertenece a Car Cruds: las verificaciones locales todavía no acreditan la conexión operativa entre grupos de §4.1.
 
@@ -62,11 +62,43 @@ El [contrato externo 0.3.0 y el perfil mensual](contracts/README.md#integracion-
 
 ### Integración con FAV: consumo y capacidad ofrecida
 
-El portal llama por nuestro gateway a `GET /api/v1/tienda/productos` con JWT y todavía recibe `503 INTEGRACION_PENDIENTE`: esa ruta interna corresponde al catálogo externo, no al stock local. El panel ADMIN **Tienda y stock** consulta `GET /api/v1/tienda/stock` y registra `POST /api/v1/tienda/ventas`. La salud `/health/tienda` comprueba PostgreSQL y las métricas se exponen en `/metrics/tienda`; ninguna de esas comprobaciones acredita una conexión con FAV.
+**Consumo de FAV (09/11/2026).** Tienda llama a `GET /v1/productos` de FAV desde su backend, con el contrato 1.1.0 fijado. El portal nunca habla con FAV.
+- El catálogo (`GET /api/v1/tienda/productos`) cruza esos productos con el stock consignado local y muestra solo las variantes con unidades.
+- El socio compra con `POST /api/v1/tienda/compras`. El precio se toma del catálogo en el servidor, y el descuento de varias variantes es atómico e idempotente.
+- Protección: timeout de 3 s con un reintento, circuit breaker y caché de 60 s con uso degradado hasta 15 min.
+- `/health/tienda` no depende de FAV. `/metrics/tienda` expone el estado del circuito y los aciertos de caché.
+- Decisiones: [ADR-023](adr/ADR-023-compra-de-socios-en-tienda.md), [ADR-024](adr/ADR-024-circuit-breaker-fav.md) y [D9](adr/ADR-009-consumo-del-proveedor.md).
 
-Tienda será quien llame a **FAV** para consultar su catálogo y disponibilidad. Su rama anterior `feature-inventario` ya no existe; se inspeccionaron `main` y `development`, pero la rama de integración no fue confirmada. En `development` existe una consulta pública de disponibilidad que aún debe incorporarse al contrato formal compartido. Faltan ese acuerdo, URL y credenciales para fijar el cliente y verificarlo. [D9](adr/ADR-009-consumo-del-proveedor.md).
+```mermaid
+sequenceDiagram
+    actor Socio
+    participant GW as Gateway NGINX
+    participant T as Tienda
+    participant FAV as FAV (externo)
+    participant DB as PostgreSQL tienda
+    Socio->>GW: GET /api/v1/tienda/productos (JWT)
+    GW->>T: proxy
+    alt caché vigente (60 s)
+        T->>T: catálogo en memoria
+    else circuito cerrado
+        T->>FAV: GET /v1/productos (X-API-Key, 3 s, 1 reintento)
+        FAV-->>T: 200 catálogo (validado contra 1.1.0)
+    else FAV caído o circuito abierto
+        T->>T: copia ≤ 15 min → origen CACHE_DEGRADADA, si no 503
+    end
+    T->>DB: stock consignado
+    T-->>Socio: variantes con unidades y precioMinor
+    Socio->>GW: POST /api/v1/tienda/compras (Idempotency-Key)
+    GW->>T: proxy (sin reintento del gateway)
+    T->>DB: ¿compra previa con esa clave?
+    T->>T: cotizar con el catálogo (fuera de la transacción)
+    T->>DB: BEGIN, FOR UPDATE ordenado, validar y descontar, guardar compra, COMMIT
+    T-->>Socio: 201 REGISTRADA (o 409 STOCK_INSUFICIENTE)
+```
 
-El equipo confirmó además stock local en una única tienda: FAV consulta disponibles/vendidas y registra reposiciones; ADMIN del gimnasio registra ventas sin stock negativo. El [OpenAPI propio 1.0.0](contracts/openapi-fav-v1.yaml) y [guía](contracts/fav-tienda.md) definen `GET /api/v1/consignaciones/stock` y `POST /api/v1/consignaciones/reposiciones`, con `X-API-Key` e `Idempotency-Key` en el POST. Una misma entrega conserva su resultado ante repetición por clave o referencia; datos diferentes generan conflicto. No hay stock por sede, devoluciones, ajustes ni compras del socio.
+El panel ADMIN **Tienda y stock** consulta `GET /api/v1/tienda/stock` y registra `POST /api/v1/tienda/ventas` de mostrador.
+
+El equipo confirmó además stock local en una única tienda: FAV consulta disponibles/vendidas y registra reposiciones. El [OpenAPI propio 1.0.0](contracts/openapi-fav-v1.yaml) y la [guía](contracts/fav-tienda.md) definen `GET /api/v1/consignaciones/stock` y `POST /api/v1/consignaciones/reposiciones`, con `X-API-Key` e `Idempotency-Key` en el POST. Una misma entrega conserva su resultado ante repetición por clave o referencia; datos diferentes generan conflicto. No hay stock por sede, devoluciones ni ajustes. Las ventas del ADMIN y las compras de socios descuentan el mismo stock.
 
 La API de FAV y los movimientos locales están implementados con PostgreSQL 17 propio. La transacción bloquea clave/referencia y stock, guarda movimiento y resultado juntos y permite recuperar el recibo original tras reintento o reinicio. Una venta ADMIN usa su propia clave por actor y no admite stock negativo. El panel conserva una venta incierta en sessionStorage sin JWT, protege el cambio de administrador y no elimina otra operación local al recibir una respuesta tardía. No hay llamadas externas dentro de bloqueos SQL.
 
@@ -184,10 +216,13 @@ sequenceDiagram
 ## Limitaciones conocidas y deuda técnica aceptada
 
 - **Dominio pendiente.** Políticas para reactivación, superposición, acumulación/prorrateo y credenciales de empleados. Publicación/edición de clases implementadas con las reglas confirmadas. Planes, solicitudes, pagos/comprobantes y nuevos períodos explícitos no superpuestos están implementados (ADR-021). Accesos ya implementa movimientos, ocupación y caché. El consumo desde Car Cruds queda pendiente.
-- **Integración externa:** Car Cruds tiene contrato fijado, lecturas, vínculo y envío durable probados localmente; faltan la imputación mensual de los nuevos cobros/ingresos y la prueba conjunta con conexión operativa. Tienda tiene stock/reposiciones/ventas locales con PostgreSQL, pero no consume todavía catálogo/disponibilidad de FAV. La publicación accesible, aceptación y pruebas entre grupos siguen pendientes (§4.1).
+- **Integración externa:**
+  - **Car Cruds:** contrato fijado; lecturas, vínculo y envío durable probados localmente. El informe ya completa `used` (vía Accesos), `costMinor` y `spendingMinor`. Falta la prueba conjunta con conexión operativa.
+  - **FAV:** Tienda consume su catálogo 1.1.0 con circuit breaker y caché degradada, y los socios compran desde el portal ([ADR-023](adr/ADR-023-compra-de-socios-en-tienda.md)). No hay pasarela de pago, cancelación ni devolución: la compra se paga y retira en el mostrador. La caché y el circuito son por instancia.
+  - La publicación accesible, la aceptación y las pruebas entre grupos siguen pendientes (§4.1).
 - **Búsqueda y caché.** Paso 5 verificado localmente con API, portal, publicación/edición, filtros, páginas y orden. Se compararon consultas durante una reconstrucción real de GIN con dos instancias y se verificó el recorrido por NGINX. El mantenimiento local está documentado en D6. Redis de ocupación conserva su implementación y mediciones. [Evidencia de búsqueda](EVIDENCIA-BUSQUEDA.md).
 - **Mensajería.** Suspensión, Outbox/RabbitMQ/Inbox, cancelación y DLQ implementados. Consistencia eventual hasta consumo, broker único y revisión manual de DLQ. Reactivación requiere ampliar evento y proyección.
-- **Disponibilidad:** un gateway, una instancia PostgreSQL y MongoDB de un nodo. Dos réplicas HTTP no eliminan esos puntos de falla ni los errores durante detección. No hay despliegue multizona ni protección completa por circuit breaker/límite de concurrencia.
+- **Disponibilidad:** un gateway, una instancia PostgreSQL y MongoDB de un nodo. Dos réplicas HTTP no eliminan esos puntos de falla ni los errores durante detección. No hay despliegue multizona. El circuit breaker cubre solo la dependencia externa de FAV ([ADR-024](adr/ADR-024-circuit-breaker-fav.md)); no hay límite de concurrencia.
 - **Identidad:** Clases y Tienda validan el JWT hasta su vencimiento; no hay revocación inmediata ni refresh tokens. La configuración actual del POST admite un origen externo por entorno.
 - **Operación:** faltan tableros/alertas, prueba de carga sostenida y presupuesto definitivo. Las mediciones locales no acreditan SLO ni capacidad máxima. El postmortem registra un ensayo local, no la jornada completa con proveedor.
 - **Datos de demostración:** clases con fechas fijas y cuentas ficticias; los datos persistidos pueden diferir de los iniciales. No hay gestión versionada completa de migraciones ni política de purga de idempotencia.

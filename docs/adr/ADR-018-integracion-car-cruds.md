@@ -1,6 +1,6 @@
 # D8 - Integración de membresías con Car Cruds
 
-**Estado:** lecturas, vinculación administrativa, auditoría y envío manual de fotografías implementados localmente. Conexión operativa y prueba conjunta pendientes. El POST anterior sigue operativo localmente.
+**Estado:** lecturas, vinculación administrativa, auditoría y envío manual de fotografías implementados localmente. Desde el 09/11/2026 la fotografía completa `used` (ingresos aceptados en Accesos, por endpoint interno), `costMinor` y `spendingMinor` (planes y pagos confirmados), con las reglas de la tabla de abajo. Conexión operativa y prueba conjunta pendientes. El POST anterior sigue operativo localmente.
 **Fecha:** 23/10/2026.
 **Reemplaza en el diseño de la integración:** [ADR-014 - Contrato de recepción de empleados](ADR-014-contrato-empleados.md). Su API, contrato y pruebas se conservan.
 **Enunciado:** §3, página 4; §4.1, páginas 5–6; §5, página 7; §6.3, página 8, actualización de D8.

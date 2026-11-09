@@ -22,6 +22,8 @@ export interface AccesosRepository {
   registrar(operacion: Operacion, evaluacion: Evaluacion | null, fecha: string): Promise<Resultado>;
   ocupacion(sedeId: string): Promise<number>;
   historial(sedeId: string, socioId: string | undefined, pagina: number, tamanio: number): Promise<Movimiento[]>;
+  // Ingreso efectivo aceptado en [desde, hasta); un rechazo de recepción no cuenta como uso.
+  huboIngreso(socioId: string, desde: string, hasta: string): Promise<boolean>;
 }
 
 export function decidir(tipo: Orden['tipo'], abierta: boolean, evaluacion: Evaluacion | null): string {

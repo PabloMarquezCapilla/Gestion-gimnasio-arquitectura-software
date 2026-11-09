@@ -39,7 +39,7 @@ test('exige JWT válido y vigente; ni clave externa ni técnica autorizan Tienda
   }
 });
 
-test('Socios emite una sesión que Tienda acepta sin consultas externas ni catálogo ficticio', async (t) => {
+test('Socios emite una sesión que Tienda acepta; sin credencial de FAV no se consulta ni se inventa un catálogo', async (t) => {
   const app = await fixture(t);
   const socios = sociosModule.buildSociosApp({ jwtSecret: secret, internalApiKey: 'interna-ficticia', clock });
   t.after(() => socios.close());
@@ -54,7 +54,7 @@ test('Socios emite una sesión que Tienda acepta sin consultas externas ni catá
       assert.equal(result.statusCode, 503);
       assert.equal(result.headers['cache-control'], 'no-store');
       assert.deepEqual(Object.keys(result.json()).sort(), ['codigo', 'mensaje']);
-      assert.equal(result.json().codigo, 'INTEGRACION_PENDIENTE');
+      assert.equal(result.json().codigo, 'PROVEEDOR_NO_CONFIGURADO');
       assert.equal(result.json().items, undefined);
       assert.equal(result.json().stock, undefined);
     }

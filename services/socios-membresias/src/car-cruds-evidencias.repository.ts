@@ -28,6 +28,16 @@ export interface FuenteFotografia {
   // Una observación positiva guardada prueba vigencia en algún tramo del mes;
   // su ausencia no prueba que no haya tenido membresía durante todo el período.
   miembroObservadoEnPeriodo?: boolean;
+  // Planes con pago confirmado. Ausente: esta fuente no registra pagos y los importes son desconocidos.
+  contratos?: ContratoConfirmado[];
+}
+
+export interface ContratoConfirmado {
+  importeMinor: number;
+  moneda: string;
+  fechaInicio: string;
+  fechaFin: string;
+  confirmadoEn: string;
 }
 
 export interface CambioPreparacionFotografia {

@@ -1,0 +1,202 @@
+openapi: 3.1.1
+info:
+  title: Tienda del gimnasio para socios (catálogo FAV y compras)
+  version: 1.0.0
+  description: >-
+    API interna del portal, publicada por el gateway. El catálogo combina los
+    productos de FAV (contrato catalogo-pedidos 1.1.0, consumido por Tienda) con
+    el stock físico consignado en la tienda del gimnasio: solo aparecen variantes
+    con unidades disponibles. El socio compra desde la web; el precio se toma del
+    catálogo en el servidor y la compra descuenta el stock local de forma atómica.
+    No hay pasarela de pago: la compra queda REGISTRADA y se paga y retira en el
+    mostrador. Ver ADR-023 y fav-tienda.md.
+servers:
+  - url: http://localhost:8080
+    description: Gateway local (npm run iniciar).
+security:
+  - SesionPortal: []
+paths:
+  /api/v1/tienda/productos:
+    get:
+      operationId: consultarCatalogoTienda
+      summary: Catálogo de FAV disponible en la tienda del gimnasio
+      description: >-
+        Ordenado por nombre. origen=CACHE_DEGRADADA indica que FAV no respondió y
+        se muestra la última copia válida (hasta 15 minutos); actualizadoEn indica
+        de cuándo es. Sin copia válida responde 503 PROVEEDOR_NO_DISPONIBLE.
+      parameters:
+        - { name: categoria, in: query, schema: { type: string, minLength: 1, maxLength: 100 } }
+        - { name: talle, in: query, schema: { type: string, minLength: 1, maxLength: 100 } }
+        - { name: pagina, in: query, schema: { type: integer, minimum: 1, maximum: 10000, default: 1 } }
+        - { name: tamanio, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 12 } }
+      responses:
+        '200':
+          description: Página del catálogo.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Catalogo' }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '502':
+          description: FAV_CREDENCIAL_RECHAZADA o FAV_RESPUESTA_INVALIDA (contrato del proveedor roto). No reintentar.
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+        '503':
+          description: PROVEEDOR_NO_DISPONIBLE, PROVEEDOR_NO_CONFIGURADO o SERVICIO_NO_DISPONIBLE. Reintentar más tarde.
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+  /api/v1/tienda/compras:
+    post:
+      operationId: comprarEnTienda
+      summary: Registrar una compra del socio
+      description: >-
+        Solo rol SOCIO. Todo o nada: si una variante no alcanza no se descuenta
+        ninguna. Repetir con la misma Idempotency-Key y el mismo cuerpo devuelve la
+        compra original (aunque FAV no esté disponible); con otro cuerpo, 409
+        CLAVE_REUTILIZADA. Ante timeout o 5xx, reintentar con la misma clave.
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, minLength: 1 }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CompraNueva' }
+            example: { items: [{ productoCodigo: var-remera-basica-blanca-m, unidades: 2 }] }
+      responses:
+        '201':
+          description: Compra registrada (pendiente de pago y retiro en mostrador).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Compra' }
+        '400':
+          description: SOLICITUD_INVALIDA o IDEMPOTENCIA_INVALIDA.
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+        '401': { $ref: '#/components/responses/Error' }
+        '403':
+          description: ACCESO_DENEGADO (ADMIN registra ventas de mostrador en /api/v1/tienda/ventas).
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+        '409':
+          description: STOCK_INSUFICIENTE, PRODUCTO_NO_DISPONIBLE (no figura en el catálogo de FAV) o CLAVE_REUTILIZADA.
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+        '503':
+          description: PROVEEDOR_NO_DISPONIBLE (no se puede cotizar) o SERVICIO_NO_DISPONIBLE.
+          content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+    get:
+      operationId: listarMisCompras
+      summary: Compras del socio autenticado, de la más reciente a la más antigua
+      parameters:
+        - { name: pagina, in: query, schema: { type: integer, minimum: 1, maximum: 10000, default: 1 } }
+        - { name: tamanio, in: query, schema: { type: integer, minimum: 1, maximum: 50, default: 10 } }
+      responses:
+        '200':
+          description: Página de compras.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [pagina, tamanio, total, items]
+                properties:
+                  pagina: { type: integer, minimum: 1 }
+                  tamanio: { type: integer, minimum: 1 }
+                  total: { type: integer, minimum: 0 }
+                  items: { type: array, items: { $ref: '#/components/schemas/Compra' } }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+components:
+  securitySchemes:
+    SesionPortal:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  responses:
+    Error:
+      description: Error con código estable; decidir por codigo.
+      content: { application/json: { schema: { $ref: '#/components/schemas/Error' } } }
+  schemas:
+    Error:
+      type: object
+      additionalProperties: false
+      required: [codigo, mensaje]
+      properties:
+        codigo: { type: string }
+        mensaje: { type: string }
+    Catalogo:
+      type: object
+      additionalProperties: false
+      required: [origen, actualizadoEn, pagina, tamanio, total, items]
+      properties:
+        origen: { enum: [FAV, CACHE_DEGRADADA] }
+        actualizadoEn: { type: string, format: date-time }
+        pagina: { type: integer, minimum: 1 }
+        tamanio: { type: integer, minimum: 1 }
+        total: { type: integer, minimum: 0 }
+        items:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [productoId, nombre, categoria, variantes]
+            properties:
+              productoId: { type: string }
+              nombre: { type: string }
+              categoria: { type: string }
+              descripcion: { type: string }
+              fotoUrl: { type: string, format: uri }
+              variantes:
+                type: array
+                minItems: 1
+                items:
+                  type: object
+                  additionalProperties: false
+                  required: [productoCodigo, talle, color, precioMinor, unidadesDisponibles]
+                  properties:
+                    productoCodigo: { type: string, description: varianteId de FAV. }
+                    talle: { type: string }
+                    color: { type: string }
+                    precioMinor: { type: integer, minimum: 0, description: Centavos de ARS. }
+                    unidadesDisponibles: { type: integer, minimum: 1 }
+    CompraNueva:
+      type: object
+      additionalProperties: false
+      required: [items]
+      properties:
+        items:
+          type: array
+          minItems: 1
+          maxItems: 10
+          description: Variantes distintas.
+          items:
+            type: object
+            additionalProperties: false
+            required: [productoCodigo, unidades]
+            properties:
+              productoCodigo: { type: string, minLength: 1 }
+              unidades: { type: integer, minimum: 1, maximum: 10 }
+    Compra:
+      type: object
+      additionalProperties: false
+      required: [compraId, estado, items, totalMinor, currency, creadaEn]
+      properties:
+        compraId: { type: string, format: uuid }
+        estado: { const: REGISTRADA }
+        totalMinor: { type: integer, minimum: 0 }
+        currency: { const: ARS }
+        creadaEn: { type: string, format: date-time }
+        items:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            additionalProperties: false
+            required: [productoCodigo, nombre, talle, color, unidades, precioUnitarioMinor, subtotalMinor]
+            properties:
+              productoCodigo: { type: string }
+              nombre: { type: string }
+              talle: { type: string }
+              color: { type: string }
+              unidades: { type: integer, minimum: 1, maximum: 10 }
+              precioUnitarioMinor: { type: integer, minimum: 0 }
+              subtotalMinor: { type: integer, minimum: 0 }

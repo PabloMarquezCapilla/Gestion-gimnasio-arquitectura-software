@@ -1,6 +1,6 @@
 # D9 - Consumo del proveedor
 
-**Estado:** consumo del catálogo/disponibilidad de FAV pendiente. La capacidad ofrecida en sentido contrario ya tiene backend local de stock/reposiciones y ventas administrativas con PostgreSQL, según ADR-022; conexión conjunta pendiente.
+**Estado:** actualizado el 09/11/2026. El consumo del catálogo de FAV (contrato 1.1.0 fijado) está implementado, integrado a la compra de socios ([ADR-023](ADR-023-compra-de-socios-en-tienda.md)) y protegido con circuit breaker y caché degradada ([ADR-024](ADR-024-circuit-breaker-fav.md)). La regla "no hay compras del socio" de abajo quedó reemplazada por ADR-023. Conexión conjunta pendiente.
 **Fecha inicial:** 12/10/2026. **Revisión:** 06/11/2026.
 **Enunciado:** §4.1, páginas 5–6; §5 D9, página 7; §6.3, página 8.
 

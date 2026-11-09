@@ -26,6 +26,7 @@ export class MongoAccesosRepository implements AccesosRepository {
     await this.presencias.createIndex({ sedeId: 1, abierta: 1 }, { name: 'ocupacion_sede' });
     await this.movimientos.createIndex({ sedeId: 1, fecha: -1, _id: -1 }, { name: 'historial_sede' });
     await this.movimientos.createIndex({ sedeId: 1, socioId: 1, fecha: -1, _id: -1 }, { name: 'historial_socio' });
+    await this.movimientos.createIndex({ socioId: 1, fecha: -1 }, { name: 'uso_socio' });
     // Creación explícita de la colección antes de usar transacciones; no borra historial ni vence claves.
     await this.operaciones.createIndex({ _id: 1 });
     for (const sede of sedes) await this.catalogo.updateOne({ _id: sede.sedeId }, { $setOnInsert: { ...sede } }, { upsert: true });
@@ -78,6 +79,10 @@ export class MongoAccesosRepository implements AccesosRepository {
     throw new AccesosError(503, 'ALMACENAMIENTO_NO_DISPONIBLE', 'No se pudo confirmar la operación. Reintentá con la misma clave.');
   }
   async ocupacion(sedeId: string) { return this.presencias.countDocuments({ sedeId, abierta: true }, { maxTimeMS: 3000 }); }
+  async huboIngreso(socioId: string, desde: string, hasta: string) {
+    return !!await this.movimientos.findOne({ socioId, fecha: { $gte: desde, $lt: hasta },
+      'movimiento.tipo': 'INGRESO', 'movimiento.aceptado': true }, { maxTimeMS: 3000, projection: { _id: 1 } });
+  }
   async historial(sedeId: string, socioId: string | undefined, pagina: number, tamanio: number) {
     return (await this.movimientos.find({ sedeId, ...(socioId ? { socioId } : {}) }, { maxTimeMS: 3000 })
       .sort({ fecha: -1, _id: -1 }).skip((pagina - 1) * tamanio).limit(tamanio).toArray()).map(r => r.movimiento);

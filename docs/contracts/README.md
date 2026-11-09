@@ -16,7 +16,9 @@ El acuerdo confirmado el 06/11/2026 incorpora ambos sentidos: Tienda consumirá 
 - [Guía para FAV](fav-tienda.md): reglas, ejemplos de Postman, reintentos, errores y coordinación pendiente.
 - [ADR-022](../adr/ADR-022-tienda-y-consignaciones-fav.md): responsabilidad de stock propio y persistencia PostgreSQL con usuario/base exclusivos.
 
-**Estado:** consulta de stock, reposiciones y ventas administrativas implementadas y verificadas localmente. La [guía](fav-tienda.md) incluye la API interna de ventas, uso y errores; [EVIDENCIA-TIENDA](../EVIDENCIA-TIENDA.md) registra pruebas con PostgreSQL, navegador y NGINX. Faltan aceptación de FAV, rama externa acordada, publicación accesible y entrega privada de credenciales. Solo la consulta al catálogo externo `/api/v1/tienda/productos` continúa devolviendo `503 INTEGRACION_PENDIENTE`; su contrato se acordará por separado.
+**Estado:** consulta de stock, reposiciones y ventas administrativas implementadas y verificadas localmente. La [guía](fav-tienda.md) incluye la API interna de ventas, uso y errores; [EVIDENCIA-TIENDA](../EVIDENCIA-TIENDA.md) registra pruebas con PostgreSQL, navegador y NGINX.
+
+En sentido inverso, Tienda consume el catálogo de FAV (contrato 1.1.0 fijado) y lo usa en la compra de socios ([ADR-023](../adr/ADR-023-compra-de-socios-en-tienda.md)). Faltan aceptación de FAV, publicación accesible, entrega privada de credenciales y prueba conjunta.
 
 ## Suspensiones y evento interno
 
@@ -140,7 +142,16 @@ El POST exige `employeeId`, `period`, `sourceReference`, `version` y `observedAt
 | `currency` | ARS, importes en centavos enteros no negativos; costo y pagos se presentan separados. |
 | `observedAt` | Instante real de elaboración/comprobación de la fotografía con zona RFC3339. Es el corte informado; la precedencia la determina `version`. |
 
-`null` significa desconocido; `false` y cero requieren información suficiente. Pagos y movimientos de Accesos ya están implementados, pero sus hechos todavía no se conectan a la fotografía mensual; tampoco se presume un historial completo de estados de membresía. El generador actual informa `member:true` si comprueba la habilitación al observar un instante del mes actual, o conserva una observación positiva anterior guardada del mismo empleado, socio y mes hasta el corte. En los demás casos informa `member:null`; no deduce un mes negativo de la situación actual. `used`, `costMinor` y `spendingMinor` permanecen en `null` y se omite moneda mientras no haya importes. Una fotografía de un mes anterior puede corregirse después, incluso si el empleado ahora está inactivo.
+`null` significa desconocido; `false` y cero requieren información suficiente. No se presume un historial completo de estados de membresía.
+
+Cómo genera cada hecho el informe (desde el 09/11/2026):
+- **`member`:** `true` si se comprueba la habilitación al observar un instante del mes actual, o si hay una observación positiva anterior guardada del mismo empleado, socio y mes hasta el corte. En los demás casos, `null`; no se deduce un mes negativo de la situación actual.
+- **`used`:** se consulta a Accesos (`GET /internal/v1/accesos/uso`, solo red interna, `X-Service-Key`). Cuenta si hubo al menos un ingreso aceptado en el mes (hora argentina) hasta el corte. La consulta se hace antes de la transacción local y solo se aplica si el vínculo no cambió entretanto. Si Accesos no responde en 2 s (un reintento), queda `null` y el informe se genera igual.
+- **`costMinor`:** importe del único plan con pago confirmado que cubre el mes entero, dividido por los meses contratados (redondeo a centavo). Un mes parcial, dos planes superpuestos o una moneda distinta de ARS dan `null`.
+- **`spendingMinor`:** suma de los pagos de membresía confirmados dentro del mes hasta el corte. Sin pagos es `0`. Las compras en la tienda no cuentan, porque se pagan en el mostrador fuera del sistema.
+- **`currency`:** `ARS` cuando hay algún importe conocido.
+
+Una fotografía de un mes anterior puede corregirse después, incluso si el empleado ahora está inactivo. El test `services/socios-membresias/test/car-cruds-campos.test.mjs` valida el payload completo contra el OpenAPI fijado.
 
 **Pendientes económicos:** meses parciales, distribución de fracciones de centavo y devoluciones/ajustes negativos. No se aplica una regla de redondeo ni una devolución sin acordarla. Los meses parciales mantienen `costMinor:null`; otros valores no demostrables o no representables también permanecen desconocidos o requieren revisión, sin convertirlos en cero.
 
@@ -196,7 +207,10 @@ Los tests usan el OpenAPI fijado y comprueban rechazo de respuestas incompatible
 
 ## Integracion de Tienda con FAV
 
-Tienda mantiene una integración independiente de solo lectura. Se revisó [`feature-inventario`](https://github.com/JuanHernandez-99/Fav-del-universo/tree/feature-inventario): el catálogo público no informa stock y la lectura de inventario requiere permisos administrativos. Falta acordar una consulta de stock para consumidores y los datos de conexión. [D9](../adr/ADR-009-consumo-del-proveedor.md). Compras, consignación y reposiciones quedan fuera del alcance del gimnasio.
+Tienda consume `GET /v1/productos` del contrato de FAV [catalogo-pedidos 1.1.0](fav-catalogo-pedidos-1.1.0.openapi.yaml), una copia fijada de `development` `b9cb3e4`.
+- El catálogo se cruza con el stock consignado y los socios compran desde el portal. Contrato propio: [openapi-tienda-socios-v1.yaml](openapi-tienda-socios-v1.yaml).
+- La guía de consumo, la configuración y el comportamiento ante fallas están en [fav-tienda.md](fav-tienda.md#consumo-del-catálogo-de-fav-gimnasio--fav).
+- Decisiones: [ADR-023](../adr/ADR-023-compra-de-socios-en-tienda.md) y [ADR-024](../adr/ADR-024-circuit-breaker-fav.md).
 
 ## API anterior: recepción de empleados
 

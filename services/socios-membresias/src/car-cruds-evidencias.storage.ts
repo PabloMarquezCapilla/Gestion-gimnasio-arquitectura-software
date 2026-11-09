@@ -372,7 +372,12 @@ async function leerFuente(client: PoolClient, employeeId: string): Promise<Fuent
     `SELECT v.employee_id, v.socio_id, v.version, v.actualizado_en,
       to_jsonb(s) AS socio,
       COALESCE((SELECT jsonb_agg(to_jsonb(m) ORDER BY m.membresia_id)
-        FROM membresias m WHERE m.socio_id = s.socio_id), '[]'::jsonb) AS membresias
+        FROM membresias m WHERE m.socio_id = s.socio_id), '[]'::jsonb) AS membresias,
+      COALESCE((SELECT jsonb_agg(jsonb_build_object('importeMinor', sp.importe_minor::text, 'moneda', sp.moneda,
+          'fechaInicio', sp.fecha_inicio, 'fechaFin', sp.fecha_fin, 'confirmadoEn', c.confirmado_en) ORDER BY c.confirmado_en, sp.solicitud_id)
+        FROM solicitudes_planes sp JOIN pagos_membresia p ON p.solicitud_id = sp.solicitud_id
+        JOIN comprobantes_membresia c ON c.pago_id = p.pago_id
+        WHERE sp.socio_id = s.socio_id AND sp.estado = 'CONFIRMADA' AND p.estado = 'CONFIRMADO'), '[]'::jsonb) AS contratos
      FROM car_cruds_vinculos v LEFT JOIN socios s ON s.socio_id = v.socio_id
      WHERE v.employee_id = $1`, [employeeId],
   );
@@ -390,6 +395,10 @@ async function leerFuente(client: PoolClient, employeeId: string): Promise<Fuent
       membresiaId: m.membresia_id, socioId: m.socio_id, tipoPlan: m.tipo_plan,
       fechaInicio: fechaIso(m.fecha_inicio)!, fechaFin: fechaIso(m.fecha_fin)!, estado: m.estado,
       createdAt: fechaIso(m.created_at)!, updatedAt: fechaIso(m.updated_at)!,
+    })),
+    contratos: row.contratos.map((c: QueryResultRow) => ({
+      importeMinor: Number(c.importeMinor), moneda: c.moneda,
+      fechaInicio: fechaIso(c.fechaInicio)!, fechaFin: fechaIso(c.fechaFin)!, confirmadoEn: fechaIso(c.confirmadoEn)!,
     })),
   };
 }

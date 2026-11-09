@@ -31,7 +31,7 @@ async function start() {
       ttlMs: Number(process.env.OCUPACION_CACHE_TTL_MS ?? 30000), timeoutMs: Number(process.env.REDIS_TIMEOUT_MS ?? 100),
       onConnectionError: () => { console.warn(JSON.stringify({ service: 'accesos-ocupacion', codigo: 'REDIS_CONEXION_FALLIDA', mensaje: 'Caché no disponible; MongoDB sigue siendo la fuente.' })); },
     }) : undefined;
-    const app = buildAccesosApp({ repository, socios, jwtSecret, jwtTtlSeconds: ttl,
+    const app = buildAccesosApp({ repository, socios, jwtSecret, jwtTtlSeconds: ttl, serviceKey: key,
       ocupacionCache: cache,
       logger: { redact: ['req.headers.authorization', 'req.headers["x-service-key"]', 'req.headers["idempotency-key"]'] } });
     cache?.start();
