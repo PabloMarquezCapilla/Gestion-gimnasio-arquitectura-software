@@ -1,4 +1,6 @@
 import { PostgresGestionMembresias } from './membresias.postgres';
+import { PostgresMembresiasOutbox } from './membresias.eventos';
+import { PublicadorMembresias } from './membresias.rabbit';
 import { Pool } from 'pg';
 import { buildSociosApp } from './app';
 import { PostgresSociosRepository, MemorySociosRepository, ISociosRepository } from './repository';
@@ -15,6 +17,9 @@ async function start() {
   if (!empleadosCredenciales.length) throw new Error('Configurar EMPLEADOS_API_KEY y EMPLEADOS_ORIGEN_ID para la capacidad externa.');
   const databaseUrl = process.env.DATABASE_URL;
   const usarMemoria = process.env.USE_MEMORY_DB === 'true';
+  if (process.env.NODE_ENV === 'production' && !process.env.RABBITMQ_URL) {
+    throw new Error('Producción requiere RABBITMQ_URL para publicar los eventos pendientes.');
+  }
   if (usarMemoria && process.env.NODE_ENV === 'production') {
     throw new Error('USE_MEMORY_DB no está permitido en producción.');
   }
@@ -54,7 +59,9 @@ async function start() {
   });
   if (pool) {
     const activePool = pool;
-    app.addHook('onClose', async () => { await activePool.end(); });
+    const publicador = process.env.RABBITMQ_URL ? new PublicadorMembresias(process.env.RABBITMQ_URL,new PostgresMembresiasOutbox(activePool),app.log) : undefined;
+    app.addHook('onListen',async () => { publicador?.iniciar(); });
+    app.addHook('onClose', async () => { await publicador?.cerrar(); await activePool.end(); });
   }
   const port = Number(process.env.PORT ?? 3000);
   if (!Number.isInteger(port) || port < 1 || port > 65535) {

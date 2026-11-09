@@ -42,6 +42,9 @@ export interface ClassSession {
   fechaIso: string;
   cupoMaximo: number;
   cupoOcupado: number;
+  actividad?: string | null;
+  profesor?: string | null;
+  reservaDirectaDisponible?: boolean;
 }
 
 export interface UserReservation {

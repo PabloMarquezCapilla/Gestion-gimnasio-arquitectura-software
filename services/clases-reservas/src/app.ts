@@ -11,6 +11,8 @@ import { ISociosClient, MockSociosClient } from './clients/socios.client';
 import { registerTracing } from './tracing';
 import { registerSessionAuth } from './auth';
 import { ReservasService } from './application/reservas.service';
+import { BuscadorClases, BusquedaClasesError, BusquedaClasesService } from './application/busqueda-clases.service';
+import { GestionClasesError, GestionClasesRepository, GestionClasesService, SedesClient } from './application/gestion-clases.service';
 
 interface Parameter {
   name: string;
@@ -38,6 +40,9 @@ interface ListQuery {
 }
 
 export interface AppOptions {
+  gestionClases?: GestionClasesRepository;
+  sedesClient?: SedesClient;
+  buscador?: BuscadorClases;
   apiKey: string;
   jwtSecret?: string;
   internalApiKey?: string;
@@ -105,6 +110,8 @@ export function buildApp(options: AppOptions) {
     options.sociosClient ?? new MockSociosClient();
 
   const reservasService = new ReservasService(repository, sociosClient, { clock });
+  const busquedaService = new BusquedaClasesService(options.buscador, clock);
+  const gestionClasesService = new GestionClasesService(options.gestionClases, options.sedesClient, clock);
 
   // Registro de trazabilidad distribuida W3C (D11)
   void registerTracing(app, { serviceName: 'clases-reservas' });
@@ -280,7 +287,7 @@ export function buildApp(options: AppOptions) {
 
   function businessError(reply: FastifyReply, codigo?: string) {
     const status = codigo === 'MEMBRESIA_NO_HABILITADA' ? 422
-      : codigo === 'CLASE_NO_ENCONTRADA' || codigo === 'RESERVA_NO_ENCONTRADA' ? 404
+      : codigo === 'CLASE_NO_ENCONTRADA' || codigo === 'RESERVA_NO_ENCONTRADA' || codigo === 'ESPERA_NO_ENCONTRADA' ? 404
       : codigo === 'CLASE_INICIADA' ? 400 : 409;
     return reply.code(status).send({
       codigo: codigo ?? 'ERROR_RESERVA',
@@ -333,6 +340,28 @@ export function buildApp(options: AppOptions) {
     },
   );
 
+  app.post<{ Params: { claseId: string; esperaId: string } }>(
+    '/api/v1/clases/:claseId/espera/:esperaId/retirar', {
+      onRequest: [async (_request, reply) => successHeaders(reply), auth.session],
+      schema: { params: { type: 'object', required: ['claseId', 'esperaId'], properties: {
+        claseId: { type: 'string', minLength: 1, maxLength: 50, pattern: '\\S' },
+        esperaId: { type: 'string', minLength: 1, maxLength: 50, pattern: '\\S' },
+      } } },
+    }, async (request, reply) => {
+      const espera = await repository.obtenerEntradaEspera(request.params.esperaId);
+      if (!espera || espera.claseId !== request.params.claseId) return businessError(reply, 'ESPERA_NO_ENCONTRADA');
+      if (!auth.target(request, espera.socioId)) return forbidden(reply);
+      const result = await reservasService.retirarEspera(espera.esperaId);
+      request.log.info({ esperaId: espera.esperaId, claseId: espera.claseId, codigo: result.codigo, estado: result.espera?.estado }, 'Retiro de espera resuelto');
+      if (result.codigo === 'ESPERA_PROMOVIDA') return reply.code(409).send({
+        codigo: result.codigo, mensaje: 'La inscripción ya fue promovida. Actualizá tus reservas para revisar su estado.',
+        espera: result.espera, ...(result.reserva ? { reserva: result.reserva } : {}),
+      });
+      if (!result.exito) return businessError(reply, result.codigo);
+      return result;
+    },
+  );
+
   app.get<{ Querystring: { socioId?: string; sedeId?: string } }>(
     '/api/v1/reservas/clases', { onRequest: auth.session }, async (request, reply) => {
       const socioId = auth.target(request, request.query.socioId);
@@ -341,9 +370,11 @@ export function buildApp(options: AppOptions) {
         { sedeId: request.query.sedeId, pagina: 1, tamanio: 100 }, clock().toISOString(),
       );
       const personal = await repository.obtenerReservasPorSocio(socioId);
+      const claseIds = [...new Set([...personal.reservas, ...personal.espera].map(item => item.claseId))];
+      const clasesPersonales = await repository.obtenerDetallesClases(claseIds);
       reply.header('Cache-Control', 'no-store');
       reply.header('X-Instance-ID', instanceId);
-      return { items: catalogo.items, total: catalogo.total, reservasSocio: personal.reservas, esperaSocio: personal.espera };
+      return { items: catalogo.items, total: catalogo.total, reservasSocio: personal.reservas, esperaSocio: personal.espera, clasesPersonales };
     },
   );
 
@@ -357,7 +388,44 @@ export function buildApp(options: AppOptions) {
     },
   );
 
+  app.get('/api/v1/catalogo/clases', { onRequest: [
+    async (_request, reply) => {
+      reply.header('Cache-Control', 'no-store');
+      reply.header('X-Instance-ID', instanceId);
+    },
+    auth.session,
+  ] }, async (request) => {
+    const resultado = await busquedaService.buscar(request.query);
+    request.log.info({ total: resultado.total, pagina: resultado.pagina, tamanio: resultado.tamanio }, 'Búsqueda de clases resuelta');
+    return resultado;
+  });
+
+  const adminClases = { onRequest: [async (_request: FastifyRequest, reply: FastifyReply) => {
+    reply.header('Cache-Control', 'no-store');
+    reply.header('X-Instance-ID', instanceId);
+  }, auth.admin] };
+  app.get<{ Params: { claseId: string } }>('/api/v1/admin/clases/:claseId', adminClases,
+    request => gestionClasesService.obtener(request.params.claseId));
+  app.post('/api/v1/admin/clases', adminClases, async (request, reply) => {
+    const result = await gestionClasesService.guardar(auth.principal(request).socioId,
+      request.headers['idempotency-key'], null, request.body, request.headers.authorization!, request.traceContext);
+    request.log.info({ claseId: result.claseId, version: result.version }, 'Publicación de clase confirmada');
+    return reply.code(201).send(result);
+  });
+  app.put<{ Params: { claseId: string } }>('/api/v1/admin/clases/:claseId', adminClases, async request => {
+    const result = await gestionClasesService.guardar(auth.principal(request).socioId,
+      request.headers['idempotency-key'], request.params.claseId, request.body, request.headers.authorization!, request.traceContext);
+    request.log.info({ claseId: result.claseId, version: result.version }, 'Edición de clase confirmada');
+    return result;
+  });
+
   app.setErrorHandler((error, request, reply) => {
+    if (error instanceof BusquedaClasesError || error instanceof GestionClasesError) {
+      if (error.statusCode >= 500) {
+        request.log.warn({ codigo: error.codigo }, 'Operación de clases no disponible');
+      }
+      return sendError(reply, error.statusCode, error.codigo, error.message);
+    }
     const statusCode =
       typeof error === 'object' &&
       error !== null &&

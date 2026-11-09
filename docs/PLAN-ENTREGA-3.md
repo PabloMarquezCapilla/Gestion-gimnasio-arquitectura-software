@@ -1,6 +1,6 @@
 # Plan de cierre de entrega 3
 
-**Estado:** 06/11/2026. Base sincronizada con `main`, commit `b6e34dd`; trabajo actual en `feat/integracion-tienda-proveedor`.
+**Estado.** 08/11/2026. PR #7 de Tienda integrada en `main`, commit `837df58`. Base del paso 4 consolidada en `6a7e6ca` y plan en `b4ab192`. Rama de trabajo `feat/membresias-eventos`, con apertura de PR pendiente por decisión del equipo. Paso 4 cerrado funcionalmente en local con corrección de recuperación, pruebas automáticas y resultados manuales del equipo. Paso 5 completo. Retiro voluntario y recorrido propio de clases del paso 6 verificados localmente. Restan políticas administrativas pendientes, fuentes/integraciones del paso 7 y cierre de observabilidad/despliegue.
 **Referencia:** presentación grupal, páginas 8–9 del enunciado. La defensa individual de la página 9 tiene verificaciones adicionales, identificadas abajo.
 
 ## Forma de trabajo
@@ -35,23 +35,45 @@ Se conservaron pagos/planes/membresías, reservas/FIFO, Accesos con MongoDB, cac
 - **Cierre:** consulta real integrada al flujo, test de contrato, validación de respuestas, timeout y errores visibles sin inventar catálogo o stock cero. Coordinar prueba conjunta en ambos sentidos.
 - **Documentación:** D9, guía de integración, configuración y evidencia de fallas. **Enunciado:** §4.1, páginas 5–6; presentación, página 8.
 
-## 4. Cambios de membresía y mensajería — pendiente
+## 4. Cambios de membresía y mensajería — completo y verificado localmente
 
-- Completar el comando administrativo requerido para cambios de habilitación y el evento `MembresiaActualizada` mediante Outbox → RabbitMQ → consumidor idempotente/Inbox, con tratamiento de mensajes fallidos.
-- Aplicar la cancelación de reservas futuras afectadas y liberar/reasignar cupos respetando FIFO. RabbitMQ configurado no equivale a este flujo implementado.
+- ADMIN suspende una membresía elegida inmediatamente, manteniendo fechas y pagos, según decisión confirmada el 07/11. Reactivación conserva su pendiente. Comando idempotente y panel incorporados.
+- Evento `MembresiaActualizada` versión 1 para suspensión mediante Outbox → RabbitMQ → Inbox, reintentos acotados y DLQ. Cancela reservas futuras afectadas y reutiliza recuperación FIFO. Proyección y bloqueo por socio evitan escrituras posteriores al consumo con evaluaciones HTTP antiguas.
 - **Cierre:** comprobar cambio y evento atómicos, duplicados, caída/reinicio, reentrega, mensajes no procesables y efectos sin reservas/cupos duplicados.
 - **Documentación:** D4/D5/D10, contrato versionado del evento y recuperación. **Enunciado:** §2.5, página 2; presentación, página 9; RN-R08/CA-R09 del alcance.
+- **Verificación.** 12 pruebas PostgreSQL/RabbitMQ, 20 de pagos y regresión PostgreSQL aprobadas. Compose/NGINX comprobó suspensión y replay, cancelación y promoción con trabajadores reales y dos réplicas. La corrección posterior del panel aprobó 242 pruebas de regresión y compilación frontend. El equipo verificó suspensión normal, dos cupos reasignados y estado suspendido persistente con controles administrativos habilitados. El reintento con la misma clave está cubierto por pruebas automáticas. [Evidencia](EVIDENCIA-EVENTOS-MEMBRESIA.md).
 
-## 5. Búsqueda y administración mínima de clases — pendiente
+## 5. Búsqueda y administración mínima de clases — completo y verificado localmente
 
 - Conectar el FTS/GIN existente a API y portal con texto, paginación, filtros y orden; completar la publicación administrativa de clases prevista en el alcance.
 - Consultar antes las reglas faltantes sobre modificaciones de clases con reservas; no introducir restricciones de reserva adicionales ni CRUD ajenos al alcance.
 - **Cierre:** probar coincidencias, permisos, páginas y actualización del índice ante cambios; ensayar su mantenimiento/reconstrucción.
 - **Documentación:** D6, contrato interno y criterios de aceptación. **Enunciado:** §2.2/2.6, página 2; presentación, página 9.
 
-## 6. Cierre del recorrido del socio — pendiente
+### Orden propuesto para el paso 5
 
-- Implementar retiro de espera únicamente antes del inicio. Si la promoción ya ganó la carrera, avisar y actualizar la reserva para su cancelación explícita: reglas ya confirmadas.
+Se reutilizan Clases y Reservas, su arquitectura Hexagonal, PostgreSQL FTS/GIN y los campos existentes de nombre, actividad, profesor, sede, inicio, fin y capacidad. Cada bloque termina con explicación del cambio, documentación y sus verificaciones antes de avanzar al siguiente.
+
+| Bloque | Trabajo | Cómo comprobarlo |
+|---|---|---|
+| 5.1 Reglas confirmadas | Alta y publicación directa por ADMIN con campos obligatorios, inicio futuro, fin posterior y capacidad positiva. Edición antes del inicio, sólo sin reservas confirmadas ni espera pendiente. Filtros y órdenes confirmados. | Decisiones registradas en alcance y D6 el 07/11/2026. |
+| 5.2 Backend implementado | `GET /api/v1/catalogo/clases` autenticado, FTS español, filtros, disponibilidad directa, páginas y orden. Reutiliza índice y almacenamiento propietarios. Conserva la API histórica. | 12 pruebas HTTP/PostgreSQL, 216 de regresión, compilación y Compose/NGINX aprobados. [EVIDENCIA-BUSQUEDA](EVIDENCIA-BUSQUEDA.md). |
+| 5.3 Portal implementado | Texto, sede, profesor, fechas, cupo directo, orden y páginas de 20 resultados conectados a la API. Carga, vacío, error y reintento diferenciados. Reservas y espera propias independientes de la búsqueda. | 47 pruebas del cliente, 221 de regresión y 13 de búsqueda HTTP/PostgreSQL aprobadas. Recorrido en Chrome con servicios reales y base temporal. [Evidencia](EVIDENCIA-BUSQUEDA.md). |
+| 5.4 Administración implementada | Publicación directa y edición ADMIN con sede validada en Accesos, versión esperada y resultado durable por administrador/clave. Panel con búsqueda y recuperación de operaciones inciertas. Edición bloqueada por inicio o inscriptos. | 230 pruebas de regresión, 11 HTTP/PostgreSQL/MongoDB y Compose/NGINX aprobados. Recorrido Chrome de publicación, pérdida/recuperación de respuesta y edición. [Evidencia](EVIDENCIA-BUSQUEDA.md). |
+| 5.5 Cierre verificado | Publicación/edición por HTTP, comparación antes/durante/después de reconstruir GIN y procedimiento local de mantenimiento en D6. Recorrido por NGINX verificado. | 12 pruebas HTTP/PostgreSQL/MongoDB aprobadas. Cinco consultas comparadas, 20 lecturas completadas durante una fase real de REINDEX en dos instancias y datos de negocio conservados. Por NGINX, 16 lecturas adicionales y resultados/clase equivalentes después de reconstruir. [Evidencia](EVIDENCIA-BUSQUEDA.md). |
+
+**Reglas acordadas el 07/11/2026.** ADMIN completa nombre, actividad, profesor, sede, inicio, fin y capacidad, y publica directamente. Inicio futuro, fin posterior y capacidad entera positiva. Se permite editar esos datos antes del inicio únicamente sin reservas confirmadas ni espera pendiente. Búsqueda por texto en nombre/actividad/profesor, sede, profesor y rango de inicio, con filtro de cupo directo que respeta FIFO. Orden por inicio ascendente/descendente o relevancia con texto. Nivel/categoría conserva su pendiente de definición para una ampliación. Administración implementada en el bloque 5.4. Sus versiones e idempotencia son controles técnicos para concurrencia y reintentos.
+
+**Cierre del paso 4.** El equipo comprobó la suspensión normal. La prueba de respuesta perdida reveló un bloqueo de controles, corregido con plazo máximo, consultas disponibles y aviso de recuperación enfocado. Las capturas posteriores mostraron ambos cupos reasignados y el panel administrativo sin aviso pendiente, con controles habilitados. El equipo confirmó que la membresía seguía suspendida. Las pruebas automáticas verifican reintento con ruta, cuerpo y clave originales. Las APIs y trabajadores reales se verificaron en Compose. [Detalle y reproducción](EVIDENCIA-EVENTOS-MEMBRESIA.md). Los avisos previos de dependencias permanecen en la revisión final de la etapa 9.
+
+### Continuación después del paso 5
+
+El retiro de espera y el recorrido propio del paso 6 están verificados. Continúan la revisión administrativa y sus políticas pendientes, las fuentes y conexión Car Cruds del paso 7, observabilidad/fallas del paso 8 y despliegue/cierre del paso 9. La conexión de FAV del paso 3 se retoma cuando estén confirmados contrato y acceso. Las definiciones económicas, de alojamiento y de servicios externos se consultan antes de sus implementaciones dependientes.
+
+## 6. Cierre del recorrido del socio — retiro verificado localmente; políticas administrativas pendientes
+
+- Retiro de espera implementado antes del inicio, con historial e idempotencia por ID de entrada. Si la promoción ganó, responde 409 y actualiza «Mis Reservas» para una cancelación explícita. Reglas previamente confirmadas.
+- Verificadas 239 pruebas de regresión, 17 HTTP/PostgreSQL/MongoDB, compilación frontend y NGINX. Incluyen propietario, reintentos, límite exacto, rollback y carrera de promoción. Chrome verificó retiro desde ambas vistas, respuesta perdida, nueva inscripción, promoción ganadora y cancelación explícita. [D4 y evidencia](adr/ADR-017-consistencia-y-recuperacion-de-espera.md).
 - Revisar los flujos administrativos y propios existentes; resolver reactivación/superposición solo cuando el equipo confirme su política. No rehacer pagos ni reservas.
 - **Cierre:** pruebas de propietario, repetición, límite temporal y carrera con promoción; recorrido web sin botones que simulen éxito.
 - **Documentación:** alcance, contrato y limitaciones. **Enunciado:** frontend completo, página 8; reglas acordadas del proyecto.
@@ -73,6 +95,7 @@ Se conservaron pagos/planes/membresías, reservas/FIFO, Accesos con MongoDB, cac
 
 - Consultar alojamiento/presupuesto, desplegar la capacidad en nube con URL pública y secretos fuera del repositorio; coordinar conectividad con ambos grupos.
 - Ejecutar regresión integrada, contratos, consistencia/concurrencia, carga y fallas; analizar capacidad/costos y revisar la frescura de ocupación con el negocio sin rehacer Redis.
+- Revisar los avisos previos de dependencias Fastify/fast-uri detectados el 07/11 y verificar su actualización antes del cierre.
 - **Cierre:** frontend hasta las capacidades compartidas, servicios y dos almacenamientos operativos, caché medida, búsqueda, evento y pruebas conjuntas; documentación sin contradicciones y limitaciones explícitas.
 - Actualizar diagramas e índice ADR conservando decisiones reemplazadas. Revisar cambios y pruebas antes de la PR; la versión evaluable debe quedar en `main`.
 - **Documentación:** README, alcance, arquitectura, D13 y evidencia. **Enunciado:** §2.11–2.12/§3, páginas 3–4; presentación y defensa, páginas 8–9.

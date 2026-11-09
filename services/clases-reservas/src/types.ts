@@ -21,6 +21,8 @@ export interface ClaseEntidad {
   createdAt: string;
 }
 
+export type DetalleClasePersonal = Pick<ClaseEntidad, 'claseId' | 'nombre' | 'sedeId' | 'inicio'>;
+
 export type EstadoReserva = 'CONFIRMADA' | 'CANCELADA';
 export type EstadoEspera = 'PENDIENTE' | 'PROMOVIDO' | 'CANCELADO';
 
@@ -70,4 +72,12 @@ export interface ResultadoCancelacion {
     socioId: string;
     reservaId: string;
   };
+}
+
+export interface ResultadoRetiroEspera {
+  exito: boolean;
+  codigo?: string;
+  espera?: EntradaEspera;
+  reserva?: Reserva;
+  reasignacionPendiente?: boolean;
 }

@@ -1,5 +1,5 @@
 import {
-  ClaseDTO, ClaseEntidad, EntradaEspera, FiltrosClases, Reserva, ResultadoCancelacion, ResultadoReserva,
+  ClaseDTO, ClaseEntidad, DetalleClasePersonal, EntradaEspera, FiltrosClases, Reserva, ResultadoCancelacion, ResultadoReserva, ResultadoRetiroEspera,
 } from './types';
 export interface ContextoSolicitud {
   traceId: string;
@@ -25,6 +25,7 @@ export type Instante = string | (() => string);
 
 export interface OpcionesReserva {
   ahora: Instante;
+  inicioEvaluado?: string;
   ingresarEsperaSiLlena?: boolean;
 }
 
@@ -41,10 +42,13 @@ export interface IClaseRepository {
   listarClases(filtros: FiltrosClases, consultadoEn: string): Promise<{ items: ClaseDTO[]; total: number }>;
   obtenerClase(claseId: string, consultadoEn: string): Promise<ClaseDTO | null>;
   obtenerEntidadClase(claseId: string): Promise<ClaseEntidad | null>;
+  obtenerDetallesClases(claseIds: readonly string[]): Promise<DetalleClasePersonal[]>;
   obtenerReserva(reservaId: string): Promise<Reserva | null>;
   reservarCupo(claseId: string, socioId: string, opciones?: OpcionesReserva): Promise<ResultadoReserva>;
-  ingresarListaEspera(claseId: string, socioId: string, ahora?: Instante): Promise<{ exito: boolean; codigo?: string; espera?: EntradaEspera }>;
+  ingresarListaEspera(claseId: string, socioId: string, ahora?: Instante, inicioEvaluado?: string): Promise<{ exito: boolean; codigo?: string; espera?: EntradaEspera }>;
   cancelarReserva(reservaId: string, ahora?: Instante): Promise<ResultadoCancelacion>;
+  obtenerEntradaEspera(esperaId: string): Promise<EntradaEspera | null>;
+  retirarEspera(esperaId: string, ahora?: Instante): Promise<ResultadoRetiroEspera>;
   obtenerPrimerCandidato(claseId: string): Promise<{ clase: ClaseEntidad; espera: EntradaEspera } | null>;
   aplicarEvaluacionEspera(claseId: string, esperaId: string, habilitado: boolean, ahora: Instante): Promise<ResultadoPromocion>;
   listarClasesConEsperaYCupo(ahora: string): Promise<string[]>;

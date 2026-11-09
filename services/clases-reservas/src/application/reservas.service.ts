@@ -26,7 +26,7 @@ export class ReservasService {
     if (!await this.habilitadoEnAmbosMomentos(socioId, clase.inicio, contexto)) {
       return { exito: false, codigo: 'MEMBRESIA_NO_HABILITADA' };
     }
-    return this.repository.reservarCupo(claseId, socioId, { ahora: () => this.ahora(), ingresarEsperaSiLlena });
+    return this.repository.reservarCupo(claseId, socioId, { ahora: () => this.ahora(), ingresarEsperaSiLlena, inicioEvaluado: clase.inicio });
   }
 
   async ingresarEspera(claseId: string, socioId: string, contexto?: ContextoSolicitud): Promise<{ exito: boolean; codigo?: string; espera?: EntradaEspera }> {
@@ -36,12 +36,16 @@ export class ReservasService {
     if (!await this.habilitadoEnAmbosMomentos(socioId, clase.inicio, contexto)) {
       return { exito: false, codigo: 'MEMBRESIA_NO_HABILITADA' };
     }
-    return this.repository.ingresarListaEspera(claseId, socioId, () => this.ahora());
+    return this.repository.ingresarListaEspera(claseId, socioId, () => this.ahora(), clase.inicio);
   }
 
   async cancelarReserva(reservaId: string) {
     // La cancelación local no depende de la disponibilidad de Socios.
     return this.repository.cancelarReserva(reservaId, () => this.ahora());
+  }
+
+  async retirarEspera(esperaId: string) {
+    return this.repository.retirarEspera(esperaId, () => this.ahora());
   }
 
   async procesarPendientes(contexto?: ContextoSolicitud) {

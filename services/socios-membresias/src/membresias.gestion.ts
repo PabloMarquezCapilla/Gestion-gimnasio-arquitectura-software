@@ -2,7 +2,7 @@ import Ajv from 'ajv';
 import addFormats from 'ajv-formats';
 import { SociosError } from './errors';
 
-export type ComandoGestion = 'crearPlan' | 'estadoPlan' | 'solicitar' | 'registrarPago' | 'confirmarPago' | 'rechazarSolicitud';
+export type ComandoGestion = 'crearPlan' | 'estadoPlan' | 'solicitar' | 'registrarPago' | 'confirmarPago' | 'rechazarSolicitud' | 'suspenderMembresia';
 export interface PlanGestion { planId: string; nombre: string; importeMinor: number; moneda: string; estado: 'ACTIVO' | 'INACTIVO' }
 export interface SolicitudGestion {
   solicitudId: string; socioId: string; planId: string; nombrePlan: string; importeMinor: number; moneda: string;
@@ -30,7 +30,7 @@ const validadores = {
   estadoPlan: esquema({ estado: { enum: ['ACTIVO', 'INACTIVO'] } }),
   solicitar: esquema({ planId: id, fechaInicio: fecha, fechaFin: fecha }),
   registrarPago: esquema({ referencia: { type: 'string', pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{7,99}$' }, importeMinor: importe, moneda }),
-  confirmarPago: esquema({}), rechazarSolicitud: esquema({}),
+  confirmarPago: esquema({}), rechazarSolicitud: esquema({}), suspenderMembresia: esquema({}),
 };
 export function datosGestion(comando: ComandoGestion, body: unknown): Record<string, unknown> {
   if (!validadores[comando](body)) throw falloGestion('DATOS_INVALIDOS', 'Datos incompletos o no válidos; no se admiten campos adicionales.', 400);

@@ -1,7 +1,7 @@
 # D3 - Persistencia
 
 **Estado:** PostgreSQL y MongoDB integrados; Redis implementado en ocupación. Tienda utiliza PostgreSQL 17, con base y usuario propios, para stock local y movimientos durables según [ADR-022](ADR-022-tienda-y-consignaciones-fav.md).
-**Fecha inicial:** 07/10/2026. **Revisión:** 06/11/2026.
+**Fecha inicial:** 07/10/2026. **Revisión:** 08/11/2026.
 **Enunciado:** §5 D3, página 6; §2.8, página 3; §6.2–6.3, página 8.
 
 ## Contexto
@@ -13,7 +13,7 @@ Membresías, pagos y reservas requieren asociaciones, unicidad y operaciones at�
 | Servicio | Almacenamiento y patrones | Estado |
 |---|---|---|
 | Socios y Membresías | PostgreSQL, base `socios`: identidad por DNI/email, membresías por socio/fecha, vinculación y fotografías Car Cruds por empleado/mes/versión; pagos y habilitación concretados en una transacción local (ADR-021). | `socios`, `membresias`, `solicitudes_membresia`, `empleados_externos`, `altas_empleados_idempotencia`, `car_cruds_vinculos`, `car_cruds_vinculos_historial`, `car_cruds_evidencias_series` y `car_cruds_evidencias` operativas; planes/pagos/comprobantes operativos en tablas aditivas; ADR-021 detalla esquema y garantías. |
-| Clases y Reservas | PostgreSQL, base `clases`: catálogo por sede/inicio, reservas por clase/socio y espera por orden. | `clases`, `reservas`, `lista_espera` operativas. |
+| Clases y Reservas | PostgreSQL, base `clases`: catálogo por sede/inicio, reservas por clase/socio, espera por orden y resultados administrativos por actor/clave. | `clases`, `reservas`, `lista_espera` y `clases_operaciones` operativas. Versión aditiva en clases y FTS/GIN generado. |
 | Accesos y Ocupación | MongoDB, base `accesos`: sedes, movimientos e historial por identificador/tiempo, presencias abiertas y ocupación derivada. Redis para la lectura de ocupación. | Recepción transaccional e idempotencia durable implementadas; caché implementada y medida según ADR-020. |
 | Tienda | PostgreSQL 17, base y usuario `tienda`: stock por variante, entregas por referencia, ventas por actor y resultados por operación/origen/clave. El catálogo y stock de distribuidora siguen en FAV. | `tienda_stock`, `tienda_reposiciones`, `tienda_ventas` y `tienda_operaciones` implementadas; stock, movimiento y respuesta se guardan en una transacción. ADR-022 revisa la decisión previa de no guardar existencias. |
 
@@ -26,6 +26,7 @@ La elección de PostgreSQL para Tienda fue confirmada por el equipo: las existen
 - **Identidad:** índices únicos sobre `LOWER(BTRIM(email))` y `BTRIM(dni)`, además del identificador primario. Los duplicados históricos incompatibles hacen fallar la inicialización; no se fusionan ni eliminan cuentas automáticamente.
 - **Membresía:** se consulta el historial y se selecciona el período aplicable a la fecha. Una renovación futura no oculta la vigente.
 - **Reservas:** transacciones con bloqueo primero sobre la clase e índices únicos parciales de reserva confirmada/espera pendiente. Los cupos se calculan con reservas confirmadas, sin contador redundante. La cancelación y la promoción son operaciones locales separadas; no se llama a Socios mientras se mantiene el bloqueo. [D4](ADR-017-consistencia-y-recuperacion-de-espera.md).
+- **Administración de clases.** Desde el bloque 5.4, clase, vector FTS y respuesta idempotente se confirman en una transacción. `clases_operaciones` conserva entrada/respuesta JSONB por administrador/clave, sin TTL. `clases.version` recibe 1 en datos previos. La edición comparte bloqueo con reservas/espera y exige versión esperada e inexistencia de inscriptos activos. Las llamadas a Accesos ocurren antes del bloqueo. [D6](ADR-006-busqueda.md).
 - **Alta externa:** una transacción guarda socio, solicitud `PENDIENTE`, referencia externa y respuesta original JSONB. Bloqueos consultivos por origen/clave y origen/empleado serializan reintentos; índices únicos protegen DNI/email. Un fallo revierte todos los registros. El POST no crea membresía ni contraseña.
 - **Idempotencia durable:** el resultado se conserva entre reinicios e instancias, sin purga automática. Cambiar el origen cambia su ámbito; el replay devuelve el alta original, no el estado actual de una membresía.
 - **Vinculación Car Cruds:** relación actual uno a uno dentro de esta integración, con revisión y auditoría transaccionales. Desvincular conserva la fila sin socio y su versión; no borra historial. El índice único parcial protege el socio y el bloqueo por empleado/versionado evita cambios perdidos. Las tablas anteriores conservan sus datos y restricciones; no se migra automáticamente su contenido. [ADR-018](ADR-018-integracion-car-cruds.md).
@@ -45,6 +46,8 @@ Se mantiene el modelo relacional para integridad y transacciones dentro de Socio
 El bloqueo por clase serializa escrituras sobre esa clase; su costo depende de la carga, sin latencia máxima garantizada. Las verificaciones por API son puntuales: no hay una transacción distribuida entre membresía y reserva. Una instancia PostgreSQL compartida y MongoDB de un nodo son límites del entorno local.
 
 ## Verificación
+
+**Suspensiones, 07/11/2026.** `membresias_outbox` pertenece a Socios. Clases posee `membresias_inbox` y `membresias_suspendidas`. Migraciones aditivas, estado/evento/resultado atómicos en origen y cancelación/Inbox/proyección atómicos en destino. Las escrituras de reserva/espera/promoción y el consumidor bloquean socio antes de clase. Se mantiene propiedad exclusiva y entrega al menos una vez. [D5](ADR-005-comunicacion-entre-servicios.md) y [verificación específica](../EVIDENCIA-EVENTOS-MEMBRESIA.md).
 
 `npm run test:postgres` usa PostgreSQL 17 efímero, HTTP real e instancias con pools independientes: unicidad concurrente, alta externa/replay tras recrear app, rollback, último cupo, cancelación y recuperación FIFO. Para Car Cruds verifica carreras de vínculo/preparación/reclamo, historial, versiones/referencia, prueba positiva del mismo socio/mes, cuerpo inmutable, recuperación por lease/UUID y rollback de cabecera/fotografía. Los adaptadores en memoria no acreditan durabilidad. Pagos manuales se verifican separadamente con PostgreSQL real mediante `npm run test:membresias`, incluyendo rollback de comprobante, concurrencia y actualización de esquema; ver ADR-021. Accesos utiliza MongoDB real; pruebas y límites en [EVIDENCIA-ACCESOS](../EVIDENCIA-ACCESOS.md).
 

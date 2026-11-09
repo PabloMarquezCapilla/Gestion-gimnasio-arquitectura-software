@@ -15,9 +15,9 @@ export function registrarGestionMembresias(app: FastifyInstance, repository: Ges
    const body = datosGestion(op,r.body); const clave = claveGestion(r.headers['idempotency-key']);
    let repetida = false;
    const result = await repo().ejecutar(identidad(r).socioId,clave,op,{ ...body,...extra }, () => { repetida = true; });
-   const dato = result as { solicitudId?: string; planId?: string; estado?: string };
+   const dato = result as { solicitudId?: string; planId?: string; estado?: string; eventId?: string };
    const key = `operacion="${op}",resultado="${repetida ? 'repetida' : 'resuelta'}"`; counters.set(key,(counters.get(key)??0)+1);
-   r.log.info({ operacion: op, repetida, solicitudId: dato.solicitudId, planId: dato.planId, estado: dato.estado },'Gestión de membresía resuelta'); return result;
+   r.log.info({ operacion: op, repetida, solicitudId: dato.solicitudId, planId: dato.planId, estado: dato.estado, eventId:dato.eventId },'Gestión de membresía resuelta'); return result;
   } catch (e) {
    const key = `operacion="${op}",resultado="fallida"`; counters.set(key,(counters.get(key)??0)+1);
    r.log.warn({ operacion: op, codigo: (e as { codigo?: string }).codigo ?? 'PERSISTENCIA_FALLIDA' },'Operación de membresía no confirmada; consultar/reintentar con misma clave'); throw e;
@@ -42,5 +42,6 @@ export function registrarGestionMembresias(app: FastifyInstance, repository: Ges
  app.post<{ Params: { id: string } }>('/api/v1/solicitudes/:id/pagos',{ onRequest: admin },async (r,reply) => reply.code(201).send(await operar(r,'registrarPago',{id:identificadorGestion(r.params.id)})));
  app.post<{ Params: { id: string } }>('/api/v1/solicitudes/:id/rechazar',{ onRequest: admin },async r => operar(r,'rechazarSolicitud',{id:identificadorGestion(r.params.id)}));
  app.post<{ Params: { id: string } }>('/api/v1/pagos/:id/confirmar',{ onRequest: admin },async r => operar(r,'confirmarPago',{id:identificadorGestion(r.params.id)}));
+ app.post<{ Params: { id: string } }>('/api/v1/membresias/:id/suspender',{ onRequest: admin },async r => operar(r,'suspenderMembresia',{id:identificadorGestion(r.params.id)}));
  return () => ['# TYPE membresias_operaciones_total counter',...Array.from(counters,([labels,n])=>`membresias_operaciones_total{service="socios-membresias",instance="${hostname()}",${labels}} ${n}`)].join('\n');
 }

@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import type { AuthUser, ClassSession, UserReservation } from '../types/auth';
-import { apiObtenerClasesYReservas, apiObtenerSocio, apiReservarClase, apiUnirseEspera, apiCancelarReserva } from '../services/api';
+import { ApiError, apiBuscarClases, apiObtenerClasesYReservas, apiObtenerSocio, apiReservarClase, apiUnirseEspera, apiCancelarReserva, apiRetirarEspera } from '../services/api';
+import type { FiltrosCatalogo, OrdenCatalogo } from '../services/api';
 import { MisSolicitudes } from './MembresiasPanel';
 import { TiendaPanel } from './TiendaPanel';
 
@@ -25,6 +26,8 @@ function timeLabel(value: string): string {
   return new Date(value).toLocaleTimeString('es-AR', { hour: '2-digit', minute: '2-digit' });
 }
 const errorMessage = (error: unknown) => error instanceof Error ? error.message : 'No se pudo completar la operación.';
+const filtrosIniciales = { texto: '', sedeId: '', profesor: '', desde: '', hasta: '', soloConCupo: false, orden: 'inicio_asc' as OrdenCatalogo };
+const filterInput = 'w-full rounded-lg border border-outline-variant bg-surface-container p-2 text-xs text-on-surface';
 
 export const UserPanel: React.FC<UserPanelProps> = ({ user, onLogout, showToast, onSwitchToAdmin }) => {
   const [profile, setProfile] = useState(user);
@@ -32,11 +35,24 @@ export const UserPanel: React.FC<UserPanelProps> = ({ user, onLogout, showToast,
   const [classes, setClasses] = useState<ClassSession[]>([]);
   const [reservations, setReservations] = useState<UserReservation[]>([]);
   const [activeTab, setActiveTab] = useState<'clases' | 'mis-reservas' | 'membresia' | 'tienda'>('clases');
-  const [selectedDiscipline, setSelectedDiscipline] = useState('TODAS');
-  const [selectedDay, setSelectedDay] = useState('TODOS');
+  const [formulario, setFormulario] = useState(filtrosIniciales);
+  const [consulta, setConsulta] = useState<FiltrosCatalogo>({ pagina: 1, tamanio: 20 });
+  const [catalogoLoading, setCatalogoLoading] = useState(true);
+  const [catalogoError, setCatalogoError] = useState('');
+  const [formError, setFormError] = useState('');
+  const [total, setTotal] = useState(0);
+  const [recarga, setRecarga] = useState(0);
+  const personalQuery = useRef(0);
+  const scope = useRef(0);
+  const accionEnCurso = useRef(false);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [pendingAction, setPendingAction] = useState<string | null>(null);
+
+  useEffect(() => {
+    scope.current++;
+    return () => { scope.current++; personalQuery.current++; };
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -48,20 +64,18 @@ export const UserPanel: React.FC<UserPanelProps> = ({ user, onLogout, showToast,
   }, [user, activeTab]);
 
   const syncWithBackend = useCallback(async () => {
+    const requestId = ++personalQuery.current;
     setLoading(true);
     try {
       const data = await apiObtenerClasesYReservas(user.socioId);
-      const sessions: ClassSession[] = data.items.map(item => ({
-        id: item.claseId, nombre: item.nombre, sedeId: item.sedeId,
-        fechaIso: item.inicio, horario: timeLabel(item.inicio), dia: dayLabel(item.inicio),
-        cupoMaximo: item.capacidad, cupoOcupado: item.capacidad - item.cuposDisponibles,
-      }));
+      if (requestId !== personalQuery.current) return;
+      const sessions = data.clasesPersonales ?? data.items;
       const details = (claseId: string) => {
-        const clase = sessions.find(item => item.id === claseId);
+        const clase = sessions.find(item => item.claseId === claseId);
         return {
           claseId, nombreClase: clase?.nombre ?? claseId, sedeId: clase?.sedeId,
-          inicio: clase?.fechaIso, horario: clase?.horario ?? 'Horario no disponible',
-          fechaTexto: clase ? dayLabel(clase.fechaIso) : 'Fecha no disponible',
+          inicio: clase?.inicio, horario: clase ? timeLabel(clase.inicio) : 'Horario no disponible',
+          fechaTexto: clase ? dayLabel(clase.inicio) : 'Fecha no disponible',
         };
       };
       const confirmed: UserReservation[] = data.reservasSocio
@@ -72,54 +86,117 @@ export const UserPanel: React.FC<UserPanelProps> = ({ user, onLogout, showToast,
         .filter(item => item.estado === 'PENDIENTE')
         .map(item => ({ ...details(item.claseId), reservaId: item.esperaId, tipo: 'ESPERA',
           estado: 'LISTA_ESPERA', fechaCreacion: item.createdAt }));
-      setClasses(sessions.filter(item => new Date(item.fechaIso).getTime() > Date.now()));
       setReservations([...confirmed, ...waiting]);
       setLoadError('');
     } catch (error) {
-      setLoadError(errorMessage(error));
+      if (requestId === personalQuery.current) setLoadError(errorMessage(error));
     } finally {
-      setLoading(false);
+      if (requestId === personalQuery.current) setLoading(false);
     }
   }, [user.socioId]);
 
   useEffect(() => { void syncWithBackend(); }, [syncWithBackend]);
-  const filteredClasses = classes.filter(clase =>
-    (selectedDiscipline === 'TODAS' || clase.nombre === selectedDiscipline) &&
-    (selectedDay === 'TODOS' || clase.dia === selectedDay));
+  useEffect(() => {
+    let actual = true;
+    const controller = new AbortController();
+    setCatalogoLoading(true);
+    setCatalogoError('');
+    void apiBuscarClases(consulta, controller.signal).then(data => {
+      if (!actual) return;
+      setClasses(data.items.map(item => ({
+        id: item.claseId, nombre: item.nombre, actividad: item.actividad, profesor: item.profesor,
+        sedeId: item.sedeId, fechaIso: item.inicio, dia: dayLabel(item.inicio), horario: timeLabel(item.inicio),
+        cupoMaximo: item.capacidad, cupoOcupado: item.capacidad - item.cuposDisponibles,
+        reservaDirectaDisponible: item.reservaDirectaDisponible,
+      })));
+      setTotal(data.total);
+    }).catch(error => {
+      if (actual) setCatalogoError(errorMessage(error));
+    }).finally(() => {
+      if (actual) setCatalogoLoading(false);
+    });
+    return () => { actual = false; controller.abort(); };
+  }, [consulta, recarga]);
+
+  const actualizarDatos = async () => {
+    setCatalogoLoading(true);
+    setRecarga(value => value + 1);
+    await syncWithBackend();
+  };
+
+  const buscar = (event: React.FormEvent) => {
+    event.preventDefault();
+    setFormError('');
+    try {
+      for (const [campo, limite] of [['texto', 200], ['sedeId', 50], ['profesor', 100]] as const) {
+        if (Array.from(formulario[campo]).length > limite) {
+          setFormError(`El filtro ${campo} admite hasta ${limite} caracteres.`);
+          return;
+        }
+      }
+      const desde = formulario.desde ? new Date(formulario.desde).toISOString() : undefined;
+      const hasta = formulario.hasta ? new Date(formulario.hasta).toISOString() : undefined;
+      if (desde && hasta && Date.parse(desde) >= Date.parse(hasta)) {
+        setFormError('La fecha hasta debe ser posterior a desde.');
+        return;
+      }
+      setCatalogoLoading(true);
+      setConsulta({ ...formulario, desde, hasta, pagina: 1, tamanio: 20 });
+    } catch { setFormError('Revisá las fechas y horas de la búsqueda.'); }
+  };
   const isClassBooked = (id: string) => reservations.some(item => item.claseId === id);
 
   const handleBookClass = async (clase: ClassSession, joinWaiting = false) => {
-    if (pendingAction || loading || loadError || isClassBooked(clase.id)) return;
+    if (accionEnCurso.current || loading || loadError || catalogoLoading || catalogoError || isClassBooked(clase.id)) return;
+    accionEnCurso.current = true;
+    const actualScope = scope.current;
     setPendingAction(clase.id);
     try {
       if (joinWaiting) {
         await apiUnirseEspera(clase.id, user.socioId);
+        if (actualScope !== scope.current) return;
         showToast('Inscripción a la lista de espera registrada.', 'hourglass_top');
       } else {
         await apiReservarClase(clase.id, user.socioId, false);
+        if (actualScope !== scope.current) return;
         showToast('Reserva confirmada.', 'event_available');
       }
-      await syncWithBackend();
+      await actualizarDatos();
     } catch (error) {
+      if (actualScope !== scope.current) return;
       showToast(errorMessage(error), 'error');
-      await syncWithBackend();
-    } finally { setPendingAction(null); }
+      await actualizarDatos();
+    } finally {
+      accionEnCurso.current = false;
+      if (actualScope === scope.current) setPendingAction(null);
+    }
   };
 
-  const handleCancelReservation = async (reservaId: string) => {
-    const reservation = reservations.find(item => item.reservaId === reservaId && item.tipo === 'RESERVA');
-    if (!reservation || pendingAction || loading || loadError) return;
+  const handleCancelEntry = async (reservaId: string) => {
+    const reservation = reservations.find(item => item.reservaId === reservaId);
+    if (!reservation || accionEnCurso.current || loading || loadError) return;
+    accionEnCurso.current = true;
+    const actualScope = scope.current;
     setPendingAction(reservation.claseId);
     try {
-      const result = await apiCancelarReserva(reservaId);
+      const esEspera = reservation.tipo === 'ESPERA';
+      const result = esEspera ? await apiRetirarEspera(reservation.claseId, reservaId) : await apiCancelarReserva(reservaId);
+      if (actualScope !== scope.current) return;
       if (!result.exito) throw new Error('El servidor no confirmó la cancelación.');
-      showToast(result.reasignacionPendiente
+      showToast(esEspera ? 'Te retiraste de la lista de espera.' : result.reasignacionPendiente
         ? 'Reserva cancelada. La reasignación del cupo está pendiente.'
         : 'Reserva cancelada.', 'event_busy');
-      await syncWithBackend();
+      await actualizarDatos();
     } catch (error) {
-      showToast(errorMessage(error), 'error');
-    } finally { setPendingAction(null); }
+      if (actualScope !== scope.current) return;
+      const promovida = reservation.tipo === 'ESPERA' && error instanceof ApiError && error.codigo === 'ESPERA_PROMOVIDA';
+      showToast(promovida ? 'La espera ya fue promovida. Revisá Mis Reservas para cancelarla si sigue confirmada.' : errorMessage(error), promovida ? 'event_available' : 'error');
+      await actualizarDatos();
+      if (promovida && actualScope === scope.current) setActiveTab('mis-reservas');
+    } finally {
+      accionEnCurso.current = false;
+      if (actualScope === scope.current) setPendingAction(null);
+    }
   };
 
   const planTitle = profile.membresia?.tipoPlan ?? 'SIN MEMBRESÍA';
@@ -218,8 +295,8 @@ export const UserPanel: React.FC<UserPanelProps> = ({ user, onLogout, showToast,
         </section>
 
         <div className="flex items-center justify-between gap-3 text-xs text-on-surface-variant" role="status">
-          <span>{loading ? 'Actualizando clases y reservas…' : loadError ? 'No se pudieron actualizar los datos: ' + loadError : 'Datos consultados al servidor.'}</span>
-          <button onClick={() => void syncWithBackend()} disabled={loading || !!pendingAction} className="px-3 py-1 rounded-lg border border-outline-variant disabled:opacity-50">Actualizar</button>
+          <span>{loading ? 'Actualizando reservas…' : loadError ? 'No se pudieron actualizar las reservas: ' + loadError : 'Reservas consultadas al servidor.'}</span>
+          <button onClick={() => void actualizarDatos()} disabled={loading || !!pendingAction} className="px-3 py-1 rounded-lg border border-outline-variant disabled:opacity-50">Actualizar</button>
         </div>
 
         {/* Tab Switcher */}
@@ -285,47 +362,62 @@ export const UserPanel: React.FC<UserPanelProps> = ({ user, onLogout, showToast,
         {/* Tab 1: Clases y Reservas */}
         {activeTab === 'clases' && (
           <div className="space-y-3.5">
-            {/* Filter Pills */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-              {/* Disciplines */}
-              <div className="flex flex-wrap items-center gap-1.5">
-                {[{ key: 'TODAS', label: 'Todas' }, ...Array.from(new Set(classes.map(clase => clase.nombre))).map(nombre => ({ key: nombre, label: nombre }))].map((d) => (
-                  <button
-                    key={d.key}
-                    onClick={() => setSelectedDiscipline(d.key)}
-                    className={`px-2.5 py-1 rounded-md text-xs font-semibold transition-all ${
-                      selectedDiscipline === d.key
-                        ? 'bg-primary text-on-primary font-bold shadow-sm'
-                        : 'bg-surface-container text-on-surface-variant hover:text-on-surface border border-outline-variant/40'
-                    }`}
-                  >
-                    {d.label}
-                  </button>
-                ))}
+            <form onSubmit={buscar} className="rounded-xl border border-outline-variant/60 bg-surface-container-low p-3.5 space-y-3">
+              <h2 className="font-headline text-sm font-bold">Buscar clases</h2>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3 text-xs">
+                <label>Texto en nombre, actividad o profesor
+                  <input aria-label="Texto de búsqueda" className={filterInput} value={formulario.texto}
+                    onChange={event => setFormulario({ ...formulario, texto: event.target.value,
+                      orden: !event.target.value.trim() && formulario.orden === 'relevancia' ? 'inicio_asc' : formulario.orden })} />
+                </label>
+                <label>Sede, identificador mostrado en las clases
+                  <input aria-label="Sede de búsqueda" className={filterInput} value={formulario.sedeId}
+                    onChange={event => setFormulario({ ...formulario, sedeId: event.target.value })} />
+                </label>
+                <label>Profesor, nombre completo
+                  <input aria-label="Profesor de búsqueda" className={filterInput} value={formulario.profesor}
+                    onChange={event => setFormulario({ ...formulario, profesor: event.target.value })} />
+                </label>
+                <label>Inicio desde, inclusive
+                  <input aria-label="Desde" type="datetime-local" className={filterInput} value={formulario.desde}
+                    onChange={event => setFormulario({ ...formulario, desde: event.target.value })} />
+                </label>
+                <label>Inicio hasta, exclusivo
+                  <input aria-label="Hasta" type="datetime-local" className={filterInput} value={formulario.hasta}
+                    onChange={event => setFormulario({ ...formulario, hasta: event.target.value })} />
+                </label>
+                <label>Orden
+                  <select aria-label="Orden de búsqueda" className={filterInput} value={formulario.orden}
+                    onChange={event => setFormulario({ ...formulario, orden: event.target.value as OrdenCatalogo })}>
+                    <option value="inicio_asc">Horario ascendente</option>
+                    <option value="inicio_desc">Horario descendente</option>
+                    <option value="relevancia" disabled={!formulario.texto.trim()}>Relevancia del texto</option>
+                  </select>
+                </label>
               </div>
-
-              {/* Day filter */}
-              <div className="flex items-center gap-1 bg-surface-container p-0.5 rounded-md border border-outline-variant/40 self-start sm:self-auto">
-                {['TODOS', 'Hoy', 'Mañana'].map((day) => (
-                  <button
-                    key={day}
-                    onClick={() => setSelectedDay(day)}
-                    className={`px-2.5 py-0.5 text-xs rounded font-medium transition-colors ${
-                      selectedDay === day
-                        ? 'bg-surface-container-high text-on-surface font-bold'
-                        : 'text-on-surface-variant hover:text-on-surface'
-                    }`}
-                  >
-                    {day}
-                  </button>
-                ))}
+              <p className="text-[11px] text-on-surface-variant">Fechas y horas de tu equipo. Aplicá los filtros con Buscar. Se muestran 20 clases por página.</p>
+              <label className="flex items-center gap-2 text-xs">
+                <input type="checkbox" checked={formulario.soloConCupo}
+                  onChange={event => setFormulario({ ...formulario, soloConCupo: event.target.checked })} />
+                Solo con cupo para reservar directamente
+              </label>
+              <div className="flex flex-wrap gap-2">
+                <button type="submit" disabled={!!pendingAction} className="rounded-lg px-4 py-2 bg-primary text-on-primary text-xs font-bold disabled:opacity-50">Buscar</button>
+                <button type="button" disabled={!!pendingAction} className="rounded-lg px-4 py-2 border border-outline-variant text-xs disabled:opacity-50"
+                  onClick={() => { setFormulario(filtrosIniciales); setFormError(''); setCatalogoLoading(true); setConsulta({ pagina: 1, tamanio: 20 }); }}>Limpiar filtros</button>
               </div>
-            </div>
+              {formError && <p role="alert" className="text-error text-xs">{formError}</p>}
+            </form>
 
-            {!loading && !loadError && filteredClasses.length === 0 && <p className="text-xs text-on-surface-variant p-4">No hay clases disponibles para estos filtros.</p>}
+            {catalogoLoading && <p role="status" className="text-xs p-3">Buscando clases…</p>}
+            {catalogoError && <div role="alert" className="text-error text-xs p-3"><p>{catalogoError}</p>
+              <button type="button" onClick={() => { setCatalogoLoading(true); setRecarga(value => value + 1); }} className="underline mt-2">Reintentar búsqueda</button>
+            </div>}
+            {!catalogoLoading && !catalogoError && <p role="status" className="text-xs text-on-surface-variant">{total} clases encontradas · Página {consulta.pagina ?? 1} de {Math.max(1, Math.ceil(total / 20))}</p>}
+            {!catalogoLoading && !catalogoError && classes.length === 0 && <p className="text-xs text-on-surface-variant p-4">No hay clases disponibles para estos filtros.</p>}
             {/* Classes Grid */}
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {filteredClasses.map((clase) => {
+            {!catalogoLoading && !catalogoError && <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {classes.map((clase) => {
                 const booked = isClassBooked(clase.id);
                 const isFull = clase.cupoOcupado >= clase.cupoMaximo;
                 const percent = clase.cupoMaximo ? Math.round((clase.cupoOcupado / clase.cupoMaximo) * 100) : 0;
@@ -343,7 +435,7 @@ export const UserPanel: React.FC<UserPanelProps> = ({ user, onLogout, showToast,
                       {/* Class Badge & Intensity */}
                       <div className="flex items-center justify-between">
                         <span className="text-[9.5px] font-label-code uppercase px-1.5 py-0.2 rounded bg-surface-container text-on-surface border border-outline-variant/40">
-                          Clase grupal
+                          {clase.actividad || 'Clase grupal'}
                         </span>
                       </div>
 
@@ -356,7 +448,7 @@ export const UserPanel: React.FC<UserPanelProps> = ({ user, onLogout, showToast,
                       <div className="space-y-1 text-xs text-on-surface-variant">
                         <div className="flex items-center gap-1.5">
                           <span className="material-symbols-outlined text-sm text-primary">sports_handball</span>
-                          <span>Coach: <strong className="text-on-surface">No informado</strong></span>
+                          <span>Profesor <strong className="text-on-surface">{clase.profesor || 'No informado'}</strong></span>
                         </div>
                         <div className="flex items-center gap-1.5">
                           <span className="material-symbols-outlined text-sm text-tertiary-fixed-dim">location_on</span>
@@ -402,16 +494,15 @@ export const UserPanel: React.FC<UserPanelProps> = ({ user, onLogout, showToast,
                           <button
                             onClick={() => {
                               const res = reservations.find((r) => r.claseId === clase.id);
-                              if (res) void handleCancelReservation(res.reservaId);
+                              if (res) void handleCancelEntry(res.reservaId);
                             }}
-                            disabled={actionDisabled || entry?.tipo === 'ESPERA'}
-                            title={entry?.tipo === 'ESPERA' ? 'Retirarse de la espera está pendiente de implementación.' : undefined}
+                            disabled={actionDisabled}
                             className="disabled:opacity-50 text-[11px] text-error hover:underline font-semibold"
                           >
-                            Cancelar
+                            {entry?.tipo === 'ESPERA' ? 'Salir de espera' : 'Cancelar reserva'}
                           </button>
                         </div>
-                      ) : isFull ? (
+                      ) : !clase.reservaDirectaDisponible ? (
                         <button
                           disabled={actionDisabled}
                           onClick={() => void handleBookClass(clase, true)}
@@ -434,7 +525,15 @@ export const UserPanel: React.FC<UserPanelProps> = ({ user, onLogout, showToast,
                   </div>
                 );
               })}
-            </div>
+            </div>}
+            <nav aria-label="Páginas de clases" className="flex items-center gap-3 text-xs">
+              <button type="button" className="rounded-lg border border-outline-variant px-3 py-2 disabled:opacity-50"
+                disabled={catalogoLoading || !!catalogoError || !!pendingAction || (consulta.pagina ?? 1) <= 1}
+                onClick={() => { setCatalogoLoading(true); setConsulta(current => ({ ...current, pagina: (current.pagina ?? 1) - 1 })); }}>Anterior</button>
+              <button type="button" className="rounded-lg border border-outline-variant px-3 py-2 disabled:opacity-50"
+                disabled={catalogoLoading || !!catalogoError || !!pendingAction || (consulta.pagina ?? 1) * 20 >= total || (consulta.pagina ?? 1) >= 1000000}
+                onClick={() => { setCatalogoLoading(true); setConsulta(current => ({ ...current, pagina: (current.pagina ?? 1) + 1 })); }}>Siguiente</button>
+            </nav>
           </div>
         )}
 
@@ -446,11 +545,10 @@ export const UserPanel: React.FC<UserPanelProps> = ({ user, onLogout, showToast,
                 Tus Clases Programadas ({reservations.length})
               </h2>
               <span className="text-[11px] text-on-surface-variant">
-                Podés cancelar una reserva hasta antes del inicio.
+                Podés cancelar una reserva o salir de la espera hasta antes del inicio.
               </span>
             </div>
 
-            {reservations.some(item => item.tipo === 'ESPERA') && <p className="text-xs text-on-surface-variant">Retirarse de una lista de espera está pendiente de implementación.</p>}
 
             {reservations.length === 0 ? (
               <div className="p-8 text-center rounded-xl bg-surface-container-low border border-outline-variant/50 space-y-2">
@@ -525,13 +623,12 @@ export const UserPanel: React.FC<UserPanelProps> = ({ user, onLogout, showToast,
                       </button>
 
                       <button
-                        disabled={res.tipo === 'ESPERA' || !!pendingAction || loading || !!loadError || !res.inicio || new Date(res.inicio).getTime() <= Date.now()}
-                        title={res.tipo === 'ESPERA' ? 'Retirarse de la espera está pendiente de implementación.' : undefined}
-                        onClick={() => void handleCancelReservation(res.reservaId)}
+                        disabled={!!pendingAction || loading || !!loadError || !res.inicio || new Date(res.inicio).getTime() <= Date.now()}
+                        onClick={() => void handleCancelEntry(res.reservaId)}
                         className="px-2.5 py-1 rounded-md bg-error-container hover:opacity-85 text-error text-xs font-semibold border border-error/30 transition-colors flex items-center gap-1"
                       >
                         <span className="material-symbols-outlined text-xs">cancel</span>
-                        <span>{res.tipo === 'ESPERA' ? 'Retiro pendiente' : 'Cancelar'}</span>
+                        <span>{res.tipo === 'ESPERA' ? 'Salir de espera' : 'Cancelar reserva'}</span>
                       </button>
                     </div>
                   </div>

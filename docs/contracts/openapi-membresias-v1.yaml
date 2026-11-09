@@ -1,7 +1,7 @@
 openapi: 3.1.1
 info:
   title: Planes, pagos manuales y membresías — PULSE CLUB
-  version: 1.0.0
+  version: 1.1.0
   description: Contrato propio adicional de Socios. No altera los contratos
     externos. Comprobante interno no fiscal; no hay pasarela ni pagos
     automáticos.
@@ -1560,13 +1560,103 @@ paths:
               additionalProperties: false
               properties: {}
               required: []
+  /api/v1/socios/{socioId}/membresias:
+    get:
+      summary: Consultar historial de membresías
+      description: ADMIN o el propio socio. Conserva períodos históricos y futuros.
+      parameters:
+        - in: path
+          name: socioId
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Historial sin credenciales, con Cache-Control no-store.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/Membresia' }
+        '401': { $ref: '#/components/responses/ErrorSuspension' }
+        '403': { $ref: '#/components/responses/ErrorSuspension' }
+        '404': { $ref: '#/components/responses/ErrorSuspension' }
+        '500': { $ref: '#/components/responses/ErrorSuspension' }
+  /api/v1/membresias/{id}/suspender:
+    post:
+      summary: Suspender inmediatamente una membresía
+      description: |
+        Sólo ADMIN activo. Conserva vigencia y pagos. Estado, evento Outbox y
+        resultado idempotente se guardan juntos. HTTP 200 confirma la suspensión
+        local; la cancelación de reservas se procesa asincrónicamente.
+        Misma clave y operación devuelve el resultado original. Otra clave para
+        una membresía ya suspendida conserva la suspensión y el evento existentes.
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema: { type: string, pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{0,99}$' }
+        - in: header
+          name: Idempotency-Key
+          required: true
+          schema: { type: string, pattern: '^[A-Za-z0-9_-]{8,128}$' }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, additionalProperties: false, maxProperties: 0 }
+      responses:
+        '200':
+          description: Suspensión guardada o replay, con Cache-Control no-store.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [membresiaId,socioId,estado,fechaInicio,fechaFin,eventId,suspendidaEn]
+                properties:
+                  membresiaId: { type: string }
+                  socioId: { type: string }
+                  estado: { const: SUSPENDIDA }
+                  fechaInicio: { type: string, format: date-time }
+                  fechaFin: { type: string, format: date-time }
+                  eventId: { type: string, format: uuid }
+                  suspendidaEn: { type: string, format: date-time }
+        '400': { $ref: '#/components/responses/ErrorSuspension' }
+        '401': { $ref: '#/components/responses/ErrorSuspension' }
+        '403': { $ref: '#/components/responses/ErrorSuspension' }
+        '404': { $ref: '#/components/responses/ErrorSuspension' }
+        '409': { $ref: '#/components/responses/ErrorSuspension' }
+        '500': { $ref: '#/components/responses/ErrorSuspension' }
+        '503': { $ref: '#/components/responses/ErrorSuspension' }
 components:
+  responses:
+    ErrorSuspension:
+      description: DATOS_INVALIDOS o IDEMPOTENCIA_REQUERIDA (400), NO_AUTENTICADO (401), ACCESO_DENEGADO (403), MEMBRESIA_NO_ENCONTRADA o SOCIO_NO_ENCONTRADO (404), IDEMPOTENCIA_EN_CONFLICTO o TRANSICION_INVALIDA (409), ERROR_INTERNO (500) o GESTION_POSTGRES_REQUERIDO (503). Ante resultado incierto conservar clave y cuerpo.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
   securitySchemes:
     Bearer:
       type: http
       scheme: bearer
       bearerFormat: JWT
   schemas:
+    Membresia:
+      type: object
+      required: [membresiaId,socioId,tipoPlan,fechaInicio,fechaFin,estado,createdAt,updatedAt]
+      properties:
+        membresiaId: { type: string }
+        socioId: { type: string }
+        tipoPlan: { type: string }
+        fechaInicio: { type: string, format: date-time }
+        fechaFin: { type: string, format: date-time }
+        estado: { enum: [HABILITADA,SUSPENDIDA,VENCIDA] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
     Plan:
       type: object
       additionalProperties: false

@@ -7,6 +7,7 @@ import { CarCrudsPanel } from './components/CarCrudsPanel';
 import { MembresiasPanel } from './components/MembresiasPanel';
 import { AccesosPanel } from './components/AccesosPanel';
 import { TiendaStockPanel } from './components/TiendaStockPanel';
+import { ClasesPanel } from './components/ClasesPanel';
 
 // --- Interfaces ---
 export interface Member {
@@ -221,8 +222,8 @@ export default function App() {
               return (
                 <button
                   key={item.path}
-                  disabled={!['socios-y-membresias', 'planes-y-tarifas', 'empleados-car-cruds', 'accesos', 'tienda-stock'].includes(item.path)}
-                  title={!['socios-y-membresias', 'planes-y-tarifas', 'empleados-car-cruds', 'accesos', 'tienda-stock'].includes(item.path) ? 'Sección pendiente de integración.' : undefined}
+                  disabled={!['socios-y-membresias', 'planes-y-tarifas', 'empleados-car-cruds', 'accesos', 'tienda-stock', 'clases-y-turnos'].includes(item.path)}
+                  title={!['socios-y-membresias', 'planes-y-tarifas', 'empleados-car-cruds', 'accesos', 'tienda-stock', 'clases-y-turnos'].includes(item.path) ? 'Sección pendiente de integración.' : undefined}
                   onClick={() => setActiveNav(item.path)}
                   className={`flex items-center gap-2.5 px-3 py-1.5 rounded-lg transition-all text-xs font-semibold w-full text-left ${
                     isActive
@@ -368,7 +369,7 @@ export default function App() {
         {/* --- MAIN BODY VIEWPORT --- */}
         <main className="w-full pt-14 bg-background px-4 sm:px-6 min-h-screen">
           {toastView}
-          {activeNav === 'tienda-stock' ? <TiendaStockPanel actorId={currentUser.socioId} /> : activeNav === 'accesos' ? <AccesosPanel actorId={currentUser.socioId} /> : activeNav === 'empleados-car-cruds' ? <CarCrudsPanel onNuevoSocio={handleOpenRegister} /> : <MembresiasPanel actorId={currentUser.socioId} onNuevoSocio={handleOpenRegister} filtro={searchQuery} />}
+          {activeNav === 'clases-y-turnos' ? <ClasesPanel key={currentUser.socioId} actorId={currentUser.socioId} /> : activeNav === 'tienda-stock' ? <TiendaStockPanel actorId={currentUser.socioId} /> : activeNav === 'accesos' ? <AccesosPanel actorId={currentUser.socioId} /> : activeNav === 'empleados-car-cruds' ? <CarCrudsPanel onNuevoSocio={handleOpenRegister} /> : <MembresiasPanel key={currentUser.socioId} actorId={currentUser.socioId} onNuevoSocio={handleOpenRegister} filtro={searchQuery} />}
 
         </main>
       </div>

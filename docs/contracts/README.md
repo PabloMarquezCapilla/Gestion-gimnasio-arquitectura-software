@@ -18,6 +18,44 @@ El acuerdo confirmado el 06/11/2026 incorpora ambos sentidos: Tienda consumirá 
 
 **Estado:** consulta de stock, reposiciones y ventas administrativas implementadas y verificadas localmente. La [guía](fav-tienda.md) incluye la API interna de ventas, uso y errores; [EVIDENCIA-TIENDA](../EVIDENCIA-TIENDA.md) registra pruebas con PostgreSQL, navegador y NGINX. Faltan aceptación de FAV, rama externa acordada, publicación accesible y entrega privada de credenciales. Solo la consulta al catálogo externo `/api/v1/tienda/productos` continúa devolviendo `503 INTEGRACION_PENDIENTE`; su contrato se acordará por separado.
 
+## Suspensiones y evento interno
+
+[OpenAPI Membresías 1.1.0](openapi-membresias-v1.yaml) agrega historial por propietario y suspensión idempotente por ADMIN. [Guía](membresias-eventos.md), [JSON Schema del evento 1.0.0](membresia-actualizada-v1.schema.json) y [evidencia](../EVIDENCIA-EVENTOS-MEMBRESIA.md) describen Outbox/RabbitMQ/Inbox, cancelaciones y recuperación. Conserva las operaciones de pagos 1.0.0 y los contratos entre grupos.
+
+## Búsqueda interna de clases
+
+[OpenAPI Catálogo 1.2.0](openapi-catalogo-v1.yaml) documenta búsqueda con JWT SOCIO/ADMIN, administración con JWT ADMIN y retiro de espera por propietario o ADMIN. Implementados en backend y portal. La versión 1.2.0 incorpora el retiro como operación adicional a la búsqueda/administración de 1.1.0. [D6](../adr/ADR-006-busqueda.md), [evidencia de búsqueda](../EVIDENCIA-BUSQUEDA.md).
+
+Para probar en Postman, iniciar el proyecto y obtener el JWT con el login habitual. Enviar `GET {{gimnasioBaseUrl}}/api/v1/catalogo/clases?texto=yoga&orden=relevancia&pagina=1&tamanio=20` con `Authorization: Bearer {{jwt}}`. La base local es `http://localhost:8080` o el puerto configurado. Una respuesta 200 sin coincidencias representa un resultado vacío real. Una base ausente o caída produce 503. La disponibilidad observada no retiene cupo ni acredita la membresía.
+
+En el portal del socio, «Clases y Reservas» permite completar texto, identificador de sede mostrado en las tarjetas, profesor completo y rango de inicio. Las fechas usan la zona horaria del equipo. «Buscar» aplica filtros y vuelve a la primera página, «Anterior/Siguiente» conservan la consulta y «Limpiar filtros» la reinicia. Relevancia requiere texto. El filtro de cupo directo excluye clases llenas y cupos protegidos para la espera. Cada tarjeta permite reservar o elegir la espera según esa disponibilidad.
+
+La consulta privada existente `GET /api/v1/reservas/clases` conserva sus campos y agrega `clasesPersonales`, una lista de `{claseId, nombre, sedeId, inicio}` de las reservas y esperas del socio autorizado, independiente de las primeras cien clases de `items`. Se respetan los controles de propietario y la excepción ADMIN. «Mis Reservas» usa ese detalle para conservar nombre/horario al cambiar filtros o volver a ingresar. El cliente tolera servidores anteriores que omitan el campo. El contrato histórico `/api/v1/clases` conserva su versión y comportamiento.
+
+### Retirarse de la lista de espera
+
+En «Clases y Reservas» o «Mis Reservas», el socio elige «Salir de espera» antes del inicio. La entrada queda cancelada y se conserva en el historial. La consulta personal se actualiza y el socio puede volver a inscribirse si cumple las condiciones existentes. El nuevo ingreso tiene otro ID y un orden posterior.
+
+`POST /api/v1/clases/{claseId}/espera/{esperaId}/retirar` requiere Bearer JWT del propietario o ADMIN y devuelve 200 con `exito`, `espera` en estado `CANCELADO` y `reasignacionPendiente`. El ID de la entrada identifica la transición. Repetirlo devuelve el estado cancelado sin tocar otra inscripción posterior, incluso si el inicio ya pasó. El retiro usa almacenamiento local y no consulta Socios.
+
+Una entrada todavía pendiente al inicio devuelve 400 `CLASE_INICIADA`. Una entrada ajena da 403, y una inexistente o de otra clase 404. Si la promoción ganó la carrera, devuelve 409 `ESPERA_PROMOVIDA`, con la reserva confirmada actual cuando exista. El portal avisa, actualiza «Mis Reservas» y ofrece «Cancelar reserva» como una acción explícita. Un error de red o almacenamiento provoca una actualización del estado y permite repetir el mismo ID.
+
+La cancelación de la espera y la promoción comparten el bloqueo de clase. Si gana el retiro, una evaluación anterior queda descartada. Si hay cupo y otra espera, el trabajador FIFO existente vuelve a verificar al siguiente. `reasignacionPendiente` informa esa tarea recuperable. Las verificaciones de propietario, reintento, límite temporal, carrera y rollback están registradas en [D4](../adr/ADR-017-consistencia-y-recuperacion-de-espera.md).
+
+### Administración de clases
+
+ADMIN abre «Clases & Turnos», completa nombre, actividad, profesor, sede, inicio, fin y capacidad, y selecciona «Publicar clase». Las sedes se obtienen de Accesos y las fechas usan la zona horaria del equipo. La tabla muestra horarios de 24 horas. El listado busca las clases futuras publicadas, de a 20 resultados. «Editar» carga su versión actual. «Guardar cambios» exige que la clase todavía no haya comenzado y no tenga reservas confirmadas ni espera pendiente. El historial cancelado/promovido no bloquea por sí mismo.
+
+Las rutas propias son `POST /api/v1/admin/clases`, `GET /api/v1/admin/clases/{claseId}` y `PUT /api/v1/admin/clases/{claseId}`. Las escrituras requieren `Idempotency-Key`, y el PUT requiere `versionEsperada` además de los siete datos del alta. El contrato incluye modelos, límites, ejemplos y códigos. Una publicación devuelve 201, edición/lectura 200, datos inválidos 400, falta de sesión 401, rol SOCIO 403, clase inexistente 404, conflicto 409, sede desconocida 422 y dependencia/almacenamiento indisponibles 503.
+
+Clases valida la sede llamando directamente a `GET /api/v1/accesos/sedes` con el JWT ADMIN recibido y la traza W3C. Usa `ACCESOS_SERVICE_URL`, ya configurada en Compose, con 3000 ms totales y cuerpo máximo de 1 MiB. Rechaza redirecciones, errores y listas incompatibles. Un 401/403 de la dependencia se informa como 503 de validación, preservando la sesión local. La comprobación se hace antes de bloquear filas PostgreSQL.
+
+Ante respuesta perdida, 5xx o respuesta incompatible, el panel conserva operación, destino y clave en sessionStorage por administrador, sin JWT. Recargar requiere volver a ingresar. Al abrir la sección, «Reintentar la misma operación» recupera el resultado sin otra alta ni incremento de versión. Los datos originales permanecen bloqueados mientras el resultado sea incierto. La misma clave con datos o destino diferentes da `IDEMPOTENCIA_CONFLICTO`. La respuesta guardada puede representar una versión anterior al GET actual.
+
+La tabla `clases_operaciones` guarda entrada y resultado en la misma transacción que la clase. Las claves no se purgan automáticamente. Si otro administrador editó, `VERSION_CONFLICTO` exige volver a cargar la clase. Si una edición cambió el horario durante la evaluación de membresía, reserva/espera responden 409 `CLASE_MODIFICADA` y el portal refresca para un nuevo intento. El catálogo y los cupos pueden cambiar entre lecturas.
+
+El contrato 1.1.0 se verificó en el cierre del paso 5 antes y después de reconstruir GIN, con publicación/edición por HTTP y consultas por NGINX. `npm run test:gestion-clases` incluye veinte lecturas durante una fase real de reconstrucción y comparación de filtros, páginas, orden y estado de negocio. El responsable de la base dispone del procedimiento de mantenimiento local en [D6](../adr/ADR-006-busqueda.md).
+
 ## Integracion con Car Cruds
 
 **Responsable en el gimnasio:** Socios y Membresías, con su arquitectura en Capas. Car Cruds conserva empleados y el informe receptor; el gimnasio conserva socios, membresías, vínculos, auditoría y registro durable de fotografías e intentos.

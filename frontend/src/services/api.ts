@@ -22,7 +22,15 @@ export interface AccesosMovimiento {
   tipo: 'INGRESO' | 'EGRESO'; fecha: string; aceptado: boolean; codigo: string;
 }
 export interface AccesosOrden { sedeId: string; socioId: string; tipo: 'INGRESO' | 'EGRESO' }
-export const apiAccesosSedes = () => request<{ items: { sedeId: string; nombre: string }[] }>('/api/v1/accesos/sedes');
+export async function apiAccesosSedes(): Promise<{ items: { sedeId: string; nombre: string }[] }> {
+  const data = await request<unknown>('/api/v1/accesos/sedes', {}, true, 200);
+  if (!isRecord(data) || !Array.isArray(data.items) || data.items.some(sede => !isRecord(sede)
+    || !isText(sede.sedeId) || !isText(sede.nombre))
+    || new Set(data.items.map(sede => sede.sedeId)).size !== data.items.length) {
+    throw new ApiError('El servidor devolvió sedes no válidas. Volvé a consultar.', 502, 'RESPUESTA_INVALIDA');
+  }
+  return { items: data.items.map(sede => ({ sedeId: sede.sedeId as string, nombre: sede.nombre as string })) };
+}
 export const apiAccesosOcupacion = (sedeId: string) => request<{ sedeId: string; ocupacion: number; consultadoEn: string }>(
   '/api/v1/accesos/sedes/' + encodeURIComponent(sedeId) + '/ocupacion');
 export const apiAccesosHistorial = (sedeId: string, pagina = 1, socioId = '') => request<{ items: AccesosMovimiento[]; pagina: number; tamanio: number }>(
@@ -190,6 +198,7 @@ export interface BackendEspera {
 }
 export interface ClasesYReservas {
   items: BackendClaseDTO[]; reservasSocio: BackendReserva[]; esperaSocio: BackendEspera[];
+  clasesPersonales?: Pick<BackendClaseDTO, 'claseId' | 'nombre' | 'sedeId' | 'inicio'>[];
 }
 
 export async function apiObtenerClasesYReservas(socioId: string): Promise<ClasesYReservas> {
@@ -197,7 +206,117 @@ export async function apiObtenerClasesYReservas(socioId: string): Promise<Clases
   if (![data.items, data.reservasSocio, data.esperaSocio].every(Array.isArray)) {
     throw new ApiError('El servidor devolvió un listado no válido.', 502, 'RESPUESTA_INVALIDA');
   }
+  if (data.clasesPersonales !== undefined && (!Array.isArray(data.clasesPersonales)
+    || data.clasesPersonales.some(clase => !isRecord(clase) || !isText(clase.claseId)
+      || !isText(clase.nombre) || !isText(clase.sedeId) || !isDate(clase.inicio)))) {
+    throw new ApiError('El servidor devolvió detalles de reservas no válidos.', 502, 'RESPUESTA_INVALIDA');
+  }
   return data;
+}
+
+export type OrdenCatalogo = 'inicio_asc' | 'inicio_desc' | 'relevancia';
+export interface FiltrosCatalogo {
+  texto?: string; sedeId?: string; profesor?: string; desde?: string; hasta?: string;
+  soloConCupo?: boolean; orden?: OrdenCatalogo; pagina?: number; tamanio?: number;
+}
+export interface ClaseCatalogo {
+  claseId: string; nombre: string; actividad: string | null; profesor: string | null;
+  sedeId: string; inicio: string; fin: string; capacidad: number;
+  cuposDisponibles: number; reservaDirectaDisponible: boolean;
+}
+export interface PaginaCatalogo {
+  items: ClaseCatalogo[]; pagina: number; tamanio: number; total: number; consultadoEn: string;
+}
+const catalogoInvalido = (): never => {
+  throw new ApiError('La respuesta de búsqueda no es válida. Volvé a consultar.', 502, 'RESPUESTA_INVALIDA');
+};
+
+export async function apiBuscarClases(filtros: FiltrosCatalogo = {}, signal?: AbortSignal): Promise<PaginaCatalogo> {
+  const params = new URLSearchParams();
+  for (const key of ['texto', 'sedeId', 'profesor', 'desde', 'hasta'] as const) {
+    const value = filtros[key];
+    if (value?.trim()) params.set(key, key === 'sedeId' ? value : value.trim());
+  }
+  for (const key of ['soloConCupo', 'orden', 'pagina', 'tamanio'] as const) {
+    if (filtros[key] !== undefined) params.set(key, String(filtros[key]));
+  }
+  const value = await request<unknown>('/api/v1/catalogo/clases?' + params, { signal }, true, 200);
+  if (!isRecord(value) || !Array.isArray(value.items) || !isNatural(value.total)
+    || value.pagina !== (filtros.pagina ?? 1) || value.tamanio !== (filtros.tamanio ?? 20)
+    || !isNatural(value.pagina) || value.pagina < 1 || value.pagina > 1000000
+    || !isNatural(value.tamanio) || value.tamanio < 1 || value.tamanio > 100
+    || !isDate(value.consultadoEn)) return catalogoInvalido();
+  const cantidad = Math.min(value.tamanio, Math.max(0, value.total - (value.pagina - 1) * value.tamanio));
+  if (value.items.length !== cantidad) return catalogoInvalido();
+  const items = value.items.map(clase => {
+    if (!isRecord(clase) || !isText(clase.claseId) || !isText(clase.nombre) || !isText(clase.sedeId)
+      || !(clase.actividad === null || typeof clase.actividad === 'string')
+      || !(clase.profesor === null || typeof clase.profesor === 'string')
+      || !isDate(clase.inicio) || !isDate(clase.fin) || Date.parse(clase.inicio) <= Date.parse(value.consultadoEn as string)
+      || !isNatural(clase.capacidad) || !isNatural(clase.cuposDisponibles) || clase.cuposDisponibles > clase.capacidad
+      || typeof clase.reservaDirectaDisponible !== 'boolean'
+      || (clase.reservaDirectaDisponible && clase.cuposDisponibles === 0)) return catalogoInvalido();
+    return clase as unknown as ClaseCatalogo;
+  });
+  if (new Set(items.map(clase => clase.claseId)).size !== items.length) return catalogoInvalido();
+  return { items, pagina: value.pagina, tamanio: value.tamanio, total: value.total, consultadoEn: value.consultadoEn };
+}
+
+export interface DatosPublicacionClase {
+  nombre: string; actividad: string; profesor: string; sedeId: string;
+  inicio: string; fin: string; capacidad: number;
+}
+export interface ClaseAdministrada extends Omit<DatosPublicacionClase, 'actividad' | 'profesor'> {
+  claseId: string; actividad: string | null; profesor: string | null; publicada: boolean; version: number;
+}
+export interface OperacionClasePendiente {
+  clave: string; claseId: string | null; datos: DatosPublicacionClase & { versionEsperada?: number };
+}
+export function validarOperacionClase(value: unknown): OperacionClasePendiente {
+  const invalida = () => { throw new ApiError('Revisá los datos de la publicación o edición de la clase.', 400, 'PARAMETROS_INVALIDOS'); };
+  if (!isRecord(value) || !exactKeys(value, ['clave', 'claseId', 'datos'])
+    || typeof value.clave !== 'string' || !/^[A-Za-z0-9_-]{8,128}$/.test(value.clave)
+    || !(value.claseId === null || isText(value.claseId)) || !isRecord(value.datos)) return invalida();
+  const datos = value.datos;
+  const campos = ['nombre', 'actividad', 'profesor', 'sedeId', 'inicio', 'fin', 'capacidad'];
+  if (value.claseId !== null) campos.push('versionEsperada');
+  if (!exactKeys(datos, campos) || !isDate(datos.inicio) || !isDate(datos.fin)
+    || Date.parse(datos.fin) <= Date.parse(datos.inicio)
+    || !isNatural(datos.capacidad) || datos.capacidad < 1 || datos.capacidad > 2147483647
+    || (value.claseId !== null && (!isNatural(datos.versionEsperada) || datos.versionEsperada < 1 || datos.versionEsperada > 2147483647))) return invalida();
+  for (const [campo, max] of [['nombre', 100], ['actividad', 50], ['profesor', 100], ['sedeId', 50]] as const) {
+    if (!isText(datos[campo]) || Array.from(datos[campo]).length > max) return invalida();
+  }
+  return value as unknown as OperacionClasePendiente;
+}
+function claseAdministrada(value: unknown): ClaseAdministrada {
+  if (!isRecord(value) || !isText(value.claseId) || !isText(value.nombre) || !isText(value.sedeId)
+    || !(value.actividad === null || typeof value.actividad === 'string')
+    || !(value.profesor === null || typeof value.profesor === 'string')
+    || !isDate(value.inicio) || !isDate(value.fin) || !isNatural(value.capacidad)
+    || value.publicada !== true || !isNatural(value.version) || value.version < 1 || value.version > 2147483647) {
+    throw new ApiError('El servidor devolvió una clase no válida. Volvé a consultar.', 502, 'RESPUESTA_INVALIDA');
+  }
+  return value as unknown as ClaseAdministrada;
+}
+export async function apiObtenerClaseAdmin(claseId: string): Promise<ClaseAdministrada> {
+  const value = claseAdministrada(await request<unknown>('/api/v1/admin/clases/' + encodeURIComponent(claseId), {}, true, 200));
+  if (value.claseId !== claseId) throw new ApiError('El servidor devolvió otra clase. Volvé a consultar.', 502, 'RESPUESTA_INVALIDA');
+  return value;
+}
+export async function apiGuardarClase(operacion: OperacionClasePendiente): Promise<ClaseAdministrada> {
+  const op = validarOperacionClase(operacion);
+  const value = claseAdministrada(await request<unknown>('/api/v1/admin/clases' + (op.claseId === null ? '' : '/' + encodeURIComponent(op.claseId)), {
+    method: op.claseId === null ? 'POST' : 'PUT', headers: { 'Idempotency-Key': op.clave }, body: JSON.stringify(op.datos),
+  }, true, op.claseId === null ? 201 : 200));
+  const d = op.datos;
+  if ((op.claseId !== null && value.claseId !== op.claseId) || value.version !== (op.claseId === null ? 1 : d.versionEsperada! + 1)
+    || value.nombre !== d.nombre.trim() || value.actividad !== d.actividad.trim() || value.profesor !== d.profesor.trim()
+    || value.sedeId !== d.sedeId || Date.parse(value.inicio) !== Date.parse(d.inicio)
+    || Date.parse(value.fin) !== Date.parse(d.fin) || value.capacidad !== d.capacidad) {
+    throw new ApiError('El servidor no confirmó los datos de esta clase. Conservá la operación para reintentar.', 502, 'RESPUESTA_INVALIDA');
+  }
+  return value;
 }
 
 export async function apiReservarClase(claseId: string, socioId: string, ingresarEsperaSiLlena = false): Promise<{ reservaId: string; estado: string }> {
@@ -224,6 +343,25 @@ export function apiCancelarReserva(reservaId: string): Promise<{
   exito: boolean; promocion?: unknown; reasignacionPendiente?: boolean;
 }> {
   return request('/api/v1/reservas/' + encodeURIComponent(reservaId) + '/cancelar', { method: 'POST' });
+}
+
+export interface RetiroEspera {
+  exito: true;
+  espera: BackendEspera & { estado: 'CANCELADO'; updatedAt: string };
+  reasignacionPendiente: boolean;
+}
+export async function apiRetirarEspera(claseId: string, esperaId: string): Promise<RetiroEspera> {
+  const value = await request<unknown>('/api/v1/clases/' + encodeURIComponent(claseId) + '/espera/'
+    + encodeURIComponent(esperaId) + '/retirar', { method: 'POST' }, true, 200);
+  if (!isRecord(value) || value.exito !== true || typeof value.reasignacionPendiente !== 'boolean'
+    || !isRecord(value.espera) || value.espera.esperaId !== esperaId || value.espera.claseId !== claseId
+    || value.espera.estado !== 'CANCELADO' || !isText(value.espera.socioId)
+    || !isNatural(value.espera.orden) || value.espera.orden < 1
+    || !isDate(value.espera.createdAt) || !isDate(value.espera.updatedAt)
+    || Date.parse(value.espera.updatedAt) < Date.parse(value.espera.createdAt)) {
+    throw new ApiError('El servidor no confirmó el retiro de esta espera. Actualizá tus reservas antes de volver a intentar.', 502, 'RESPUESTA_INVALIDA');
+  }
+  return value as unknown as RetiroEspera;
 }
 
 export interface CarCrudsEmpleado { employeeId: string; displayName: string }
@@ -408,9 +546,18 @@ export interface SolicitudMembresia {
   comprobante?: { comprobanteId: string; pagoId: string; membresiaId: string; confirmadoEn: string } | null;
 }
 const invalidMembresias = (): never => { throw new ApiError('Respuesta de membresía no válida. Conservá la misma operación para reintentar.', 502, 'RESPUESTA_INVALIDA'); };
-async function requestGestion<T>(path: string, options: RequestInit = {}): Promise<T> {
-  try { return await request<T>(path,options); }
-  catch(e) { if(e instanceof ApiError && e.status>=200 && e.status<300) return invalidMembresias(); throw e; }
+async function requestGestion<T>(path: string, options: RequestInit = {}, expectedStatus?: number): Promise<T> {
+  const timeout = AbortSignal.timeout(15000);
+  const signal = options.signal ? AbortSignal.any([options.signal, timeout]) : timeout;
+  try {
+    return await request<T>(path, { ...options, signal }, true, expectedStatus);
+  } catch (error) {
+    if (timeout.aborted) {
+      throw new ApiError('Se agotó el tiempo de espera. Volvé a consultar o reintentá la misma operación pendiente.', 0, 'TIEMPO_AGOTADO');
+    }
+    if (error instanceof ApiError && error.status >= 200 && error.status < 300) return invalidMembresias();
+    throw error;
+  }
 }
 
 function planMembresia(value: unknown): PlanMembresia {
@@ -445,12 +592,18 @@ export async function apiSolicitudesMembresia(pagina: number, socioId?: string) 
   const items=v.items.map(solicitudMembresia); if(socioId&&items.some(s=>s.socioId!==socioId))return invalidMembresias();return {items};
 }
 export async function apiOperacionMembresia(path: string, method: 'POST' | 'PUT', body: object, clave: string) {
-  const value=await requestGestion<unknown>(path,{method,headers:{'Idempotency-Key':clave},body:JSON.stringify(body)});
+  const value=await requestGestion<unknown>(path,{method,headers:{'Idempotency-Key':clave},body:JSON.stringify(body)},path.startsWith('/api/v1/membresias/')?200:undefined);
   const b=body as Record<string,unknown>;
   if(path.startsWith('/api/v1/planes')) {
     const p=planMembresia(value);
     if(path==='/api/v1/planes'?(p.nombre!==String(b.nombre).trim()||p.importeMinor!==b.importeMinor||p.moneda!==b.moneda):(path!=='/api/v1/planes/'+p.planId+'/estado'||p.estado!==b.estado))return invalidMembresias();
     return p;
+  }
+  if(path.startsWith('/api/v1/membresias/')) {
+    if(!isRecord(value)||!isText(value.membresiaId)||path!=='/api/v1/membresias/'+encodeURIComponent(value.membresiaId)+'/suspender'
+      ||value.estado!=='SUSPENDIDA'||!isText(value.socioId)||!isText(value.eventId)||!/^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/i.test(value.eventId)||!isDate(value.suspendidaEn)
+      ||!isDate(value.fechaInicio)||!isDate(value.fechaFin)||Date.parse(value.fechaInicio)>Date.parse(value.fechaFin))return invalidMembresias();
+    return value;
   }
   const s=solicitudMembresia(value);
   if(path.endsWith('/confirmar')) { if(path!=='/api/v1/pagos/'+s.pago?.pagoId+'/confirmar'||s.estado!=='CONFIRMADA')return invalidMembresias(); }
@@ -458,4 +611,19 @@ export async function apiOperacionMembresia(path: string, method: 'POST' | 'PUT'
   else if(path.endsWith('/pagos')) { if(path!=='/api/v1/solicitudes/'+s.solicitudId+'/pagos'||s.pago?.referencia!==b.referencia||s.importeMinor!==b.importeMinor||s.moneda!==b.moneda)return invalidMembresias(); }
   else if(path!=='/api/v1/socios/'+encodeURIComponent(s.socioId)+'/solicitudes'||s.planId!==b.planId||Date.parse(s.fechaInicio)!==Date.parse(String(b.fechaInicio))||Date.parse(s.fechaFin)!==Date.parse(String(b.fechaFin)))return invalidMembresias();
   return s;
+}
+
+export interface MembresiaAdministrativa {
+  membresiaId: string; socioId: string; tipoPlan: string; estado: 'HABILITADA'|'SUSPENDIDA'|'VENCIDA';
+  fechaInicio: string; fechaFin: string;
+}
+export async function apiHistorialMembresias(socioId: string) {
+  const v = await requestGestion<unknown>('/api/v1/socios/'+encodeURIComponent(socioId)+'/membresias',{},200);
+  if(!isRecord(v)||!Array.isArray(v.items))return invalidMembresias();
+  const items = v.items.map(m => {
+    if(!isRecord(m)||!isText(m.membresiaId)||m.socioId!==socioId||!isText(m.tipoPlan)
+      ||!['HABILITADA','SUSPENDIDA','VENCIDA'].includes(String(m.estado))||!isDate(m.fechaInicio)||!isDate(m.fechaFin))return invalidMembresias();
+    return m as unknown as MembresiaAdministrativa;
+  });
+  return {items};
 }

@@ -1,8 +1,8 @@
 # D5 - Comunicación entre servicios
 
-**Actualización Accesos, 30/10/2026:** ingreso → Socios con clave técnica, contexto W3C y 3000 ms totales incluido cuerpo; hasta un reintento GET de red/502/503/504. Egreso y replay no consultan membresía. Ver [ADR-019](ADR-019-accesos-mongodb-recepcion.md); RabbitMQ sigue sin eventos de dominio.
+**Actualización Accesos, 30/10/2026:** ingreso → Socios con clave técnica, contexto W3C y 3000 ms totales incluido cuerpo; hasta un reintento GET de red/502/503/504. Egreso y replay no consultan membresía. Ver [ADR-019](ADR-019-accesos-mongodb-recepcion.md).
 
-**Estado:** estrategia HTTP y mensajería conservada; lecturas, vinculación y envío manual Car Cruds y POST anterior operativos localmente. Eventos de dominio y conexión conjunta pendientes.
+**Estado, 07/11/2026.** Suspensión, Outbox, publicador RabbitMQ y consumidor Inbox implementados y verificados con PostgreSQL/RabbitMQ reales y Compose/NGINX. HTTP existente conservado. Resultados y límites en [EVIDENCIA-EVENTOS-MEMBRESIA](../EVIDENCIA-EVENTOS-MEMBRESIA.md).
 **Fecha inicial:** 07/10/2026. **Validación:** 23/10/2026.
 **Enunciado:** §2.5, página 2; §4.1, páginas 5–6; §5 D5, página 6; §6.2–6.3, página 8.
 
@@ -19,9 +19,11 @@ Se utiliza HTTP/JSON cuando el resultado de una operación necesita una respuest
 | Socios → Car Cruds: empleados, estado laboral y evidencia de membresía | Lecturas GET y POST de evidencia implementados, con contrato externo 0.3.0 y Bearer gym. Presupuesto total de 3000 ms configurable, cuerpo incluido. Lectura: un reintento máximo de red/502/503/504. Envío: un solo POST, desde un mensaje durable confirmado por ADMIN; recuperación manual con el mismo cuerpo. URL/token reales y prueba conjunta pendientes. Salida directa desde Socios. [D8 vigente](ADR-018-integracion-car-cruds.md). |
 | Tienda → distribuidora: productos/stock | Pendiente de contrato, URL y autenticación. La ruta interna autenticada ya informa `503 INTEGRACION_PENDIENTE`; no llama al proveedor. [D9](ADR-009-consumo-del-proveedor.md). |
 | Accesos → Socios: habilitación al ingresar | Implementada en ADR-019; egreso/replay no consultan membresía. |
-| Clases → Accesos: sede al publicar | Prevista, sin flujo implementado en esta etapa. |
+| Clases → Accesos: sede al publicar/editar | Implementada. `GET /api/v1/accesos/sedes`, JWT ADMIN recibido y traza W3C. `ACCESOS_SERVICE_URL` y 3000 ms totales, cuerpo incluido con máximo de 1 MiB. Redirección, error o lista incompatible producen 503. Ocurre antes de la transacción SQL. |
 
 ### Tiempo, errores y reintentos internos
+
+Publicación/edición de clases recupera primero una operación confirmada por actor/clave y contenido normalizado. Un replay no vuelve a consultar Accesos ni exige que el horario siga siendo futuro. Una operación nueva necesita validar la sede. El panel conserva las escrituras inciertas para repetir la misma solicitud. La consulta a Accesos hace un único intento HTTP dentro de su presupuesto. [D6](ADR-006-busqueda.md).
 
 Cada verificación HTTP a Socios tiene **3000 ms totales**, incluida conexión, cuerpo y como máximo un reintento dentro del presupuesto. El cliente contempla errores de red y HTTP 502/503/504, con espera aleatoria de 75–124 ms. Un cuerpo inválido se trata como fallo y puede consumir el reintento acotado; nunca se acepta como habilitación.
 
@@ -37,18 +39,22 @@ El envío de evidencia Car Cruds conserva exactamente `sourceReference`, `versio
 
 Clases propaga su `traceparent` y `X-Correlation-ID`; Socios crea spans hijos con la misma traza. Se correlacionan los logs de negocio y las respuestas. La prueba HTTP con PostgreSQL exige ese vínculo; la demostración con `inject` es complementaria. [D11](ADR-011-observabilidad.md).
 
-## Comunicación asíncrona prevista
+## Comunicación asíncrona de suspensiones
 
-Se conserva RabbitMQ y el evento **`MembresiaActualizada`**, esquema versión 1, para que Clases cancele reservas futuras afectadas por cambios de habilitación y reasigne cupos.
+Se concreta RabbitMQ con **`MembresiaActualizada`**, esquema 1.0.0 y `schemaVersion=1`, para la transición `SUSPENSION`. ADMIN elige una membresía y la suspende inmediatamente, conservando sus fechas. El equipo confirmó la regla y dejó reactivación para otra etapa. [Esquema versionado](../contracts/membresia-actualizada-v1.schema.json), [API y operación](../contracts/membresias-eventos.md).
 
-- **Outbox:** guardar cambio y evento en la misma transacción de Socios; un publicador enviará con confirmación del broker.
-- **Inbox:** el consumidor de Clases deberá registrar `eventId` y aplicar sus efectos en la misma transacción local, descartando duplicados de manera atómica.
-- **Mensajes fallidos:** reintentos acotados y DLQ con causa para revisión. Se conservan como propuesta inicial tres esperas de 1, 5 y 15 s, pendientes de validación al implementar.
+- **Outbox de Socios.** Estado, evento y resultado idempotente se confirman en la misma transacción. Un publicador toma un reclamo durable de 30 s y publica fuera del bloqueo SQL. Marca publicado tras confirmación del broker. Una caída antes de marcar puede repetir el evento. El UUID de reclamo impide que un trabajador antiguo finalice un reclamo nuevo.
+- **RabbitMQ.** Exchange topic durable `gimnasio.dominio.v1`, clave `membresia.actualizada.v1`, cola durable compartida `clases.membresias.v1` y mensajes persistentes. El publicador declara enlace/cola antes de enviar, incluso sin consumidor. Publicación obligatoria detecta falta de enrutamiento. Conexión y confirmación tienen presupuestos de 3 s y 5 s. Reconexión cada segundo.
+- **Inbox de Clases.** Valida versión/esquema antes de persistir. `membresias_inbox` registra ID, contenido y efecto junto con las cancelaciones y la proyección `membresias_suspendidas`. Repetir ID/contenido no repite efectos. ID reutilizado con otros datos requiere revisión. Cada réplica consume con `prefetch=1` y confirma después del commit.
+- **Reservas y prioridad.** Cancela reservas confirmadas de clases futuras cuya cobertura actual o al inicio resulta afectada. Clases ya iniciadas permanecen como historial. Evento y escrituras de reserva/espera/promoción se serializan por socio antes de bloquear clase. La proyección impide reservar con una evaluación HTTP anterior después de aplicar la suspensión. Reasignación reutiliza el trabajador FIFO y sus validaciones HTTP fuera de SQL. Si Socios falla conserva primero y cupo protegido.
+- **Mensajes fallidos.** Tres reintentos con esperas de 1, 5 y 15 s conservando la entrega sin confirmar durante la espera. Se republica mensaje persistente con número de intento y confirmación antes de confirmar el original. Error de esquema/conflicto va directamente a `clases.membresias.v1.dlq`. Al agotar intentos también queda allí con causa técnica. Caer entre republicar y confirmar puede duplicar entregas, cubiertas por Inbox. No se depende de un salto TTL/DLX sin confirmación.
 
-Solo RabbitMQ está configurado. No hay Outbox, Inbox, publicador, consumidor ni DLQ operativos. Su presencia en Compose no acredita §2.5 ni cancelación por suspensión posterior.
+La suspensión local puede responder con broker caído, dejando el evento pendiente. Existe consistencia eventual hasta el consumo. Socios rechaza nuevas validaciones desde el commit. Una evaluación anterior puede completarse antes de llegar el evento y será revisada al consumirlo. El bloqueo cierra la carrera posterior al consumo, sin atomicidad distribuida. La proyección representa suspensiones y fechas con la política actual de nuevos períodos sin superposición. Reactivación requiere ampliar/versionar esta proyección antes de habilitarla.
+
+RabbitMQ y PostgreSQL siguen siendo instancias únicas. El HTTP `/health` informa almacenamiento disponible, y el fallo del broker se observa en logs y pendientes. El evento omite DNI, email, contraseña y pagos. `eventId` enlaza registro HTTP, publicación y consumo. Tablero/alertas corresponden a la etapa 8.
 
 ## Alternativas y consecuencias
 
 Se evita consultar bases ajenas o canalizar dependencias por el gateway. Usar solo llamadas síncronas para difundir suspensiones acoplaría la disponibilidad de ambos servicios; la mensajería exige entrega repetible y consumidores idempotentes.
 
-Las reservas nuevas dependen de Socios; las cancelaciones locales y su recuperación reducen esa dependencia. No hay atomicidad distribuida ni política externa definitiva sin contrato. La publicación accesible, el evento y su recuperación siguen pendientes.
+Las reservas nuevas dependen de Socios y las cancelaciones locales se conservan ante su caída. La publicación accesible y pruebas conjuntas siguen pendientes. La verificación del evento se registra por separado de las pruebas HTTP anteriores.
