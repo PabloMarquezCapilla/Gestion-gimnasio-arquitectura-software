@@ -1,0 +1,154 @@
+asyncapi: 3.0.0
+info:
+  title: Eventos de dominio de membresías
+  version: 1.0.0
+  description: >-
+    Evento MembresiaActualizada que publica Socios y Membresías mediante Outbox
+    y consume Clases y Reservas con Inbox idempotente. Cancela las reservas
+    futuras afectadas por una suspensión y reutiliza la promoción FIFO de la lista
+    de espera. Guía operativa: membresias-eventos.md. Decisiones: ADR-005 (D5).
+    Compatibilidad: los campos nuevos opcionales son una versión menor; cambiar el
+    significado o agregar un `cambio` distinto de SUSPENSION exige schemaVersion 2,
+    una nueva routing key `membresia.actualizada.v2` y adaptar el consumidor.
+servers:
+  local:
+    host: rabbitmq:5672
+    pathname: /gimnasio
+    protocol: amqp
+    protocolVersion: 0.9.1
+    description: Broker RabbitMQ 4.1 del compose (vhost gimnasio). No se expone fuera de la red interna.
+defaultContentType: application/json
+
+channels:
+  membresiaActualizada:
+    address: membresia.actualizada.v1
+    title: Exchange gimnasio.dominio.v1, routing key membresia.actualizada.v1
+    messages:
+      MembresiaActualizada:
+        $ref: '#/components/messages/MembresiaActualizada'
+    bindings:
+      amqp:
+        is: routingKey
+        exchange:
+          name: gimnasio.dominio.v1
+          type: topic
+          durable: true
+          autoDelete: false
+          vhost: gimnasio
+        bindingVersion: 0.3.0
+
+  colaClases:
+    address: clases.membresias.v1
+    title: Cola durable que consume Clases (compartida por sus réplicas)
+    messages:
+      MembresiaActualizada:
+        $ref: '#/components/messages/MembresiaActualizada'
+    bindings:
+      amqp:
+        is: queue
+        queue:
+          name: clases.membresias.v1
+          durable: true
+          exclusive: false
+          autoDelete: false
+          vhost: gimnasio
+        bindingVersion: 0.3.0
+
+  dlqClases:
+    address: clases.membresias.v1.dlq
+    title: Mensajes no procesables (sin reenvío automático)
+    description: >-
+      Recibe el evento tras tres reintentos fallidos (1, 5 y 15 s) o de inmediato si
+      no cumple el esquema. Conserva messageId y los headers gimnasio-intento y
+      gimnasio-causa. Una alerta de Prometheus (MensajesEnDLQ) avisa cuando hay mensajes.
+    messages:
+      MembresiaActualizadaFallida:
+        $ref: '#/components/messages/MembresiaActualizada'
+    bindings:
+      amqp:
+        is: queue
+        queue:
+          name: clases.membresias.v1.dlq
+          durable: true
+          exclusive: false
+          autoDelete: false
+          vhost: gimnasio
+        bindingVersion: 0.3.0
+
+operations:
+  publicarMembresiaActualizada:
+    action: send
+    channel:
+      $ref: '#/channels/membresiaActualizada'
+    summary: Socios publica desde membresias_outbox con confirmación del broker (publisher confirms, mandatory).
+    description: >-
+      La suspensión y su fila de Outbox se guardan en la misma transacción. Un
+      publicador en segundo plano envía las pendientes. Si el broker no está, quedan
+      pendientes y se reenvían al reconectar (entrega al menos una vez).
+    bindings:
+      amqp:
+        deliveryMode: 2
+        mandatory: true
+        bindingVersion: 0.3.0
+    messages:
+      - $ref: '#/channels/membresiaActualizada/messages/MembresiaActualizada'
+
+  consumirMembresiaActualizada:
+    action: receive
+    channel:
+      $ref: '#/channels/colaClases'
+    summary: Clases aplica el evento una sola vez por eventId (Inbox) y confirma (ack) después del commit local.
+    messages:
+      - $ref: '#/channels/colaClases/messages/MembresiaActualizada'
+
+  enviarADlq:
+    action: send
+    channel:
+      $ref: '#/channels/dlqClases'
+    summary: Clases deriva a la DLQ los mensajes inválidos o agotados.
+    messages:
+      - $ref: '#/channels/dlqClases/messages/MembresiaActualizadaFallida'
+
+components:
+  messages:
+    MembresiaActualizada:
+      name: MembresiaActualizada
+      title: Membresía suspendida
+      contentType: application/json
+      correlationId:
+        description: Traza W3C del comando que originó el evento.
+        location: $message.payload#/traceparent
+      headers:
+        type: object
+        properties:
+          gimnasio-intento:
+            type: integer
+            minimum: 0
+            maximum: 3
+            description: Número de reintento (solo en reenvíos y en la DLQ).
+          gimnasio-causa:
+            type: string
+            enum: [EVENTO_INVALIDO, PROCESAMIENTO_FALLIDO]
+            description: Solo en reenvíos y en la DLQ.
+      payload:
+        $ref: './membresia-actualizada-v1.schema.json'
+      bindings:
+        amqp:
+          contentEncoding: utf-8
+          messageType: MembresiaActualizada
+          bindingVersion: 0.3.0
+      examples:
+        - name: suspension
+          summary: Suspensión de una membresía vigente
+          payload:
+            eventId: e01bc7ee-36e0-48d9-b260-118fb7ad96fc
+            tipo: MembresiaActualizada
+            schemaVersion: 1
+            cambio: SUSPENSION
+            estado: SUSPENDIDA
+            socioId: socio-ficticio
+            membresiaId: mem-ficticia
+            actorId: admin-ficticio
+            ocurridoEn: '2026-11-07T15:00:00Z'
+            fechaInicio: '2026-11-01T00:00:00Z'
+            fechaFin: '2026-11-30T23:59:59Z'

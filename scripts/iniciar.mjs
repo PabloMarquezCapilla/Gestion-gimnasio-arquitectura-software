@@ -11,7 +11,7 @@ const keys = [
   'POSTGRES_ADMIN_PASSWORD', 'SOCIOS_DB_PASSWORD', 'CLASES_DB_PASSWORD', 'TIENDA_DB_PASSWORD',
   'MONGO_ROOT_PASSWORD', 'ACCESOS_DB_PASSWORD', 'MONGO_KEYFILE',
   'RABBITMQ_PASSWORD', 'CAPACIDAD_API_KEY',
-  'AUTH_JWT_SECRET', 'SERVICIOS_API_KEY', 'EMPLEADOS_API_KEY', 'FAV_API_KEY',
+  'AUTH_JWT_SECRET', 'SERVICIOS_API_KEY', 'EMPLEADOS_API_KEY', 'FAV_API_KEY', 'GRAFANA_ADMIN_PASSWORD',
 ];
 
 function run(args, capture = false) {
@@ -69,7 +69,7 @@ process.loadEnvFile(envPath);
 // Las claves de bases y broker, los datos y las credenciales no vacías se conservan.
 let envContent = readFileSync(envPath, 'utf8');
 let addedSessionKeys = false;
-for (const key of ['AUTH_JWT_SECRET', 'SERVICIOS_API_KEY', 'EMPLEADOS_API_KEY', 'TIENDA_DB_PASSWORD', 'FAV_API_KEY']) {
+for (const key of ['AUTH_JWT_SECRET', 'SERVICIOS_API_KEY', 'EMPLEADOS_API_KEY', 'TIENDA_DB_PASSWORD', 'FAV_API_KEY', 'GRAFANA_ADMIN_PASSWORD']) {
   if ((process.env[key] ?? '').trim()) continue;
   const value = randomBytes(32).toString('hex');
   const declaration = new RegExp(`^(?:export\\s+)?${key}\\s*=[^\\r\\n]*`, 'm');
@@ -121,6 +121,7 @@ console.log(`Entorno listo. Aplicación web disponible en http://localhost:${por
 console.log(`Consola interactiva de API y Trazas W3C: http://localhost:${port}/consola.html`);
 console.log(`Consulta de clases del contrato anterior (PostgreSQL real): http://localhost:${port}/api/v1/clases`);
 console.log('La clave X-API-Key está en CAPACIDAD_API_KEY dentro de .env.');
+console.log('Observabilidad: tablero Grafana en http://localhost:3001 (lectura sin login; admin con GRAFANA_ADMIN_PASSWORD de .env) y Prometheus/alertas en http://localhost:9090/alerts.');
 console.log('Administrador inicial: ejecutar npm run crear-admin y completar los datos del grupo.');
 console.log(`Capacidad de empleados operativa: POST http://localhost:${port}/api/v1/integraciones/empleados`);
 console.log('Usar X-API-Key de EMPLEADOS_API_KEY e Idempotency-Key. El origen local predeterminado es ficticio; el mock separado sigue disponible con npm run mock:empleados.');

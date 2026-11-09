@@ -372,4 +372,6 @@ La suite incluye 7 casos adicionales del endpoint operativo con el adaptador en 
 
 ## Planes y pagos manuales (contrato propio adicional)
 
+**1.2.0 (09/11/2026):** agrega `duracionMeses` a los planes (opcional al crear) y cuatro planes predeterminados. Ver ADR-021. La caja de la tienda para ADMIN (`GET /api/v1/tienda/admin/compras`) está en [openapi-tienda-socios-v1.yaml](openapi-tienda-socios-v1.yaml) 1.1.0.
+
 [openapi-membresias-v1.yaml](openapi-membresias-v1.yaml) define gestión ADMIN de planes/solicitudes/pagos y consultas del socio propietario. PostgreSQL, JWT e Idempotency-Key obligatorios para comandos. No es una pasarela ni modifica las APIs de Car Cruds/empleados. [Garantías](../adr/ADR-021-planes-pagos-membresias.md).

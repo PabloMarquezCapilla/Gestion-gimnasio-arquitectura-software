@@ -2,7 +2,7 @@
 
 **Actualización Accesos, 30/10/2026:** [ADR-019](ADR-019-accesos-mongodb-recepcion.md) implementa timeout GET a Socios, validación y reintento seguro. Un ingreso desconocido no se acepta; egreso y replay son independientes de Socios. MongoDB real fue detenido/reiniciado en prueba aislada, sin éxito ficticio ante falla. No cambia la política de otros servicios.
 
-**Estado:** timeouts, reintento interno, cancelación recuperable y detección de réplica verificados; protección completa pendiente.
+**Estado:** timeouts, reintento interno, cancelación recuperable y detección de réplica verificados. **Actualización 09/11/2026:** implementados el circuit breaker hacia FAV ([ADR-024](ADR-024-circuit-breaker-fav.md)) y el rate limiting del gateway. La caída y la lentitud del proveedor se ensayaron con alertas ([POSTMORTEM](../POSTMORTEM.md)).
 **Fecha inicial:** 12/10/2026. **Validación:** 19/10/2026.
 **Enunciado:** §2.5, página 2; §2.9, página 3; §5 D10, página 7; §6.3, página 8.
 
@@ -19,7 +19,8 @@ Una dependencia lenta o caída no debe producir reservas sin validar membresía,
 | PostgreSQL lento, bloqueo o conexión fallida | Pools independientes por servicio/instancia, máximo 20; conexión 5000 ms, `statement_timeout` 4000 ms y `lock_timeout` 2500 ms. Un fallo en la transacción no produce éxito y dispara rollback. Esos límites no constituyen un plazo global de transacción ni eliminan el impacto de una instancia física compartida. |
 | Una réplica de Clases deja de responder | NGINX usa DNS dinámico y fallos pasivos; puede haber errores durante detección. Se comprobó operación estable con la superviviente y reemplazo sin reiniciar gateway. [D12](ADR-012-balanceo-de-carga.md). |
 | Configuración/almacenamiento ausente al iniciar | Los servidores operativos exigen configuración; no convierten una caída en un mock habilitado. Memoria requiere modo explícito de desarrollo/prueba. |
-| Distribuidora | Todavía no se invoca. Tienda informa integración pendiente. Las políticas reales y el ensayo de caída requieren contrato. |
+| FAV (proveedor externo) caído o lento | Timeout de 3 s con un reintento, **circuit breaker** (3 fallos, 30 s abierto, prueba semiabierta) y caché del catálogo de 60 s con uso degradado hasta 15 min. Sin copia: 503 claro, sin catálogo inventado. Ensayado el 09/11/2026 ([POSTMORTEM](../POSTMORTEM.md)). |
+| Tráfico excesivo o abuso | El gateway limita por IP (30 r/s, ráfaga 60), el login (10/min, contra fuerza bruta) y las claves externas (10 r/s). Responde 429 `LIMITE_EXCEDIDO` con `Retry-After`. |
 | RabbitMQ | Suspensión y Outbox se conservan con broker caído. Publicación confirmada, reconexión, reentrega con Inbox y tres reintentos antes de DLQ. [D5](ADR-005-comunicacion-entre-servicios.md). |
 | MongoDB/Redis | MongoDB es la fuente de Accesos y responde fallo sin inventar ocupación. Redis prescindible cae a MongoDB, con plazo acotado e invalidación. Ensayos en ADR-019/020. |
 

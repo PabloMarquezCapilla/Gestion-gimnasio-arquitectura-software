@@ -1,7 +1,7 @@
 openapi: 3.1.1
 info:
   title: Planes, pagos manuales y membresías — PULSE CLUB
-  version: 1.1.0
+  version: 1.2.0
   description: Contrato propio adicional de Socios. No altera los contratos
     externos. Comprobante interno no fiscal; no hay pasarela ni pagos
     automáticos.
@@ -275,6 +275,13 @@ paths:
                   pattern: ^[A-Z]{3}$
                   description: Código reconocido por Intl/ICU del runtime. Importe en unidad
                     mínima de esta moneda, sin conversión ni cálculo fiscal.
+                duracionMeses:
+                  type: integer
+                  minimum: 1
+                  maximum: 36
+                  default: 1
+                  description: Desde 1.2.0, opcional. Meses que cubre el importe; el portal
+                    calcula la vigencia de la solicitud con este valor.
               required:
                 - nombre
                 - importeMinor
@@ -1681,6 +1688,12 @@ components:
           enum:
             - ACTIVO
             - INACTIVO
+        duracionMeses:
+          type: integer
+          minimum: 1
+          maximum: 36
+          description: Desde 1.2.0. Los planes predeterminados son Mensual (1),
+            Trimestral (3), Semestral (6) y Anual (12).
       required:
         - planId
         - nombre

@@ -1,0 +1,49 @@
+# Reglas de alerta del sistema (D11). Se ven en Prometheus (/alerts) y en el
+# panel "Alertas activas" del tablero de Grafana.
+groups:
+  - name: gimnasio
+    rules:
+      - alert: InstanciaCaida
+        expr: up{job=~"socios-membresias|clases-reservas|accesos-ocupacion|tienda|rabbitmq"} == 0
+        for: 30s
+        labels:
+          severidad: critica
+        annotations:
+          resumen: "{{ $labels.job }} ({{ $labels.instance }}) no responde a /metrics"
+          accion: "Revisar docker compose ps y los logs del servicio; el balanceo deriva tráfico a la otra réplica si existe."
+
+      # Objetivo de servicio: menos del 5 % de respuestas 5xx en cada servicio.
+      - alert: TasaDeErroresAlta
+        expr: |
+          sum by (job) (rate(http_errors_total[2m]))
+            / clamp_min(sum by (job) (rate(http_requests_total[2m])), 0.001) > 0.05
+        for: 2m
+        labels:
+          severidad: alta
+        annotations:
+          resumen: "{{ $labels.job }} supera el 5 % de errores 5xx ({{ $value | humanizePercentage }})"
+          accion: "Correlacionar con trace_id en los logs JSON del servicio y del gateway."
+
+      - alert: CircuitoFavAbierto
+        expr: max(tienda_fav_circuito_estado{estado="ABIERTO"}) == 1
+        labels:
+          severidad: alta
+        annotations:
+          resumen: "El circuito hacia FAV está abierto: el catálogo se sirve desde caché o responde 503"
+          accion: "Verificar disponibilidad de FAV; el circuito prueba de nuevo cada 30 s."
+
+      - alert: CatalogoFavDegradado
+        expr: sum(increase(tienda_catalogo_respuestas_total{origen="cache_degradada"}[5m])) > 0
+        labels:
+          severidad: media
+        annotations:
+          resumen: "Tienda está mostrando el catálogo de FAV desde la caché vencida"
+
+      - alert: MensajesEnDLQ
+        expr: sum by (queue) (rabbitmq_queue_messages_ready{queue=~".*\\.dlq"}) > 0
+        for: 1m
+        labels:
+          severidad: media
+        annotations:
+          resumen: "Hay {{ $value }} mensajes no procesables en {{ $labels.queue }}"
+          accion: "Revisar el motivo en los logs del consumidor antes de reprocesar."

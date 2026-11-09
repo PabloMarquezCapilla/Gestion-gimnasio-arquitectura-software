@@ -3,7 +3,7 @@ import addFormats from 'ajv-formats';
 import { SociosError } from './errors';
 
 export type ComandoGestion = 'crearPlan' | 'estadoPlan' | 'solicitar' | 'registrarPago' | 'confirmarPago' | 'rechazarSolicitud' | 'suspenderMembresia';
-export interface PlanGestion { planId: string; nombre: string; importeMinor: number; moneda: string; estado: 'ACTIVO' | 'INACTIVO' }
+export interface PlanGestion { planId: string; nombre: string; importeMinor: number; moneda: string; estado: 'ACTIVO' | 'INACTIVO'; duracionMeses: number }
 export interface SolicitudGestion {
   solicitudId: string; socioId: string; planId: string; nombrePlan: string; importeMinor: number; moneda: string;
   fechaInicio: string; fechaFin: string; estado: 'PENDIENTE' | 'CONFIRMADA' | 'RECHAZADA'; createdAt: string;
@@ -26,7 +26,9 @@ const moneda = { type: 'string', pattern: '^[A-Z]{3}$' };
 const fecha = { type: 'string', format: 'date-time' };
 function esquema(properties: Record<string, unknown>) { return ajv.compile({ type: 'object', additionalProperties: false, properties, required: Object.keys(properties) }); }
 const validadores = {
-  crearPlan: esquema({ nombre: { type: 'string', minLength: 1, maxLength: 50 }, importeMinor: importe, moneda }),
+  // duracionMeses es opcional (1 por defecto) para no romper a clientes de la versión 1.0.
+  crearPlan: ajv.compile({ type: 'object', additionalProperties: false, required: ['nombre', 'importeMinor', 'moneda'], properties: {
+    nombre: { type: 'string', minLength: 1, maxLength: 50 }, importeMinor: importe, moneda, duracionMeses: { type: 'integer', minimum: 1, maximum: 36 } } }),
   estadoPlan: esquema({ estado: { enum: ['ACTIVO', 'INACTIVO'] } }),
   solicitar: esquema({ planId: id, fechaInicio: fecha, fechaFin: fecha }),
   registrarPago: esquema({ referencia: { type: 'string', pattern: '^[A-Za-z0-9][A-Za-z0-9_-]{7,99}$' }, importeMinor: importe, moneda }),

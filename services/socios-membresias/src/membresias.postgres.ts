@@ -26,11 +26,22 @@ CREATE TABLE IF NOT EXISTS comprobantes_membresia (
  comprobante_id VARCHAR(50) PRIMARY KEY, pago_id VARCHAR(50) NOT NULL UNIQUE REFERENCES pagos_membresia(pago_id),
  membresia_id VARCHAR(50) NOT NULL UNIQUE REFERENCES membresias(membresia_id), confirmado_por VARCHAR(50) NOT NULL REFERENCES socios(socio_id), confirmado_en TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- Duración del plan: el portal calcula la vigencia de la solicitud y el informe a Car Cruds el costo mensual.
+ALTER TABLE planes_membresia ADD COLUMN IF NOT EXISTS duracion_meses INT NOT NULL DEFAULT 1 CHECK(duracion_meses BETWEEN 1 AND 36);
+-- Los planes predeterminados no los crea un administrador: creado_por NULL identifica al sistema.
+ALTER TABLE planes_membresia ALTER COLUMN creado_por DROP NOT NULL;
+-- Tarifas iniciales en centavos de ARS. No se pisan si administración ya los desactivó.
+INSERT INTO planes_membresia(plan_id,nombre,importe_minor,moneda,estado,creado_por,duracion_meses) VALUES
+ ('plan-mensual','Mensual',3000000,'ARS','ACTIVO',NULL,1),
+ ('plan-trimestral','Trimestral',8100000,'ARS','ACTIVO',NULL,3),
+ ('plan-semestral','Semestral',15300000,'ARS','ACTIVO',NULL,6),
+ ('plan-anual','Anual',28800000,'ARS','ACTIVO',NULL,12)
+ON CONFLICT (plan_id) DO NOTHING;
 CREATE TABLE IF NOT EXISTS operaciones_membresia (
  actor_id VARCHAR(50) NOT NULL REFERENCES socios(socio_id), clave VARCHAR(128) NOT NULL, contenido TEXT NOT NULL, respuesta JSONB NOT NULL, created_at TIMESTAMPTZ NOT NULL DEFAULT now(), PRIMARY KEY(actor_id,clave)
 );
 `;
-const planSelect = `SELECT plan_id AS "planId",nombre,importe_minor::text AS "importeMinor",moneda,estado FROM planes_membresia`;
+const planSelect = `SELECT plan_id AS "planId",nombre,importe_minor::text AS "importeMinor",moneda,estado,duracion_meses AS "duracionMeses" FROM planes_membresia`;
 const solicitudSelect = `SELECT s.solicitud_id AS "solicitudId",s.socio_id AS "socioId",s.plan_id AS "planId",s.nombre_plan AS "nombrePlan",
  s.importe_minor::text AS "importeMinor",s.moneda,s.fecha_inicio AS "fechaInicio",s.fecha_fin AS "fechaFin",s.estado,s.created_at AS "createdAt",
  CASE WHEN p.pago_id IS NOT NULL THEN jsonb_build_object('pagoId',p.pago_id,'referencia',p.referencia,'estado',p.estado) END AS pago,
@@ -42,7 +53,7 @@ function solicitudFila(r: Record<string, unknown>): SolicitudGestion {
 const nuevo = (prefix: string) => prefix + randomUUID();
 export class PostgresGestionMembresias implements GestionRepository {
  constructor(private pool: Pool) {}
- async planes() { return (await this.pool.query(planSelect + ' ORDER BY nombre,plan_id')).rows.map(r => ({ ...r, importeMinor: Number(r.importeMinor) })) as PlanGestion[]; }
+ async planes() { return (await this.pool.query(planSelect + ' ORDER BY duracion_meses,nombre,plan_id')).rows.map(r => ({ ...r, importeMinor: Number(r.importeMinor) })) as PlanGestion[]; }
  async socios(pagina: number, tamanio: number) { return (await this.pool.query('SELECT socio_id AS "socioId",dni,nombre,email,estado FROM socios ORDER BY socio_id LIMIT $1 OFFSET $2', [tamanio, (pagina - 1) * tamanio])).rows; }
  async solicitudes(socioId: string | undefined, pagina: number, tamanio: number) {
   return (await this.pool.query(solicitudSelect + ' WHERE ($1::text IS NULL OR s.socio_id=$1) ORDER BY s.created_at DESC,s.solicitud_id LIMIT $2 OFFSET $3', [socioId ?? null,tamanio,(pagina-1)*tamanio])).rows.map(solicitudFila);
@@ -75,7 +86,7 @@ export class PostgresGestionMembresias implements GestionRepository {
  }
  private async aplicar(c: PoolClient, actor: string, op: ComandoGestion, d: Record<string, unknown>): Promise<unknown> {
   if (op === 'crearPlan') {
-   const id = nuevo('plan-'); await c.query("INSERT INTO planes_membresia(plan_id,nombre,importe_minor,moneda,estado,creado_por) VALUES($1,$2,$3,$4,'ACTIVO',$5)",[id,d.nombre,d.importeMinor,d.moneda,actor]);
+   const id = nuevo('plan-'); await c.query("INSERT INTO planes_membresia(plan_id,nombre,importe_minor,moneda,estado,creado_por,duracion_meses) VALUES($1,$2,$3,$4,'ACTIVO',$5,$6)",[id,d.nombre,d.importeMinor,d.moneda,actor,d.duracionMeses ?? 1]);
    return (await c.query(planSelect + ' WHERE plan_id=$1',[id])).rows.map(r=>({...r,importeMinor:Number(r.importeMinor)}))[0];
   }
   if (op === 'estadoPlan') {

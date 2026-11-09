@@ -49,8 +49,9 @@ test('Planes, pagos y membresías: PostgreSQL real y HTTP entre dos instancias',
   const registrar=async(s,referencia='ref-'+randomUUID())=>{const r=await mutate('/api/v1/solicitudes/'+s.solicitudId+'/pagos',{referencia,importeMinor:s.importeMinor,moneda:s.moneda});assert.equal(r.status,201);return r.body;};
   const habilitado=async(id,fecha)=>{const r=await api(a.url,'/api/v1/socios/'+id+'/habilitacion'+(fecha?'?fecha='+encodeURIComponent(fecha):''),{token});return r.body.habilitado;};
 
-  await t.test('Base vacía: no se inventan planes ni membresía para alta administrativa',async()=>{
-   assert.deepEqual((await api(a.url,'/api/v1/planes',{token})).body.items,[]);assert.equal(await habilitado(socio.socioId),false);
+  await t.test('Base nueva: solo los cuatro planes predeterminados y ninguna membresía para alta administrativa',async()=>{
+   const predeterminados=(await api(a.url,'/api/v1/planes',{token})).body.items.map(p=>[p.planId,p.nombre,p.importeMinor,p.moneda,p.estado,p.duracionMeses]);
+   assert.deepEqual(predeterminados,[['plan-mensual','Mensual',3000000,'ARS','ACTIVO',1],['plan-trimestral','Trimestral',8100000,'ARS','ACTIVO',3],['plan-semestral','Semestral',15300000,'ARS','ACTIVO',6],['plan-anual','Anual',28800000,'ARS','ACTIVO',12]]);assert.equal(await habilitado(socio.socioId),false);
    const list=await api(a.url,'/api/v1/socios',{token});assert.equal(list.status,200);assert.ok(list.body.items.some(s=>s.socioId===socio.socioId));assert.ok(!JSON.stringify(list.body).includes('password'));
   });
   await t.test('Permisos reales: SOCIO/clave técnica/no autenticado no administran ni leen terceros',async()=>{

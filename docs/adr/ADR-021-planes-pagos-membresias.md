@@ -2,6 +2,8 @@
 
 **Actualización del 07/11/2026.** La suspensión administrativa y el flujo RabbitMQ se concretan en [D5](ADR-005-comunicacion-entre-servicios.md), con [contrato actualizado](../contracts/membresias-eventos.md) y [evidencia](../EVIDENCIA-EVENTOS-MEMBRESIA.md). Las exclusiones siguientes describen la etapa original de pagos. Reactivación e imputación mensual siguen pendientes.
 
+**Actualización del 09/11/2026.** Los planes tienen duración en meses (`duracion_meses`, 1 a 36; 1 por defecto para los existentes). La base se inicializa con cuatro planes predeterminados en ARS: Mensual $30.000, Trimestral $81.000, Semestral $153.000 y Anual $288.000. Tienen `creado_por` NULL (sistema) y no se pisan si administración los desactiva. El portal calcula la vigencia de la solicitud a partir de la duración, en vez de pedir fechas a mano. El contrato pasa a [1.2.0](../contracts/openapi-membresias-v1.yaml), compatible: el campo es nuevo y opcional al crear.
+
 **Estado:** implementado para el flujo administrativo definido, 30/10/2026. Amplía D3/D4 y la autenticación de ADR-016; no cambia contratos externos, FIFO, MongoDB ni Redis.
 
 ## Fuentes y reglas confirmadas

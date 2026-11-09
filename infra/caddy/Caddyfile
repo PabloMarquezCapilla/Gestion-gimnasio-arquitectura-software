@@ -1,0 +1,13 @@
+# Entrada pública del despliegue en VM: HTTPS automático (Let's Encrypt) delante
+# del gateway NGINX. El gateway sigue siendo el único punto de entrada a la API:
+# Caddy solo termina TLS y agrega X-Forwarded-For con la IP real del cliente.
+{$DOMINIO} {
+	encode gzip
+	reverse_proxy gateway:80
+}
+
+# Tablero de observabilidad (lectura anónima; editar requiere el admin de Grafana).
+grafana.{$DOMINIO} {
+	encode gzip
+	reverse_proxy grafana:3000
+}

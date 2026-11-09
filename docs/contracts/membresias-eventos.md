@@ -23,6 +23,8 @@ Misma clave y operación recupera el resultado original. Otra clave para la mism
 
 ## Contrato del evento
 
+**Contrato formal del canal:** [AsyncAPI 3.0, versión 1.0.0](asyncapi-membresias-v1.yaml). Describe exchange, routing key, cola, DLQ, operaciones de publicación y consumo, headers de reintento y ejemplo. Validado con `@asyncapi/cli validate`.
+
 [JSON Schema 1.0.0](membresia-actualizada-v1.schema.json) define `MembresiaActualizada`, `schemaVersion=1` y cambio `SUSPENSION`. Incluye ID único, socio/membresía/actor, instante y vigencia. El alcance actual produce avisos de suspensión. Una futura reactivación exige evolución compatible/versionada y cambio del consumidor.
 
 Socios posee `membresias_outbox`. Clases posee `membresias_inbox` y `membresias_suspendidas`. Las migraciones son aditivas. El consumidor conserva reservas históricas y bloquea escrituras posteriores al evento con evaluaciones antiguas. Las promociones siguen usando la espera FIFO existente. El período de suspensión no amplía fechas ni modifica cobros.

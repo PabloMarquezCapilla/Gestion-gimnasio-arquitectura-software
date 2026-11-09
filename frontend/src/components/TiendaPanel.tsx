@@ -140,7 +140,8 @@ export function TiendaPanel() {
         <ul className="grid gap-3 sm:grid-cols-2">
           {catalogo?.items.map(producto => (
             <li key={producto.productoId} className="rounded-lg bg-surface-container p-3 space-y-2">
-              {producto.fotoUrl && <img src={producto.fotoUrl} alt="" className="h-32 w-full rounded-md object-cover" loading="lazy" />}
+              {producto.fotoUrl && <img src={producto.fotoUrl} alt="" className="h-32 w-full rounded-md object-cover" loading="lazy"
+                onError={e => { e.currentTarget.style.display = 'none'; }} />}
               <div>
                 <h3 className="text-sm font-semibold">{producto.nombre}</h3>
                 <p className="text-xs text-on-surface-variant">{producto.categoria}{producto.descripcion ? ' · ' + producto.descripcion : ''}</p>

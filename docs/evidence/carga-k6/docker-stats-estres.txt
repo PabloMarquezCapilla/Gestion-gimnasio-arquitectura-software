@@ -1,0 +1,8 @@
+gimnasio-e2-gateway-1 7.65%|gimnasio-e2-clases-reservas-1 13.53%|gimnasio-e2-clases-reservas-2 13.86%|gimnasio-e2-postgres-1 24.63%|
+gimnasio-e2-gateway-1 17.82%|gimnasio-e2-clases-reservas-1 51.27%|gimnasio-e2-clases-reservas-2 84.27%|gimnasio-e2-postgres-1 81.24%|
+gimnasio-e2-gateway-1 29.00%|gimnasio-e2-clases-reservas-1 81.65%|gimnasio-e2-clases-reservas-2 53.54%|gimnasio-e2-postgres-1 107.09%|
+gimnasio-e2-gateway-1 35.59%|gimnasio-e2-clases-reservas-1 86.74%|gimnasio-e2-clases-reservas-2 88.11%|gimnasio-e2-postgres-1 256.64%|
+gimnasio-e2-gateway-1 38.71%|gimnasio-e2-clases-reservas-1 94.26%|gimnasio-e2-clases-reservas-2 83.13%|gimnasio-e2-postgres-1 244.45%|
+gimnasio-e2-gateway-1 38.92%|gimnasio-e2-clases-reservas-1 99.80%|gimnasio-e2-clases-reservas-2 102.66%|gimnasio-e2-postgres-1 283.79%|
+gimnasio-e2-gateway-1 0.00%|gimnasio-e2-clases-reservas-1 0.23%|gimnasio-e2-clases-reservas-2 0.13%|gimnasio-e2-postgres-1 0.56%|
+gimnasio-e2-gateway-1 0.00%|gimnasio-e2-clases-reservas-1 0.01%|gimnasio-e2-clases-reservas-2 0.16%|gimnasio-e2-postgres-1 0.10%|

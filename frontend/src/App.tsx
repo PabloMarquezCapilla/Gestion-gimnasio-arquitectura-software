@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef } from 'react';
 import type { AuthResponse, AuthState } from './types/auth';
-import { setApiSession } from './services/api';
+import { apiAccesosOcupacion, apiAccesosSedes, setApiSession } from './services/api';
 import { AuthModal } from './components/AuthModal';
 import { UserPanel } from './components/UserPanel';
 import { CarCrudsPanel } from './components/CarCrudsPanel';
@@ -8,6 +8,9 @@ import { MembresiasPanel } from './components/MembresiasPanel';
 import { AccesosPanel } from './components/AccesosPanel';
 import { TiendaStockPanel } from './components/TiendaStockPanel';
 import { ClasesPanel } from './components/ClasesPanel';
+import { PanelPrincipal } from './components/PanelPrincipal';
+import { ReportesPanel } from './components/ReportesPanel';
+import { ConfiguracionPanel } from './components/ConfiguracionPanel';
 
 // --- Interfaces ---
 export interface Member {
@@ -39,7 +42,9 @@ export default function App() {
   const [authModalInitialMode, setAuthModalInitialMode] = useState<'login' | 'register'>('login');
 
   // --- Navigation & Filter States ---
-  const [activeNav, setActiveNav] = useState('socios-y-membresias');
+  const [activeNav, setActiveNav] = useState('panel-principal');
+  // Aforo total de las sedes para el pie de la barra lateral (solo ADMIN puede consultarlo).
+  const [aforo, setAforo] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const searchInputRef = useRef<HTMLInputElement>(null);
 
@@ -92,6 +97,21 @@ export default function App() {
       clearSession();
     }
   }, [auth.token]);
+
+  useEffect(() => {
+    if (!auth.token || currentUser?.rol !== 'ADMIN' || viewMode !== 'admin') return;
+    let activo = true;
+    const consultar = async () => {
+      try {
+        const sedes = (await apiAccesosSedes()).items;
+        const valores = await Promise.all(sedes.map(s => apiAccesosOcupacion(s.sedeId)));
+        if (activo) setAforo(valores.reduce((t, v) => t + v.ocupacion, 0));
+      } catch { if (activo) setAforo(null); }
+    };
+    void consultar();
+    const timer = window.setInterval(() => { void consultar(); }, 30000);
+    return () => { activo = false; window.clearInterval(timer); };
+  }, [auth.token, currentUser?.rol, viewMode]);
 
   const handleOpenLogin = () => {
     setAuthModalInitialMode('login');
@@ -222,8 +242,6 @@ export default function App() {
               return (
                 <button
                   key={item.path}
-                  disabled={!['socios-y-membresias', 'planes-y-tarifas', 'empleados-car-cruds', 'accesos', 'tienda-stock', 'clases-y-turnos'].includes(item.path)}
-                  title={!['socios-y-membresias', 'planes-y-tarifas', 'empleados-car-cruds', 'accesos', 'tienda-stock', 'clases-y-turnos'].includes(item.path) ? 'Sección pendiente de integración.' : undefined}
                   onClick={() => setActiveNav(item.path)}
                   className={`flex items-center gap-2.5 px-3 py-1.5 rounded-lg transition-all text-xs font-semibold w-full text-left ${
                     isActive
@@ -248,7 +266,7 @@ export default function App() {
               <span className="material-symbols-outlined text-on-surface-variant text-[16px]">fitness_center</span>
               <span className="font-label-code text-[11px] text-on-surface-variant">Aforo Sala</span>
             </div>
-            <span className="font-label-code text-xs text-on-surface font-bold">Pendiente</span>
+            <span className="font-label-code text-xs text-on-surface font-bold">{aforo === null ? '—' : aforo + (aforo === 1 ? ' persona' : ' personas')}</span>
           </div>
           <div className="text-center">
             <span className="font-label-code text-[10px] text-on-surface-variant/70">PULSE CLUB</span>
@@ -303,7 +321,7 @@ export default function App() {
 
             {/* Primary Action Button (Volt Lime + Dark Text) */}
             <button
-              onClick={() => setActiveNav('socios-y-membresias')} title="Gestionar solicitudes y pagos"
+              onClick={() => setActiveNav('cobros-y-caja')} title="Ir a Cobros & Caja"
               className="flex items-center gap-1 bg-primary text-on-primary px-3 py-1 rounded-lg text-xs font-bold hover:bg-primary-hover shadow-sm transition-all active:scale-95"
               type="button"
             >
@@ -312,8 +330,8 @@ export default function App() {
             </button>
 
             <button
-              aria-label="Notificaciones de caja"
-              disabled title="La conciliación está pendiente de implementación."
+              aria-label="Ir a cobros pendientes"
+              onClick={() => setActiveNav('cobros-y-caja')} title="Cobros pendientes"
               className="relative p-1 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors"
               type="button"
             >
@@ -369,7 +387,7 @@ export default function App() {
         {/* --- MAIN BODY VIEWPORT --- */}
         <main className="w-full pt-14 bg-background px-4 sm:px-6 min-h-screen">
           {toastView}
-          {activeNav === 'clases-y-turnos' ? <ClasesPanel key={currentUser.socioId} actorId={currentUser.socioId} /> : activeNav === 'tienda-stock' ? <TiendaStockPanel actorId={currentUser.socioId} /> : activeNav === 'accesos' ? <AccesosPanel actorId={currentUser.socioId} /> : activeNav === 'empleados-car-cruds' ? <CarCrudsPanel onNuevoSocio={handleOpenRegister} /> : <MembresiasPanel key={currentUser.socioId} actorId={currentUser.socioId} onNuevoSocio={handleOpenRegister} filtro={searchQuery} />}
+          {activeNav === 'panel-principal' ? <PanelPrincipal onIr={setActiveNav} /> : activeNav === 'reportes' ? <ReportesPanel /> : activeNav === 'configuracion' ? <ConfiguracionPanel usuario={currentUser} /> : activeNav === 'planes-y-tarifas' ? <MembresiasPanel key={'planes-' + currentUser.socioId} actorId={currentUser.socioId} onNuevoSocio={handleOpenRegister} seccion="planes" /> : activeNav === 'cobros-y-caja' ? <MembresiasPanel key={'cobros-' + currentUser.socioId} actorId={currentUser.socioId} onNuevoSocio={handleOpenRegister} seccion="cobros" /> : activeNav === 'clases-y-turnos' ? <ClasesPanel key={currentUser.socioId} actorId={currentUser.socioId} /> : activeNav === 'tienda-stock' ? <TiendaStockPanel actorId={currentUser.socioId} /> : activeNav === 'accesos' ? <AccesosPanel actorId={currentUser.socioId} /> : activeNav === 'empleados-car-cruds' ? <CarCrudsPanel onNuevoSocio={handleOpenRegister} /> : <MembresiasPanel key={currentUser.socioId} actorId={currentUser.socioId} onNuevoSocio={handleOpenRegister} filtro={searchQuery} />}
 
         </main>
       </div>

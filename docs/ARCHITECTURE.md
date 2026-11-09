@@ -1,6 +1,6 @@
 # Arquitectura del sistema
 
-**Estado documental.** Revisión al 08/11/2026, con búsqueda en API/portal, publicación/edición ADMIN y suspensión mediante eventos verificadas localmente. Car Cruds dispone de lecturas, vinculación y envío mensual manual con persistencia e historial; conexión operativa y prueba conjunta pendientes. Tienda implementa stock/reposiciones para FAV y ventas administrativas con PostgreSQL; consumo del catálogo, publicación y prueba conjunta pendientes. El POST anterior de empleados conserva su implementación.
+**Estado documental.** Revisión al 09/11/2026: Tienda consume el catálogo de FAV y los socios compran (ADR-023/024); el gateway valida JWT y limita tráfico (ADR-025); hay Prometheus, Grafana y alertas (D11); se agregaron test de carga (D13) y despliegue en VM preparado (ADR-026). El texto que sigue es la revisión al 08/11/2026, con búsqueda en API/portal, publicación/edición ADMIN y suspensión mediante eventos verificadas localmente. Car Cruds dispone de lecturas, vinculación y envío mensual manual con persistencia e historial; conexión operativa y prueba conjunta pendientes. Tienda implementa stock/reposiciones para FAV y ventas administrativas con PostgreSQL; consumo del catálogo, publicación y prueba conjunta pendientes. El POST anterior de empleados conserva su implementación.
 
 **Enunciado:** §3, página 4; §4.1, páginas 5–6; §5, páginas 6–7; §6.2–6.3, página 8. Los patrones internos y el balanceo corresponden a §2.1 y §2.3, página 2.
 
@@ -11,11 +11,11 @@
 | **Socios y Membresías** | Socios, planes, membresías, pagos, comprobantes, referencias externas, solicitudes, vínculos Car Cruds, auditoría y registro de fotografías/envíos. | Capas; JWT, altas, habilitación, lecturas/vinculación/envío manual Car Cruds para ADMIN y POST anterior. PostgreSQL: `socios`, `membresias`, `solicitudes_membresia`, `empleados_externos`, `altas_empleados_idempotencia`, `car_cruds_vinculos`, `car_cruds_vinculos_historial`, `car_cruds_evidencias_series` y `car_cruds_evidencias`. Planes, solicitudes y pagos manuales con comprobantes transaccionales (ADR-021); conexión externa conjunta pendiente. |
 | **Clases y Reservas** | Clases, capacidad, reservas, espera, operaciones administrativas e índice de búsqueda derivado. | Hexagonal. Publicación/edición ADMIN con sedes de Accesos, versiones y reintentos durables. Reservas/FIFO, retiro voluntario y suspensión mediante Inbox. Búsqueda FTS en API y portal. PostgreSQL con `clases`, `clases_operaciones`, `reservas`, `lista_espera` e índice GIN. Reconstrucción, recorrido propio y retiro verificados localmente. |
 | **Accesos y Ocupación** | Sedes, intentos y movimientos de acceso, presencias y ocupación/caché derivadas. | Capas; recepción ADMIN, ingresos/egresos, historial y ocupación con transacciones MongoDB. Cache-aside Redis sobre ocupación, invalidación y TTL; ver ADR-019 y ADR-020. |
-| **Tienda** | Consultar catálogo/disponibilidad de FAV y administrar el stock físico de una única tienda del gimnasio: reposiciones, ventas e idempotencia. FAV conserva su catálogo y stock de distribuidora. | Capas; API FAV con clave técnica, consulta/ventas ADMIN con JWT y panel. PostgreSQL 17, base `tienda`: `tienda_stock`, `tienda_reposiciones`, `tienda_ventas`, `tienda_operaciones`. El catálogo externo continúa en `503 INTEGRACION_PENDIENTE`; cliente FAV y conexión conjunta pendientes (ADR-022). |
+| **Tienda** | Consultar catálogo/disponibilidad de FAV y administrar el stock físico de una única tienda del gimnasio: reposiciones, ventas e idempotencia. FAV conserva su catálogo y stock de distribuidora. | Capas; API FAV con clave técnica, consulta/ventas ADMIN con JWT y panel. PostgreSQL 17, base `tienda`: `tienda_stock`, `tienda_reposiciones`, `tienda_ventas`, `tienda_operaciones`. Además consume el catálogo de FAV 1.1.0 (cliente con circuit breaker y caché) y registra compras de socios en `tienda_compras`/`tienda_compra_items` (ADR-023/024). Falta la conexión conjunta con FAV. |
 
 Socios, Clases y Tienda usan bases y usuarios PostgreSQL separados en una instancia local compartida; no hay acceso de un servicio a tablas ajenas. MongoDB tiene un replica set de un solo nodo, sin redundancia. El diseño de motores y restricciones se justifica en [D3](adr/ADR-003-persistencia.md); los límites vigentes, en [D1](adr/ADR-022-tienda-y-consignaciones-fav.md). El inicializador incorpora base y usuario de Tienda sin recrear volúmenes ni rotar credenciales existentes.
 
-NGINX sirve el portal React y enruta las solicitudes por un único puerto local (`8080` o `GATEWAY_PORT`). La autenticación y los permisos se validan en los servicios. Las llamadas internas y las salidas al proveedor no pasan por nuestro gateway.
+NGINX sirve el portal React y enruta las solicitudes por un único puerto local (`8080` o `GATEWAY_PORT`). Desde el 09/11/2026 el gateway valida firma y vigencia del JWT en las rutas del portal (njs) y aplica rate limiting por IP, por login y por clave externa ([ADR-025](adr/ADR-025-autenticacion-y-control-de-trafico-en-gateway.md)). Los permisos por rol se siguen validando en los servicios. En el despliegue, Caddy termina HTTPS delante del gateway ([ADR-026](adr/ADR-026-despliegue-en-vm.md)). Las llamadas internas y las salidas al proveedor no pasan por nuestro gateway.
 
 ## Arquitectura interna e identidad
 
@@ -114,7 +114,7 @@ NGINX distribuye con `least_conn` entre dos instancias de Clases; usa DNS dinám
 
 Socios y Clases emiten logs de negocio JSON con `trace_id`, `span_id` y padre. Clases propaga su contexto a las dos verificaciones HTTP de Socios; los servicios devuelven identificadores de traza. `npm run test:postgres` exige correlación, relación padre/hijo y reserva persistida entre instancias HTTP con puertos distintos. La demostración con `inject` es complementaria. Los campos de correlación entrantes de NGINX pueden estar vacíos si el cliente no los envía; no se afirma cobertura de todos los logs de infraestructura.
 
-Socios y Clases exponen contadores HTTP/errores, uptime y conexiones ocupadas del pool; Accesos agrega métricas de dependencia y caché e histogramas de duración y antigüedad. Faltan recolector, tablero, alerta y exportación a un backend de trazas. La estrategia y objetivos propuestos están en [D11](adr/ADR-011-observabilidad.md); carga local y costos ilustrativos, en [D13](adr/ADR-013-capacidad-y-costos.md).
+Socios y Clases exponen contadores HTTP/errores, uptime y conexiones ocupadas del pool; Accesos agrega métricas de dependencia y caché e histogramas de duración y antigüedad. Prometheus recolecta todas las instancias (las dos réplicas de Clases por separado) y RabbitMQ. Grafana muestra el tablero **Gimnasio · Estado general**, incluido el reparto del balanceo por réplica, y hay 5 reglas de alerta. Falta la exportación a un backend de trazas. La estrategia y objetivos propuestos están en [D11](adr/ADR-011-observabilidad.md); carga local y costos ilustrativos, en [D13](adr/ADR-013-capacidad-y-costos.md).
 
 ## Diagrama de contexto (C4 - Nivel 1)
 
@@ -224,7 +224,7 @@ sequenceDiagram
 - **Mensajería.** Suspensión, Outbox/RabbitMQ/Inbox, cancelación y DLQ implementados. Consistencia eventual hasta consumo, broker único y revisión manual de DLQ. Reactivación requiere ampliar evento y proyección.
 - **Disponibilidad:** un gateway, una instancia PostgreSQL y MongoDB de un nodo. Dos réplicas HTTP no eliminan esos puntos de falla ni los errores durante detección. No hay despliegue multizona. El circuit breaker cubre solo la dependencia externa de FAV ([ADR-024](adr/ADR-024-circuit-breaker-fav.md)); no hay límite de concurrencia.
 - **Identidad:** Clases y Tienda validan el JWT hasta su vencimiento; no hay revocación inmediata ni refresh tokens. La configuración actual del POST admite un origen externo por entorno.
-- **Operación:** faltan tableros/alertas, prueba de carga sostenida y presupuesto definitivo. Las mediciones locales no acreditan SLO ni capacidad máxima. El postmortem registra un ensayo local, no la jornada completa con proveedor.
+- **Operación:** hay tablero, alertas y prueba de carga ([EVIDENCIA-CARGA](EVIDENCIA-CARGA.md)). No hay notificación externa de alertas, exportador de spans ni backups automáticos. El despliegue es una sola VM (ADR-026). Las mediciones son de una PC local, no de la VM. Los ensayos de caída usan el mock de FAV, no la jornada conjunta.
 - **Datos de demostración:** clases con fechas fijas y cuentas ficticias; los datos persistidos pueden diferir de los iniciales. No hay gestión versionada completa de migraciones ni política de purga de idempotencia.
 
 Estas limitaciones mantienen visibles los requisitos generales y de la presentación final pendientes (§6, páginas 8–9); no amplían el alcance funcional acordado.
@@ -257,6 +257,10 @@ Estas limitaciones mantienen visibles los requisitos generales y de la presentac
 | D1/D2/D3/D4, concreción | Accesos con MongoDB y recepción | Movimientos, presencias, ocupación e idempotencia implementados | [ADR-019](adr/ADR-019-accesos-mongodb-recepcion.md) |
 | D7, concreción | Caché de ocupación en Redis | Implementada y medida; concreta ADR-007 | [ADR-020](adr/ADR-020-cache-ocupacion-redis.md) |
 | Adicional | Planes y pagos manuales | Solicitudes, confirmación transaccional y comprobantes implementados | [ADR-021](adr/ADR-021-planes-pagos-membresias.md) |
+| D9, concreción | Compra de socios con catálogo de FAV | Implementada; reemplaza parcialmente ADR-022/009 | [ADR-023](adr/ADR-023-compra-de-socios-en-tienda.md) |
+| D10, concreción | Circuit breaker y caché degradada hacia FAV | Implementado y ensayado | [ADR-024](adr/ADR-024-circuit-breaker-fav.md) |
+| Adicional | Autenticación y control de tráfico en el gateway | Implementado y verificado | [ADR-025](adr/ADR-025-autenticacion-y-control-de-trafico-en-gateway.md) |
+| Adicional | Despliegue en VM con Caddy | Preparado; falta crear la VM | [ADR-026](adr/ADR-026-despliegue-en-vm.md) |
 
 ### Caché de ocupación (etapa 2)
 

@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { Pool, PoolClient } from 'pg';
 import {
-  CompraEntrada, CompraRegistrada, ItemCompra, PaginaCompras, ReposicionEntrada, ReposicionRecibida, StockItem,
+  CompraDeSocio, CompraEntrada, CompraRegistrada, ItemCompra, PaginaCompras, PaginaComprasAdmin, ReposicionEntrada, ReposicionRecibida, StockItem,
   TiendaError, TiendaStockRepository, VentaEntrada, VentaRecibida,
 } from './stock';
 
@@ -245,6 +245,18 @@ export class PostgresTiendaStockRepository implements TiendaStockRepository {
     return {
       pagina, tamanio, total: seguro(total.rows[0].total),
       items: filas.rows.map(row => { verificarIdentidad(row.socio_json, socioJson); return JSON.parse(row.respuesta) as CompraRegistrada; }),
+    };
+  }
+
+  async listarComprasAdmin(pagina: number, tamanio: number): Promise<PaginaComprasAdmin> {
+    const [filas, resumen] = await Promise.all([
+      this.pool.query<{ socio_json: string; respuesta: string }>(`SELECT socio_json, respuesta FROM tienda_compras
+        ORDER BY created_at DESC, compra_id LIMIT $1 OFFSET $2`, [tamanio, (pagina - 1) * tamanio]),
+      this.pool.query<{ total: string; suma: string }>("SELECT count(*)::text AS total, COALESCE(sum(total_minor),0)::text AS suma FROM tienda_compras"),
+    ]);
+    return {
+      pagina, tamanio, total: seguro(resumen.rows[0].total), totalMinor: seguro(resumen.rows[0].suma),
+      items: filas.rows.map(row => ({ ...(JSON.parse(row.respuesta) as CompraRegistrada), socioId: JSON.parse(row.socio_json) as string }) as CompraDeSocio),
     };
   }
 

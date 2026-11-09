@@ -44,6 +44,8 @@ export interface CompraRegistrada {
   creadaEn: string;
 }
 export interface PaginaCompras { pagina: number; tamanio: number; total: number; items: CompraRegistrada[] }
+export interface CompraDeSocio extends CompraRegistrada { socioId: string }
+export interface PaginaComprasAdmin { pagina: number; tamanio: number; total: number; totalMinor: number; items: CompraDeSocio[] }
 export interface PrecioCompra { nombre: string; talle: string; color: string; precioMinor: number }
 
 export interface TiendaStockRepository {
@@ -53,6 +55,8 @@ export interface TiendaStockRepository {
   buscarCompra(socioId: string, clave: string, datos: CompraEntrada): Promise<CompraRegistrada | undefined>;
   registrarCompra(socioId: string, clave: string, datos: CompraEntrada, items: ItemCompra[], creadaEn: Date): Promise<CompraRegistrada>;
   listarCompras(socioId: string, pagina: number, tamanio: number): Promise<PaginaCompras>;
+  // Caja: compras de todos los socios, recientes primero; totalMinor suma todas, no solo la página.
+  listarComprasAdmin(pagina: number, tamanio: number): Promise<PaginaComprasAdmin>;
   comprobarSalud(): Promise<void>;
 }
 
@@ -151,5 +155,9 @@ export class TiendaStockService {
   async compras(socioId: string, pagina: number, tamanio: number): Promise<PaginaCompras> {
     if (!identificador(socioId)) throw new TiendaError(401, 'NO_AUTENTICADO', 'Se requiere un socio autenticado.');
     return this.repository.listarCompras(socioId, pagina, tamanio);
+  }
+
+  async comprasAdmin(pagina: number, tamanio: number): Promise<PaginaComprasAdmin> {
+    return this.repository.listarComprasAdmin(pagina, tamanio);
   }
 }

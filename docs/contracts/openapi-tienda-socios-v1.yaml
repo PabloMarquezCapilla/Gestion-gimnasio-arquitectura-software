@@ -1,7 +1,7 @@
 openapi: 3.1.1
 info:
   title: Tienda del gimnasio para socios (catálogo FAV y compras)
-  version: 1.0.0
+  version: 1.1.0
   description: >-
     API interna del portal, publicada por el gateway. El catálogo combina los
     productos de FAV (contrato catalogo-pedidos 1.1.0, consumido por Tienda) con
@@ -102,6 +102,46 @@ paths:
                   tamanio: { type: integer, minimum: 1 }
                   total: { type: integer, minimum: 0 }
                   items: { type: array, items: { $ref: '#/components/schemas/Compra' } }
+        '400': { $ref: '#/components/responses/Error' }
+        '401': { $ref: '#/components/responses/Error' }
+        '403': { $ref: '#/components/responses/Error' }
+  /api/v1/tienda/admin/compras:
+    get:
+      operationId: listarComprasCaja
+      summary: Caja — compras de todos los socios (solo ADMIN)
+      description: >-
+        Desde 1.1.0. Recientes primero. totalMinor suma todas las compras registradas,
+        no solo la página. Las compras se cobran y entregan en el mostrador.
+      parameters:
+        - { name: pagina, in: query, schema: { type: integer, minimum: 1, maximum: 10000, default: 1 } }
+        - { name: tamanio, in: query, schema: { type: integer, minimum: 1, maximum: 100, default: 20 } }
+      responses:
+        '200':
+          description: Página de compras con el socio de cada una.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [pagina, tamanio, total, totalMinor, items]
+                properties:
+                  pagina: { type: integer, minimum: 1 }
+                  tamanio: { type: integer, minimum: 1 }
+                  total: { type: integer, minimum: 0 }
+                  totalMinor: { type: integer, minimum: 0 }
+                  items:
+                    type: array
+                    items:
+                      type: object
+                      required: [compraId, estado, items, totalMinor, currency, creadaEn, socioId]
+                      properties:
+                        socioId: { type: string }
+                        compraId: { type: string, format: uuid }
+                        estado: { const: REGISTRADA }
+                        totalMinor: { type: integer, minimum: 0 }
+                        currency: { const: ARS }
+                        creadaEn: { type: string, format: date-time }
+                        items: { $ref: '#/components/schemas/Compra/properties/items' }
         '400': { $ref: '#/components/responses/Error' }
         '401': { $ref: '#/components/responses/Error' }
         '403': { $ref: '#/components/responses/Error' }

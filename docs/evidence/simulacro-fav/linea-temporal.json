@@ -1,0 +1,188 @@
+[
+  {
+    "t": "+0.2s",
+    "hora": "2026-11-09T21:21:55.427Z",
+    "evento": "Preparación: FAV repone 5 remeras",
+    "status": 201
+  },
+  {
+    "t": "+0.2s",
+    "hora": "2026-11-09T21:21:55.451Z",
+    "evento": "1. FAV normal: catálogo",
+    "status": 200,
+    "ms": 22,
+    "origen": "FAV",
+    "productos": 2
+  },
+  {
+    "t": "+0.2s",
+    "hora": "2026-11-09T21:21:55.455Z",
+    "evento": "   métricas",
+    "circuito": "CERRADO",
+    "consultasFav": 5,
+    "fallosFav": 3,
+    "rechazosCircuito": 0
+  },
+  {
+    "t": "+0.2s",
+    "hora": "2026-11-09T21:21:55.457Z",
+    "evento": "2. INYECCIÓN: FAV responde 503 a todo"
+  },
+  {
+    "t": "+0.2s",
+    "hora": "2026-11-09T21:21:55.463Z",
+    "evento": "   catálogo dentro del TTL (60 s)",
+    "status": 200,
+    "ms": 5,
+    "origen": "FAV",
+    "productos": 2
+  },
+  {
+    "t": "+0.2s",
+    "hora": "2026-11-09T21:21:55.463Z",
+    "evento": "   esperando que venza la caché fresca (65 s)…"
+  },
+  {
+    "t": "+65.3s",
+    "hora": "2026-11-09T21:23:00.604Z",
+    "evento": "3. catálogo con FAV caído, intento 1",
+    "status": 200,
+    "ms": 133,
+    "origen": "CACHE_DEGRADADA",
+    "productos": 2
+  },
+  {
+    "t": "+65.5s",
+    "hora": "2026-11-09T21:23:00.732Z",
+    "evento": "3. catálogo con FAV caído, intento 2",
+    "status": 200,
+    "ms": 129,
+    "origen": "CACHE_DEGRADADA",
+    "productos": 2
+  },
+  {
+    "t": "+65.6s",
+    "hora": "2026-11-09T21:23:00.859Z",
+    "evento": "3. catálogo con FAV caído, intento 3",
+    "status": 200,
+    "ms": 126,
+    "origen": "CACHE_DEGRADADA",
+    "productos": 2
+  },
+  {
+    "t": "+65.6s",
+    "hora": "2026-11-09T21:23:00.864Z",
+    "evento": "3. catálogo con FAV caído, intento 4",
+    "status": 200,
+    "ms": 5,
+    "origen": "CACHE_DEGRADADA",
+    "productos": 2
+  },
+  {
+    "t": "+65.6s",
+    "hora": "2026-11-09T21:23:00.866Z",
+    "evento": "   métricas",
+    "circuito": "ABIERTO",
+    "consultasFav": 8,
+    "fallosFav": 6,
+    "rechazosCircuito": 1
+  },
+  {
+    "t": "+65.8s",
+    "hora": "2026-11-09T21:23:01.110Z",
+    "evento": "4. compra durante la caída (precio de caché)",
+    "status": 201,
+    "ms": 243,
+    "resultado": "REGISTRADA",
+    "totalMinor": 1500000
+  },
+  {
+    "t": "+65.8s",
+    "hora": "2026-11-09T21:23:01.114Z",
+    "evento": "   reintento de la misma compra",
+    "status": 201,
+    "ms": 4,
+    "resultado": "REGISTRADA",
+    "totalMinor": 1500000
+  },
+  {
+    "t": "+90.9s",
+    "hora": "2026-11-09T21:23:26.203Z",
+    "evento": "5. alertas en Prometheus (detección)",
+    "alertas": [
+      "CircuitoFavAbierto:firing",
+      "CatalogoFavDegradado:firing"
+    ]
+  },
+  {
+    "t": "+90.9s",
+    "hora": "2026-11-09T21:23:26.203Z",
+    "evento": "6. reinicio de Tienda sin caché con FAV caído"
+  },
+  {
+    "t": "+98.2s",
+    "hora": "2026-11-09T21:23:33.451Z",
+    "evento": "   catálogo sin copia válida",
+    "status": 503,
+    "ms": 172,
+    "origen": "PROVEEDOR_NO_DISPONIBLE"
+  },
+  {
+    "t": "+98.3s",
+    "hora": "2026-11-09T21:23:33.563Z",
+    "evento": "   compra nueva sin catálogo",
+    "status": 503,
+    "ms": 111,
+    "resultado": "PROVEEDOR_NO_DISPONIBLE"
+  },
+  {
+    "t": "+98.3s",
+    "hora": "2026-11-09T21:23:33.566Z",
+    "evento": "7. INYECCIÓN: FAV lento (5 s > presupuesto de 3 s)"
+  },
+  {
+    "t": "+132.3s",
+    "hora": "2026-11-09T21:24:07.588Z",
+    "evento": "   catálogo (corta por timeout)",
+    "status": 503,
+    "ms": 3011,
+    "origen": "PROVEEDOR_NO_DISPONIBLE"
+  },
+  {
+    "t": "+132.3s",
+    "hora": "2026-11-09T21:24:07.591Z",
+    "evento": "8. RECUPERACIÓN: FAV vuelve a responder"
+  },
+  {
+    "t": "+132.3s",
+    "hora": "2026-11-09T21:24:07.591Z",
+    "evento": "   esperando la ventana del circuito (31 s)…"
+  },
+  {
+    "t": "+163.3s",
+    "hora": "2026-11-09T21:24:38.624Z",
+    "evento": "   catálogo (prueba semiabierta)",
+    "status": 200,
+    "ms": 31,
+    "origen": "FAV",
+    "productos": 2
+  },
+  {
+    "t": "+163.4s",
+    "hora": "2026-11-09T21:24:38.629Z",
+    "evento": "   métricas",
+    "circuito": "CERRADO",
+    "consultasFav": 4,
+    "fallosFav": 3,
+    "rechazosCircuito": 0
+  },
+  {
+    "t": "+188.4s",
+    "hora": "2026-11-09T21:25:03.645Z",
+    "evento": "9. alertas después de la recuperación",
+    "alertas": [
+      "TasaDeErroresAlta:pending",
+      "CatalogoFavDegradado:firing"
+    ]
+  }
+]

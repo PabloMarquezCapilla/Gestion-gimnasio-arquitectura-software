@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import type { AuthUser, ClassSession, UserReservation } from '../types/auth';
 import { ApiError, apiBuscarClases, apiObtenerClasesYReservas, apiObtenerSocio, apiReservarClase, apiUnirseEspera, apiCancelarReserva, apiRetirarEspera } from '../services/api';
 import type { FiltrosCatalogo, OrdenCatalogo } from '../services/api';
-import { MisSolicitudes } from './MembresiasPanel';
+import { MisSolicitudes, PlanesDisponibles } from './MembresiasPanel';
 import { TiendaPanel } from './TiendaPanel';
 
 interface UserPanelProps {
@@ -35,6 +35,16 @@ export const UserPanel: React.FC<UserPanelProps> = ({ user, onLogout, showToast,
   const [classes, setClasses] = useState<ClassSession[]>([]);
   const [reservations, setReservations] = useState<UserReservation[]>([]);
   const [activeTab, setActiveTab] = useState<'clases' | 'mis-reservas' | 'membresia' | 'tienda'>('clases');
+  const [verCredencial, setVerCredencial] = useState(false);
+  useEffect(() => {
+    if (!verCredencial) return;
+    const cerrar = (e: KeyboardEvent | MouseEvent) => {
+      if (e instanceof KeyboardEvent ? e.key === 'Escape' : !(e.target as Element).closest?.('[data-credencial]')) setVerCredencial(false);
+    };
+    document.addEventListener('keydown', cerrar);
+    document.addEventListener('mousedown', cerrar);
+    return () => { document.removeEventListener('keydown', cerrar); document.removeEventListener('mousedown', cerrar); };
+  }, [verCredencial]);
   const [formulario, setFormulario] = useState(filtrosIniciales);
   const [consulta, setConsulta] = useState<FiltrosCatalogo>({ pagina: 1, tamanio: 20 });
   const [catalogoLoading, setCatalogoLoading] = useState(true);
@@ -234,13 +244,24 @@ export const UserPanel: React.FC<UserPanelProps> = ({ user, onLogout, showToast,
             </button>
           )}
 
-          <button
-            disabled title="Los accesos se registran en recepción. No hay pase QR implementado."
-            className="flex items-center gap-1.5 px-3 py-1 rounded-md bg-primary hover:bg-primary-hover text-on-primary font-headline font-bold text-xs shadow-sm transition-all active:scale-95"
-          >
-            <span className="material-symbols-outlined text-base">qr_code_2</span>
-            <span>Pase QR no disponible</span>
-          </button>
+          <div className="relative" data-credencial>
+            <button
+              type="button" aria-expanded={verCredencial} onClick={() => setVerCredencial(v => !v)}
+              title="Datos para identificarte en recepción"
+              className="flex items-center gap-1.5 px-3 py-1 rounded-md bg-primary hover:bg-primary-hover text-on-primary font-headline font-bold text-xs shadow-sm transition-all active:scale-95"
+            >
+              <span className="material-symbols-outlined text-base">badge</span>
+              <span>Mi credencial</span>
+            </button>
+            {verCredencial && (
+              <div role="dialog" aria-label="Mi credencial" className="absolute right-0 mt-2 w-64 z-50 rounded-xl border border-outline-variant bg-surface-container-high p-4 shadow-xl text-xs space-y-1">
+                <p className="font-bold text-sm">{user.nombre}</p>
+                <p>DNI: <strong>{user.dni}</strong></p>
+                <p>Socio: <strong className="font-label-code">{user.socioId}</strong></p>
+                <p className="text-on-surface-variant pt-1">Mostrá tu DNI en recepción: ahí se registra tu ingreso y se valida tu membresía.</p>
+              </div>
+            )}
+          </div>
 
           <div className="h-5 w-px bg-outline-variant/60"></div>
 
@@ -664,8 +685,8 @@ export const UserPanel: React.FC<UserPanelProps> = ({ user, onLogout, showToast,
             </div>
             <div className="p-4 rounded-xl bg-surface-container-low border border-outline-variant/60 space-y-3 h-fit">
               <h4 className="text-sm font-bold">Gestión de membresía</h4>
-              <p className="text-xs text-on-surface-variant">El administrador elige el plan, registra y confirma el pago. Las solicitudes pendientes o rechazadas no habilitan el uso. Reactivación de períodos superpuestos pendiente de una política aprobada.</p>
-              <button disabled className="px-3 py-2 rounded-lg border border-outline-variant text-xs opacity-50">Reactivación pendiente</button>
+              <p className="text-xs text-on-surface-variant">Para contratar o renovar, acercate a recepción: elegís el plan, pagás y al confirmarse el pago tu membresía queda habilitada.</p>
+              <PlanesDisponibles />
             </div>
           </div>
         )}

@@ -2,7 +2,7 @@
 
 Trabajo Práctico Integrador — Arquitectura de Software 2026
 
-**Guías:** [Inicio](#ejecutar-localmente) · [Usuarios de prueba](#usuarios-de-prueba) · [Consultar las bases](#consultar-las-bases-de-datos) · [Documentación](#documentación).
+**Guías:** [Inicio](#ejecutar-localmente) · [Despliegue](docs/DEPLOY.md) · [Tablero](#observabilidad) · [Usuarios de prueba](#usuarios-de-prueba) · [Consultar las bases](#consultar-las-bases-de-datos) · [Documentación](#documentación).
 
 ## Integrantes
 
@@ -33,7 +33,7 @@ El sistema contemplará inicialmente:
 - Registro de ingresos y egresos por recepción desde la aplicación, sin dispositivos físicos y con validación de alternancia por socio y sede.
 - Consulta de ocupación actual de cada sede.
 - Consulta de empleados de Car Cruds, vinculación manual con socios y envío de información mensual de membresía, uso y pagos conforme al contrato acordado.
-- Tienda única abastecida por FAV: consulta de catálogo, stock físico del gimnasio, reposiciones del proveedor y registro administrativo de ventas; sin compras online, devoluciones ni ajustes.
+- Tienda única abastecida por FAV: catálogo de FAV en el portal, compra de socios (se paga y retira en el mostrador), stock físico del gimnasio, reposiciones del proveedor y ventas de mostrador; sin pasarela de pago, devoluciones ni ajustes (ADR-023).
 
 ## Flujo principal
 
@@ -53,13 +53,14 @@ Las reglas de negocio, exclusiones y criterios de aceptación están en [ALCANCE
 | Clases y Reservas | Publicación/edición ADMIN, búsqueda FTS, reservas/FIFO, retiro voluntario de espera y suspensión mediante Inbox/RabbitMQ. Sedes de Accesos, versiones y reintentos durables. API/portal, PostgreSQL, dos réplicas y reconstrucción GIN verificados. | Verificación integrada en el despliegue final. |
 | Accesos y Ocupación | Recepción ADMIN: ingresos/egresos, historial y ocupación real; MongoDB transaccional, Redis medido e idempotencia durable. Uso mensual interno para el informe a Car Cruds. | Verificación integrada en el despliegue final. |
 | Tienda | Stock local en PostgreSQL, reposiciones de FAV con clave técnica, ventas ADMIN y panel. Catálogo de FAV 1.1.0 consumido con circuit breaker y caché degradada. Compra de socios desde el portal, idempotente y atómica (ADR-023/024). | URL y clave reales de FAV, aceptación del contrato, URL pública y prueba conjunta. |
-| Gateway y portal | NGINX, rutas, portal React, balanceo y logs de destinos. | Despliegue público y frontend completo de los flujos pendientes. |
+| Gateway y portal | NGINX: rutas, **validación JWT y rate limiting** (ADR-025), balanceo y logs de destinos. Portal React con todas las secciones de administración operativas: Panel principal, Socios, Planes y tarifas (4 planes predeterminados con precio), Cobros y caja (membresías y compras de la tienda), Reportes y Configuración. | URL pública: crear la VM y ejecutar el despliegue ([DEPLOY](docs/DEPLOY.md)). |
+| Observabilidad | Prometheus (todas las instancias y RabbitMQ), Grafana con tablero **Gimnasio · Estado general** y 5 alertas (D11). | Canal de notificación externo y exportador de spans. |
 
 La integración con **Car Cruds** cambia la dirección del intercambio por indicación del profesor: Socios consulta empleados/estado y el ADMIN los vincula manualmente con socios. Desde el panel elige el mes, guarda/revisa una fotografía y confirma su envío; los reintentos conservan contenido, referencia, versión y fecha. Corregir o quitar el vínculo conserva el historial y no modifica membresías. El recorrido se verificó localmente; faltan URL/token operativos y prueba conjunta. Contrato externo **0.3.0**, configuración y uso en [la guía](docs/contracts/README.md#integracion-con-car-cruds) y [ADR-018](docs/adr/ADR-018-integracion-car-cruds.md).
 
 El **POST anterior `/api/v1/integraciones/empleados`**, contrato propio **1.0.1**, sigue disponible localmente con su mock y pruebas. Su funcionamiento no acredita la nueva integración; se conserva durante la transición.
 
-**Acceso desplegado:** faltan URL accesible, token de Car Cruds por canal privado y prueba conjunta. Las verificaciones locales cubren el flujo propio, las APIs anteriores, lecturas/envíos con un proveedor controlado y persistencia/concurrencia. La publicación accesible requerida en §4.1 y el despliegue de la presentación final siguen pendientes.
+**Acceso desplegado:** el despliegue está preparado para una VM con Docker y HTTPS automático. Un integrante crea la VM con su cuenta y ejecuta `bash scripts/desplegar-vm.sh`, que publica `https://gimnasio.<ip>.sslip.io` y el tablero en `https://grafana.gimnasio.<ip>.sslip.io` (ver [DEPLOY](docs/DEPLOY.md)). Una vez creada, la URL se agrega aquí. Faltan también los datos reales de FAV y Car Cruds y las pruebas conjuntas.
 
 ## Arquitectura y estructura
 
@@ -160,6 +161,18 @@ docker compose stop
 ```
 
 Los datos se conservan al detener el entorno. `npm run iniciar` vuelve a iniciarlo. Si falla el arranque: comprobar Docker en modo Linux, Node 22, puerto libre y correspondencia de `.env` con los volúmenes. Para revisar inicializadores: `docker compose logs --no-color postgres-init mongo-init mongodb rabbitmq`.
+
+### Observabilidad
+
+El inicio también levanta Prometheus y Grafana:
+
+| Qué | Dónde |
+|---|---|
+| Tablero **Gimnasio · Estado general**: instancias, errores, reparto del balanceo, circuito de FAV, caché, colas y DLQ | http://localhost:3001 (lectura sin login; el admin usa `GRAFANA_ADMIN_PASSWORD` de `.env`) |
+| Alertas y targets | http://localhost:9090/alerts y http://localhost:9090/targets |
+| Métricas de cada servicio | http://localhost:8080/metrics/{socios,clases,accesos,tienda} |
+
+Reglas, objetivo de servicio y detección medida en [D11](docs/adr/ADR-011-observabilidad.md).
 
 ## Consultar las bases de datos
 
@@ -269,6 +282,9 @@ npm --prefix frontend ci --ignore-scripts
 | `npm run test:tienda` | 18 pruebas HTTP/PostgreSQL reales: contrato FAV, permisos, idempotencia, concurrencia, reinicio, rollback, límites y caída de base; [evidencia](docs/EVIDENCIA-TIENDA.md). |
 | `npm run test:eventos` | 12 pruebas PostgreSQL/RabbitMQ reales de suspensión, atomicidad, duplicados, carreras, períodos, FIFO, reintentos, DLQ y recuperación del broker. [Evidencia](docs/EVIDENCIA-EVENTOS-MEMBRESIA.md). |
 | `npm run test:busqueda` | 13 pruebas HTTP/PostgreSQL reales de búsqueda, filtros, páginas, orden, FIFO, detalle propio, actualización/reconstrucción de GIN y caída de base. [Evidencia](docs/EVIDENCIA-BUSQUEDA.md). |
+| `npm run test:cobertura` | Tests unitarios con cobertura y umbrales (líneas ≥ 70 %, ramas y funciones ≥ 80 %). Reglas de negocio ≥ 94 % de líneas. [Evidencia](docs/EVIDENCIA-COBERTURA.md). |
+| `npm run test:carga` | k6 contra el gateway del sistema en marcha: uso normal, `-- tasa 400` y `-- estres`. Capacidad ~480 solicitudes/s y límite principal identificado. [Evidencia](docs/EVIDENCIA-CARGA.md). |
+| `npm run simulacro:fav` | Caída y lentitud provocadas de FAV con el mock: caché degradada, circuit breaker, compra idempotente y alertas. [Postmortem](docs/POSTMORTEM.md). |
 | `npm run test:gestion-clases` | 17 pruebas con dos instancias, PostgreSQL, Accesos/MongoDB y Socios HTTP reales. Publicación/edición, reconstrucción GIN, retiro, permisos, reintentos, rollback, carreras y caída de dependencias. [Búsqueda](docs/EVIDENCIA-BUSQUEDA.md), [retiro y FIFO](docs/adr/ADR-017-consistencia-y-recuperacion-de-espera.md). |
 
 Las pruebas de PostgreSQL, balanceo y Tienda requieren Docker, usan recursos temporales propios, no cargan `.env` y los retiran al terminar. Los tests en memoria no acreditan durabilidad. Para desarrollar solo el portal: `npm run frontend:dev`, manteniendo el backend iniciado.
@@ -289,9 +305,12 @@ El trabajo de cierre parte de `main` actualizado y se prepara en ramas de funcio
 | [Contrato e integración](docs/contracts/README.md) | Capacidad ofrecida, versión, ejemplos, errores, autenticación e idempotencia (§4.1). |
 | [FAV: contrato y guía](docs/contracts/fav-tienda.md) | Stock y reposiciones implementados y verificados localmente; aceptación, publicación y conexión conjunta pendientes (§4.1). |
 | [Plan de cierre](docs/PLAN-ENTREGA-3.md) | Etapas, verificaciones y decisiones pendientes para la presentación y defensa; se completa una etapa por vez. |
-| [Postmortem](docs/POSTMORTEM.md) | Ensayo local de caída: impacto, secuencia, detección, respuesta, causa y mejoras (§2.9 y §3). |
+| [Postmortem](docs/POSTMORTEM.md) | Caída de una réplica y caída/lentitud del proveedor FAV: impacto, línea temporal, detección, respuesta, causa y mejoras (§2.8 y §3). |
+| [Despliegue](docs/DEPLOY.md) | VM con Docker Compose, Caddy y HTTPS; URLs a publicar e integraciones (§4.1, §6.4). |
+| [Contrato de eventos](docs/contracts/asyncapi-membresias-v1.yaml) | AsyncAPI 3.0 del evento `MembresiaActualizada`, con cola y DLQ (§2.4). |
+| Evidencias | [Carga](docs/EVIDENCIA-CARGA.md), [cobertura](docs/EVIDENCIA-COBERTURA.md), [caché](docs/EVIDENCIA-CACHE.md), [búsqueda](docs/EVIDENCIA-BUSQUEDA.md), [eventos](docs/EVIDENCIA-EVENTOS-MEMBRESIA.md), [Tienda](docs/EVIDENCIA-TIENDA.md). |
 
-E1 (§6.2) conserva alcance, arquitectura/diagramas, límites, estructura y contratos/mocks. E2 (§6.3) conserva flujo propio, PostgreSQL, logs/traza y ADR. Para la presentación final (§6, páginas 8–9), suspensión/mensajería, búsqueda en API/portal, publicación/edición, reconstrucción del índice y retiro de espera están verificados localmente. Siguen pendientes fuentes mensuales y conexión conjunta Car Cruds, consulta externa de FAV, políticas de reactivación, observabilidad final y despliegue. El [plan de entrega 3](docs/PLAN-ENTREGA-3.md) detalla el orden y sus dependencias.
+E1 (§6.2) conserva alcance, arquitectura/diagramas, límites, estructura y contratos/mocks. E2 (§6.3) conserva flujo propio, PostgreSQL, logs/traza y ADR. Para la presentación final (§6, páginas 8–9), suspensión/mensajería, búsqueda en API/portal, publicación/edición, reconstrucción del índice y retiro de espera están verificados localmente. Desde el 09/11/2026 también están implementados las fuentes mensuales de Car Cruds, el consumo de FAV con compra de socios, la autenticación y el rate limiting en el gateway, el tablero y las alertas, el test de carga, la cobertura y el AsyncAPI. Siguen pendientes la creación de la VM (el despliegue está listo), las pruebas conjuntas con FAV y Car Cruds y las políticas de reactivación. El [plan de entrega 3](docs/PLAN-ENTREGA-3.md) detalla el orden y sus dependencias.
 
 ## Caché Redis de ocupación (etapa 2)
 

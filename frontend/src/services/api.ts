@@ -616,7 +616,7 @@ export async function apiCarCrudsEnviarFotografia(fotografiaId: string, options:
   return value;
 }
 
-export interface PlanMembresia { planId: string; nombre: string; importeMinor: number; moneda: string; estado: 'ACTIVO' | 'INACTIVO' }
+export interface PlanMembresia { planId: string; nombre: string; importeMinor: number; moneda: string; estado: 'ACTIVO' | 'INACTIVO'; duracionMeses: number }
 export interface SolicitudMembresia {
   solicitudId: string; socioId: string; planId: string; nombrePlan: string; importeMinor: number; moneda: string;
   fechaInicio: string; fechaFin: string; estado: 'PENDIENTE' | 'CONFIRMADA' | 'RECHAZADA';
@@ -640,8 +640,10 @@ async function requestGestion<T>(path: string, options: RequestInit = {}, expect
 
 function planMembresia(value: unknown): PlanMembresia {
   if (!isRecord(value) || !isText(value.planId) || !isText(value.nombre) || !isNatural(value.importeMinor)
-    || typeof value.moneda !== 'string' || !/^[A-Z]{3}$/.test(value.moneda) || !['ACTIVO','INACTIVO'].includes(String(value.estado))) return invalidMembresias();
-  return value as unknown as PlanMembresia;
+    || typeof value.moneda !== 'string' || !/^[A-Z]{3}$/.test(value.moneda) || !['ACTIVO','INACTIVO'].includes(String(value.estado))
+    || (value.duracionMeses !== undefined && (!isNatural(value.duracionMeses) || value.duracionMeses < 1))) return invalidMembresias();
+  // Un servidor 1.0 sin duración equivale a un plan mensual.
+  return { ...(value as unknown as PlanMembresia), duracionMeses: (value.duracionMeses as number | undefined) ?? 1 };
 }
 function solicitudMembresia(value: unknown): SolicitudMembresia {
   if (!isRecord(value) || !isText(value.solicitudId) || !isText(value.socioId) || !isText(value.planId) || !isText(value.nombrePlan)
@@ -704,4 +706,32 @@ export async function apiHistorialMembresias(socioId: string) {
     return m as unknown as MembresiaAdministrativa;
   });
   return {items};
+}
+
+// Caja: compras de socios en la tienda, que se cobran en el mostrador (ADMIN).
+export interface CompraCaja extends CompraTienda { socioId: string }
+export async function apiComprasCaja(pagina = 1): Promise<{ pagina: number; tamanio: number; total: number; totalMinor: number; items: CompraCaja[] }> {
+  const value = await request<unknown>('/api/v1/tienda/admin/compras?' + new URLSearchParams({ pagina: String(pagina), tamanio: '50' }), {}, true, 200);
+  if (!isRecord(value) || !isNatural(value.total) || !isNatural(value.totalMinor) || !Array.isArray(value.items)) {
+    throw new ApiError('El servidor devolvió compras no válidas.', 502, 'RESPUESTA_INVALIDA');
+  }
+  const items = value.items.map(item => {
+    if (!isRecord(item) || !isText(item.socioId)) throw new ApiError('El servidor devolvió compras no válidas.', 502, 'RESPUESTA_INVALIDA');
+    const { socioId, ...compra } = item;
+    return { ...validarCompraTienda(compra), socioId };
+  });
+  return { pagina: value.pagina as number, tamanio: value.tamanio as number, total: value.total, totalMinor: value.totalMinor, items };
+}
+
+// Estado de los servicios para Configuración: /health es público en el gateway y no expone datos.
+export type ServicioSalud = 'gateway' | 'socios' | 'clases' | 'accesos' | 'tienda';
+export async function apiSaludServicio(servicio: ServicioSalud): Promise<{ ok: boolean; detalle: Record<string, unknown> }> {
+  try {
+    const response = await fetch(API_BASE + (servicio === 'gateway' ? '/health' : '/health/' + servicio), { signal: AbortSignal.timeout(5000) });
+    let detalle: Record<string, unknown> = {};
+    try { const data = await response.json(); if (isRecord(data)) detalle = data; } catch { /* sin cuerpo */ }
+    return { ok: response.ok, detalle };
+  } catch {
+    return { ok: false, detalle: { estado: 'sin respuesta' } };
+  }
 }

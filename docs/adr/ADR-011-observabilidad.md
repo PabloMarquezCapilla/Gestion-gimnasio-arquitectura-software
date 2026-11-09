@@ -35,6 +35,31 @@ Criterios propuestos: alertar ante >1% de 5xx durante 5 min, p99 de reservas >15
 
 La primera traza permite seguir una reserva entre servicios HTTP con PostgreSQL. La observabilidad general de §2.10 aún requiere tablero y mayor cobertura; no se acredita por exponer métricas sin recolector ni alertas.
 
+## Tablero y alertas implementados (09/11/2026)
+
+Reemplaza los pendientes de "Métricas y estrategia pendiente".
+
+- **Prometheus** (`http://localhost:9090`, en el compose):
+  - Descubre por DNS de Docker cada instancia de los cuatro servicios, así que las dos réplicas de Clases aparecen por separado.
+  - También lee RabbitMQ (`/metrics/per-object`, colas y DLQ). Retención de 7 días.
+  - Configuración en `infra/observabilidad/prometheus.yml`.
+- **Grafana** (`http://localhost:3001`, tablero de inicio **Gimnasio · Estado general**, lectura sin login): instancias activas, alertas activas, solicitudes y errores por servicio, reparto del balanceo por réplica, estado del circuito de FAV, origen del catálogo, caché de ocupación, latencia p95 de ocupación, colas de RabbitMQ, conexiones a PostgreSQL y movimientos de Tienda. Está versionado en `infra/observabilidad/grafana/`.
+- **Alertas** (`infra/observabilidad/alertas.yml`):
+
+| Alerta | Condición | Severidad |
+|---|---|---|
+| `InstanciaCaida` | Un servicio no responde a `/metrics` durante 30 s | crítica |
+| `TasaDeErroresAlta` | Más del 5 % de respuestas 5xx durante 2 min (objetivo de servicio) | alta |
+| `CircuitoFavAbierto` | Circuito hacia FAV abierto | alta |
+| `CatalogoFavDegradado` | Catálogo servido desde la caché vencida en los últimos 5 min | media |
+| `MensajesEnDLQ` | Mensajes en la DLQ durante 1 min | media |
+
+- **Objetivo de servicio adoptado:**
+  - menos de 5 % de 5xx por servicio;
+  - búsqueda p95 < 300 ms y reserva p95 < 500 ms. El [test de carga](../EVIDENCIA-CARGA.md) lo verificó hasta ~480 solicitudes/s.
+- **Detección medida:** en el [simulacro de FAV](../POSTMORTEM.md), `CircuitoFavAbierto` se disparó 25 s después de abrirse el circuito (un scrape de 10 s más una evaluación de 10 s).
+- **Pendiente aceptado:** no hay exportador de spans (OpenTelemetry/Jaeger). La correlación se hace con `traceparent`/`X-Correlation-ID` en los logs JSON del gateway y de los servicios. Las alertas se ven en Prometheus y Grafana, sin un canal de notificación externo (correo o chat).
+
 ### Etapa 3 — trazabilidad de membresías
 
 `membresias_operaciones_total` por comando/resultado/servicio/instancia distingue resolución, replay y fallo; no etiqueta socios, claves o pagos individuales. Logs con correlación permiten investigar estados, repetición y errores sin registrar importes ni credenciales. [ADR-021](ADR-021-planes-pagos-membresias.md) y [evidencia](../EVIDENCIA-MEMBRESIAS.md). No incorpora tablero global.

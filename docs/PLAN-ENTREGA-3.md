@@ -92,13 +92,35 @@ Si Accesos no responde, `used` queda en `null` y el informe se genera igual. El 
 - **Cierre:** prueba conjunta de lectura, vínculo, envío/repetición, conflicto, corte mensual y caída/recuperación, conservando referencia, versión y `observedAt` al reintentar.
 - **Documentación:** ADR-018 y guía de contratos; corregir textos viejos que confunden módulos implementados con hechos aún no integrados. **Enunciado:** §4.1.
 
-## 8. Observabilidad y fallas — pendiente de completar
+## 8. Observabilidad y fallas — completo (09/11/2026)
+
+**Hecho:**
+- Prometheus, Grafana (tablero **Gimnasio · Estado general**) y 5 reglas de alerta con objetivo de servicio (D11).
+- Simulacro de caída y lentitud de FAV con detección por alerta en 25 s ([POSTMORTEM](POSTMORTEM.md)).
+- Rate limiting y JWT en el gateway (ADR-025).
+
+Texto original del paso:
+
 
 - Reutilizar logs, trazas y métricas; completar tablero, alerta y cobertura de dependencias relevantes. Confirmar objetivos/canal antes de presentarlos como compromisos.
 - **Cierre:** seguir una operación entre servicios y observar estado general, caché, réplicas y errores; provocar fallas y registrar recuperación real.
 - **Documentación:** D10/D11/D12 y POSTMORTEM. **Enunciado:** §2.9–2.10, página 3; defensa individual, página 9.
 
-## 9. Despliegue, evidencia y revisión final — pendiente
+## 9. Despliegue, evidencia y revisión final — preparado; falta crear la VM
+
+**Hecho el 09/11/2026:**
+- Despliegue en VM listo ([DEPLOY](DEPLOY.md), ADR-026): `compose.prod.yaml`, Caddy con HTTPS y `scripts/desplegar-vm.sh`.
+- Test de carga k6 con análisis de capacidad ([EVIDENCIA-CARGA](EVIDENCIA-CARGA.md)).
+- Cobertura con umbrales ([EVIDENCIA-COBERTURA](EVIDENCIA-COBERTURA.md)).
+- AsyncAPI del evento.
+
+**Pendiente:**
+- Que un integrante cree la VM y ejecute el script.
+- Publicar la URL a FAV y Car Cruds.
+- Pruebas conjuntas.
+
+Texto original del paso:
+
 
 - Consultar alojamiento/presupuesto, desplegar la capacidad en nube con URL pública y secretos fuera del repositorio; coordinar conectividad con ambos grupos.
 - Ejecutar regresión integrada, contratos, consistencia/concurrencia, carga y fallas; analizar capacidad/costos y revisar la frescura de ocupación con el negocio sin rehacer Redis.

@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ApiError, apiAccesosHistorial, apiAccesosOcupacion, apiAccesosRegistrar, apiAccesosSedes } from '../services/api';
+import { ApiError, apiAccesosHistorial, apiAccesosOcupacion, apiAccesosRegistrar, apiAccesosSedes, apiSociosAdministracion } from '../services/api';
+import type { SocioAdministrativo } from '../services/api';
 import type { AccesosMovimiento, AccesosOrden } from '../services/api';
 
 const button = 'rounded-lg border border-outline-variant px-4 py-2 text-sm font-semibold disabled:opacity-50 hover:bg-surface-container-high';
@@ -33,6 +34,17 @@ export function AccesosPanel({ actorId }: { actorId: string }) {
   const [error, setError] = useState(''); const [notice, setNotice] = useState('');
   const generation = useRef(0); const mounted = useRef(true); const mutation = useRef(false);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; generation.current++; }; }, []);
+  // Sugerencias de socios (nombre y DNI) para no tipear el identificador a mano.
+  const [socios, setSocios] = useState<SocioAdministrativo[]>([]);
+  useEffect(() => {
+    let activo = true;
+    (async () => {
+      const todos: SocioAdministrativo[] = [];
+      for (let p = 1; p <= 10; p++) { const r = await apiSociosAdministracion(p); todos.push(...r.items); if (r.items.length < 20) break; }
+      if (activo) setSocios(todos.filter(s => s.estado === 'ACTIVO'));
+    })().catch(() => { /* sin sugerencias: se puede escribir el ID */ });
+    return () => { activo = false; };
+  }, []);
   useEffect(() => {
     let active = true;
     apiAccesosSedes().then(data => { if (active) { setSedes(data.items); setSedeId(previous => previous || data.items[0]?.sedeId || ''); } })
@@ -81,7 +93,7 @@ export function AccesosPanel({ actorId }: { actorId: string }) {
       <div role="status">{loading ? 'Consultando ocupación…' : ocupacion ? <><strong className="text-primary text-2xl">{ocupacion.ocupacion}</strong> {ocupacion.ocupacion === 1 ? 'persona' : 'personas'} · {new Date(ocupacion.consultadoEn).toLocaleTimeString('es-AR')}</> : 'Ocupación no disponible'}</div>
     </div>
     <form onSubmit={e => { e.preventDefault(); void registrar(); }} className="rounded-xl border border-outline-variant p-4 flex flex-wrap items-end gap-3">
-      <label>ID de socio<input aria-label="ID de socio" required pattern="[A-Za-z0-9][A-Za-z0-9_-]{0,99}" value={socioId} disabled={saving || !!pendiente} onChange={e => setSocioId(e.target.value)} className="block bg-surface-container rounded-lg border border-outline-variant p-2" /></label>
+      <label>ID de socio<input aria-label="ID de socio" list="socios-recepcion" placeholder="Escribí nombre o DNI" required pattern="[A-Za-z0-9][A-Za-z0-9_-]{0,99}" value={socioId} disabled={saving || !!pendiente} onChange={e => setSocioId(e.target.value)} className="block bg-surface-container rounded-lg border border-outline-variant p-2" /><datalist id="socios-recepcion">{socios.map(s => <option key={s.socioId} value={s.socioId}>{s.nombre} · DNI {s.dni}</option>)}</datalist></label>
       <label>Movimiento<select aria-label="Movimiento" value={tipo} disabled={saving || !!pendiente} onChange={e => setTipo(e.target.value as AccesosOrden['tipo'])} className="block bg-surface-container rounded-lg border border-outline-variant p-2"><option value="INGRESO">Ingreso</option><option value="EGRESO">Egreso</option></select></label>
       <button className={primaryButton} disabled={saving || !sedeId || !socioId.trim()}>{saving ? 'Registrando…' : pendiente ? 'Reintentar la misma operación' : 'Registrar movimiento'}</button>
     </form>

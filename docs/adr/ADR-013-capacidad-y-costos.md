@@ -1,7 +1,7 @@
 # D13 - Capacidad y costos
 
-**Estado:** línea base local reproducible y estimación ilustrativa; capacidad máxima y despliegue pendientes de dimensionar.
-**Fecha original:** 12/10/2026. **Validación:** 19/10/2026.
+**Estado:** actualizado el 09/11/2026 con un test de carga k6 sostenido y de saturación a través del gateway; capacidad y límite principal medidos. Ver la sección "Test de carga k6" al final.
+**Fecha original:** 12/10/2026. **Validación:** 19/10/2026. **Actualización:** 09/11/2026.
 **Enunciado:** §5, D13, página 7; decisión requerida en §6.3, página 8.
 
 ## Contexto y criterio
@@ -54,3 +54,13 @@ El subtotal excluye transferencia, snapshots/backups, dominio, almacenamiento de
 ## Consecuencias
 
 E2 dispone de resultados reproducibles, un límite estructural explicado, una alternativa de escalado condicionada a mediciones y una estimación trazable. El despliegue y su presupuesto definitivo siguen sujetos a elección del equipo; no se han creado recursos ni generado gastos en la nube.
+
+## Test de carga k6 (09/11/2026)
+
+`npm run test:carga` ejecuta k6 contra el gateway, con JWT, rate limiting, dos réplicas de Clases y PostgreSQL. El detalle está en [EVIDENCIA-CARGA](../EVIDENCIA-CARGA.md).
+
+- **Capacidad medida:** ~480 solicitudes HTTP/s (400 recorridos/s de búsqueda más reserva) con 0 % de fallas, búsqueda p95 49 ms y reserva p95 452 ms. Cumple el objetivo de p95 < 300/500 ms. El uso normal con 100 socios activos genera 55 solicitudes/s.
+- **Primer límite encontrado y corregido:** `worker_connections` (512 por defecto) del gateway. Producía 17 % de 500 en saturación. Se corrigió con 4096 conexiones y keepalive hacia los servicios.
+- **Límite principal actual:** CPU de las réplicas de Clases (un núcleo cada una, porque Node.js corre en un solo hilo) y de PostgreSQL (búsqueda de texto completo y bloqueos de cupo). Pasado ese punto la latencia crece sin errores.
+- **Escalado elegido:** primero más réplicas de Clases, mientras PostgreSQL tenga CPU libre; después más CPU o una réplica de lectura para el catálogo.
+- **Despliegue:** se eligió una VM con Docker Compose ([DEPLOY](../DEPLOY.md)); el costo es la estimación de arriba. Para la presentación alcanza una VM de 2 vCPU y 8 GiB: la carga esperada está más de un orden de magnitud por debajo del límite medido.

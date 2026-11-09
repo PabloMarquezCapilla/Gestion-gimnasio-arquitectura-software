@@ -46,6 +46,11 @@ function memoria(stockInicial) {
       const propias = compras.filter(c => c.socioId === socioId).map(c => c.resultado).reverse();
       return { pagina, tamanio, total: propias.length, items: propias.slice((pagina - 1) * tamanio, pagina * tamanio) };
     },
+    async listarComprasAdmin(pagina, tamanio) {
+      const todas = compras.map(c => ({ ...c.resultado, socioId: c.socioId })).reverse();
+      return { pagina, tamanio, total: todas.length, totalMinor: todas.reduce((t, c) => t + c.totalMinor, 0),
+        items: todas.slice((pagina - 1) * tamanio, pagina * tamanio) };
+    },
     async comprobarSalud() {},
   };
 }
@@ -168,4 +173,17 @@ test('validación de compra: límites, duplicados y campos extra', () => {
 test('el servicio exige socio autenticado', async () => {
   const service = new TiendaStockService(memoria({}));
   await assert.rejects(service.comprar(' ', 'clave-0001', { items: [] }, async () => new Map()), e => e.codigo === 'NO_AUTENTICADO');
+});
+
+test('la caja (ADMIN) ve las compras de todos los socios con el total; un socio no puede', async (t) => {
+  const { app, token } = await fixture(t);
+  await comprar(app, token('socio-1'), { items: [{ productoCodigo: 'var-remera-m', unidades: 1 }] }, 'compra-caja-0001');
+  await comprar(app, token('socio-2'), { items: [{ productoCodigo: 'var-jean-38', unidades: 1 }] }, 'compra-caja-0002');
+  const caja = await app.inject({ url: '/api/v1/tienda/admin/compras', headers: { authorization: token('admin-1', 'ADMIN') } });
+  assert.equal(caja.statusCode, 200);
+  assert.equal(caja.json().total, 2);
+  assert.equal(caja.json().totalMinor, 1500000 + 4200000);
+  assert.deepEqual(caja.json().items.map(c => c.socioId), ['socio-2', 'socio-1']);
+  const socio = await app.inject({ url: '/api/v1/tienda/admin/compras', headers: { authorization: token('socio-1') } });
+  assert.equal(socio.statusCode, 403);
 });
