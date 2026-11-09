@@ -38,8 +38,12 @@ export function MembresiasPanel({ actorId,onNuevoSocio,filtro='' }: { actorId: s
  const [nombre,setNombre]=useState(''),[importe,setImporte]=useState(''),[moneda,setMoneda]=useState('');
  const [referencias,setReferencias]=useState<Record<string,string>>({}),[verificados,setVerificados]=useState<Record<string,boolean>>({});
  const mutation=useRef(false);
+ const recuperacionRef=useRef<HTMLDivElement>(null);
  const generation=useRef(0),refreshId=useRef(0);
  useEffect(()=>{generation.current++;return()=>{generation.current++;refreshId.current++;};},[]);
+ useEffect(()=>{
+  if(pendiente&&!saving)recuperacionRef.current?.focus();
+ },[pendiente,saving]);
  const refresh=useCallback(async()=>{const id=++refreshId.current;setLoading(true);setError('');try{
   const [p,s,r]=await Promise.all([apiPlanesMembresia(),apiSociosAdministracion(pagina),apiSolicitudesMembresia(pagina)]);
   if(id!==refreshId.current)return;
@@ -68,7 +72,11 @@ export function MembresiasPanel({ actorId,onNuevoSocio,filtro='' }: { actorId: s
   <p>Registrá el cobro manual y confirmalo sólo después de verificarlo. Ninguna solicitud pendiente habilita el uso del gimnasio.</p>
   <div className="flex gap-3"><button className={button} disabled={saving} onClick={()=>void refresh()}>Actualizar gestión</button><button className={button} onClick={onNuevoSocio}>Alta de Socio</button></div>
   {loading&&<p role="status">Consultando gestión…</p>}{error&&<p role="alert" className="text-error">{error}</p>}{status&&<p role="status">{status}</p>}
-  {pendiente&&<div className={box}><p>Hay una operación pendiente de respuesta. Conservamos sus datos para evitar duplicaciones.</p><button className={button} disabled={saving} onClick={()=>void ejecutar(pendiente)}>Reintentar la misma operación de membresía</button></div>}
+  {pendiente&&<div ref={recuperacionRef} tabIndex={-1} role="alert" className={box}>
+   <p className="font-bold">{saving?'Esperando confirmación del servidor…':'Hay una operación pendiente de confirmación.'}</p>
+   <p>Podés consultar socios y su historial. Para habilitar nuevas operaciones, recuperá el resultado con el botón siguiente. Conservamos los datos de la operación para evitar duplicaciones.</p>
+   <button className={button} disabled={saving} onClick={()=>void ejecutar(pendiente)}>Reintentar la misma operación de membresía</button>
+  </div>}
   <div className="grid lg:grid-cols-2 gap-4"><section className={box}><h2 className="font-bold">Planes configurados</h2>
    {planes.length===0&&<p>No hay planes configurados. Administración debe definir nombre, moneda e importe antes de solicitar una membresía.</p>}
    {planes.map(p=><div key={p.planId} className="border-b border-outline-variant py-2"><strong>{p.nombre}</strong> · {p.importeMinor} unidades mínimas {p.moneda} · {p.estado} <button className={button} disabled={disabled} onClick={()=>void enviar('/api/v1/planes/'+p.planId+'/estado',{estado:p.estado==='ACTIVO'?'INACTIVO':'ACTIVO'},'PUT')}>{p.estado==='ACTIVO'?'Desactivar':'Activar'} plan {p.nombre}</button></div>)}
@@ -79,9 +87,9 @@ export function MembresiasPanel({ actorId,onNuevoSocio,filtro='' }: { actorId: s
     <p className="text-xs">Administración debe usar la unidad mínima de la moneda definida para el cobro. No se convierten monedas ni se calculan impuestos.</p><button className={button} disabled={disabled}>Crear plan</button></form>
   </section>
   <section className={box}><h2 className="font-bold">Socios registrados — página {pagina}</h2><p className="text-xs">La búsqueda superior filtra esta página.</p>
-   {socios.filter(s=>[s.nombre,s.dni,s.email,s.socioId].some(v=>v.toLowerCase().includes(filtro.toLowerCase()))).map(s=><p key={s.socioId}>{s.nombre} · {s.dni} · {s.email} · {s.estado} <button className={button} disabled={disabled} onClick={()=>setSocioId(s.socioId)}>Seleccionar {s.nombre}</button></p>)}
+   {socios.filter(s=>[s.nombre,s.dni,s.email,s.socioId].some(v=>v.toLowerCase().includes(filtro.toLowerCase()))).map(s=><p key={s.socioId}>{s.nombre} · {s.dni} · {s.email} · {s.estado} <button className={button} disabled={saving||loading} onClick={()=>setSocioId(s.socioId)}>Seleccionar {s.nombre}</button></p>)}
    <form className="space-y-3" onSubmit={e=>{e.preventDefault();void enviar('/api/v1/socios/'+encodeURIComponent(socioId)+'/solicitudes',{planId,fechaInicio:new Date(inicio).toISOString(),fechaFin:new Date(fin).toISOString()});}}><h3>Solicitar alta o nuevo período</h3>
-    <label>Socio<select aria-label="Socio de la solicitud" className={input} required value={socioId} onChange={e=>setSocioId(e.target.value)} disabled={disabled}><option value="">Seleccioná un socio</option>{socios.map(s=><option key={s.socioId} value={s.socioId}>{s.nombre} · {s.dni}</option>)}</select></label>
+    <label>Socio<select aria-label="Socio de la solicitud" className={input} required value={socioId} onChange={e=>setSocioId(e.target.value)} disabled={saving||loading}><option value="">Seleccioná un socio</option>{socios.map(s=><option key={s.socioId} value={s.socioId}>{s.nombre} · {s.dni}</option>)}</select></label>
     <label>Plan<select aria-label="Plan de la solicitud" className={input} required value={planId} onChange={e=>setPlanId(e.target.value)} disabled={disabled}><option value="">Seleccioná un plan</option>{planes.filter(p=>p.estado==='ACTIVO').map(p=><option key={p.planId} value={p.planId}>{p.nombre}</option>)}</select></label>
     <label>Inicio de vigencia<input aria-label="Inicio de vigencia" className={input} type="datetime-local" required value={inicio} onChange={e=>setInicio(e.target.value)} disabled={disabled}/></label>
     <label>Fin de vigencia<input aria-label="Fin de vigencia" className={input} type="datetime-local" required min={inicio} value={fin} onChange={e=>setFin(e.target.value)} disabled={disabled}/></label>
@@ -89,7 +97,7 @@ export function MembresiasPanel({ actorId,onNuevoSocio,filtro='' }: { actorId: s
    </form>
   </section></div>
   {socioId&&<section className={box}><h2 className="font-bold">Membresías del socio seleccionado</h2>
-   <button className={button} disabled={disabled} onClick={()=>setRevisionMembresias(r=>r+1)}>Actualizar membresías</button>
+   <button className={button} disabled={saving||loading} onClick={()=>setRevisionMembresias(r=>r+1)}>Actualizar membresías</button>
    {errorMembresias&&<p role="alert">{errorMembresias}</p>}
    {membresias.map(m=><article key={m.membresiaId} className={box}><p>{m.tipoPlan} · {m.estado} · {m.membresiaId}</p>
     <p>{new Date(m.fechaInicio).toLocaleString('es-AR')} — {new Date(m.fechaFin).toLocaleString('es-AR')}</p>

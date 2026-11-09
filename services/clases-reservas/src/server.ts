@@ -1,10 +1,13 @@
 import { Pool } from 'pg';
+import { PostgresBuscadorClases } from './busqueda-clases.postgres';
 import { PostgresMembresiasEventos } from './membresias-eventos.postgres';
 import { MembresiasEventosService } from './application/membresias-eventos.service';
 import { ConsumidorMembresias } from './membresias-eventos.rabbit';
 import { buildApp } from './app';
 import { PostgresClaseRepository, MemoryClaseRepository } from './repository';
 import { HttpSociosClient, MockSociosClient } from './clients/socios.client';
+import { HttpSedesClient } from './clients/sedes.client';
+import { PostgresGestionClases } from './gestion-clases.postgres';
 
 async function start() {
   const apiKey = process.env.CAPACIDAD_API_KEY;
@@ -27,12 +30,15 @@ async function start() {
     throw new Error('Producción requiere RABBITMQ_URL para consumir cambios de membresía.');
   }
   const sociosUrl = process.env.SOCIOS_SERVICE_URL;
+  const accesosUrl = process.env.ACCESOS_SERVICE_URL;
   const usarMemoria = ['1', 'true'].includes(process.env.USE_MEMORY_DB ?? '');
   const permitirFallback = ['1', 'true'].includes(process.env.ALLOW_MEMORY_FALLBACK ?? '');
-  if (process.env.NODE_ENV === 'production' && (!databaseUrl || !sociosUrl || usarMemoria)) {
-    throw new Error('Producción requiere DATABASE_URL y SOCIOS_SERVICE_URL; no admite memoria ni Socios simulado.');
+  if (process.env.NODE_ENV === 'production' && (!databaseUrl || !sociosUrl || !accesosUrl || usarMemoria)) {
+    throw new Error('Producción requiere DATABASE_URL, SOCIOS_SERVICE_URL y ACCESOS_SERVICE_URL.');
   }
   let repository;
+  let buscador: PostgresBuscadorClases | undefined;
+  let gestionClases: PostgresGestionClases | undefined;
   let eventosRepository: PostgresMembresiasEventos | undefined;
   let closeRepository: (() => Promise<void>) | undefined;
 
@@ -45,9 +51,12 @@ async function start() {
         lock_timeout: 2500,
         max: 20,
       });
+      pool.on('error',() => { console.error('[clases-reservas] Conexión inactiva de PostgreSQL interrumpida.'); });
       closeRepository = () => pool.end();
       const pgRepo = new PostgresClaseRepository(pool);
       await pgRepo.inicializarEsquema();
+      buscador = new PostgresBuscadorClases(pool);
+      gestionClases = new PostgresGestionClases(pool);
       eventosRepository = new PostgresMembresiasEventos(pool);
       console.log('[clases-reservas] Conectado a PostgreSQL y esquema inicializado.');
       repository = pgRepo;
@@ -78,6 +87,9 @@ async function start() {
     logger: true,
     repository,
     sociosClient,
+    buscador,
+    gestionClases,
+    sedesClient: accesosUrl ? new HttpSedesClient(accesosUrl) : undefined,
   });
 
   let active: Promise<unknown> | undefined;

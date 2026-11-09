@@ -19,9 +19,11 @@ Se utiliza HTTP/JSON cuando el resultado de una operación necesita una respuest
 | Socios → Car Cruds: empleados, estado laboral y evidencia de membresía | Lecturas GET y POST de evidencia implementados, con contrato externo 0.3.0 y Bearer gym. Presupuesto total de 3000 ms configurable, cuerpo incluido. Lectura: un reintento máximo de red/502/503/504. Envío: un solo POST, desde un mensaje durable confirmado por ADMIN; recuperación manual con el mismo cuerpo. URL/token reales y prueba conjunta pendientes. Salida directa desde Socios. [D8 vigente](ADR-018-integracion-car-cruds.md). |
 | Tienda → distribuidora: productos/stock | Pendiente de contrato, URL y autenticación. La ruta interna autenticada ya informa `503 INTEGRACION_PENDIENTE`; no llama al proveedor. [D9](ADR-009-consumo-del-proveedor.md). |
 | Accesos → Socios: habilitación al ingresar | Implementada en ADR-019; egreso/replay no consultan membresía. |
-| Clases → Accesos: sede al publicar | Prevista, sin flujo implementado en esta etapa. |
+| Clases → Accesos: sede al publicar/editar | Implementada. `GET /api/v1/accesos/sedes`, JWT ADMIN recibido y traza W3C. `ACCESOS_SERVICE_URL` y 3000 ms totales, cuerpo incluido con máximo de 1 MiB. Redirección, error o lista incompatible producen 503. Ocurre antes de la transacción SQL. |
 
 ### Tiempo, errores y reintentos internos
+
+Publicación/edición de clases recupera primero una operación confirmada por actor/clave y contenido normalizado. Un replay no vuelve a consultar Accesos ni exige que el horario siga siendo futuro. Una operación nueva necesita validar la sede. El panel conserva las escrituras inciertas para repetir la misma solicitud. La consulta a Accesos hace un único intento HTTP dentro de su presupuesto. [D6](ADR-006-busqueda.md).
 
 Cada verificación HTTP a Socios tiene **3000 ms totales**, incluida conexión, cuerpo y como máximo un reintento dentro del presupuesto. El cliente contempla errores de red y HTTP 502/503/504, con espera aleatoria de 75–124 ms. Un cuerpo inválido se trata como fallo y puede consumir el reintento acotado; nunca se acepta como habilitación.
 

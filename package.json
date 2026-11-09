@@ -16,7 +16,7 @@
     "test:car-cruds": "npm run build --workspace=@gimnasio/socios-membresias && node --test services/socios-membresias/test/car-cruds-client.test.mjs services/socios-membresias/test/car-cruds-http.test.mjs services/socios-membresias/test/car-cruds-vinculos.test.mjs services/socios-membresias/test/car-cruds-evidence-client.test.mjs services/socios-membresias/test/car-cruds-evidencias.test.mjs",
     "mock:empleados": "npm run build --workspace=@gimnasio/socios-membresias && node services/socios-membresias/dist/empleados.mock.js",
     "crear-admin": "node scripts/crear-admin.mjs",
-    "test:frontend": "node --test frontend/src/services/api.test.mjs",
+    "test:frontend": "node --test frontend/src/services/api.test.mjs frontend/src/components/MembresiasPanel.test.mjs",
     "test:postgres": "npm run build && node scripts/verificar-postgres.mjs",
     "test:balanceo": "node scripts/verificar-balanceo.mjs",
     "test:accesos": "npm run build && node --test scripts/verificar-accesos.mjs",
@@ -24,6 +24,8 @@
     "test:cache": "npm run build && node --test scripts/verificar-cache-ocupacion.mjs",
     "test:tienda": "npm run build && node --test scripts/verificar-tienda.mjs",
     "test:eventos": "npm run build && node --test scripts/verificar-eventos-membresia.mjs",
+    "test:busqueda": "npm run build && node --test scripts/verificar-busqueda.mjs",
+    "test:gestion-clases": "npm run build && node --test scripts/verificar-gestion-clases.mjs",
     "frontend:dev": "npm --prefix frontend run dev",
     "frontend:build": "npm --prefix frontend run build",
     "iniciar": "node scripts/iniciar.mjs"

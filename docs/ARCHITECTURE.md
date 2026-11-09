@@ -1,6 +1,6 @@
 # Arquitectura del sistema
 
-**Estado documental:** revisión Tienda del 06/11/2026. Flujo propio y POST anterior de empleados operativos localmente. Car Cruds dispone de lecturas, vinculación y envío mensual manual con persistencia e historial, verificados localmente; conexión operativa y prueba conjunta pendientes. Tienda implementa stock/reposiciones para FAV y ventas administrativas con PostgreSQL; consumo del catálogo, publicación y prueba conjunta pendientes.
+**Estado documental.** Revisión al 08/11/2026, con búsqueda en API/portal, publicación/edición ADMIN y suspensión mediante eventos verificadas localmente. Car Cruds dispone de lecturas, vinculación y envío mensual manual con persistencia e historial; conexión operativa y prueba conjunta pendientes. Tienda implementa stock/reposiciones para FAV y ventas administrativas con PostgreSQL; consumo del catálogo, publicación y prueba conjunta pendientes. El POST anterior de empleados conserva su implementación.
 
 **Enunciado:** §3, página 4; §4.1, páginas 5–6; §5, páginas 6–7; §6.2–6.3, página 8. Los patrones internos y el balanceo corresponden a §2.1 y §2.3, página 2.
 
@@ -9,7 +9,7 @@
 | Servicio | Responsabilidad y propiedad | Implementación actual |
 |---|---|---|
 | **Socios y Membresías** | Socios, planes, membresías, pagos, comprobantes, referencias externas, solicitudes, vínculos Car Cruds, auditoría y registro de fotografías/envíos. | Capas; JWT, altas, habilitación, lecturas/vinculación/envío manual Car Cruds para ADMIN y POST anterior. PostgreSQL: `socios`, `membresias`, `solicitudes_membresia`, `empleados_externos`, `altas_empleados_idempotencia`, `car_cruds_vinculos`, `car_cruds_vinculos_historial`, `car_cruds_evidencias_series` y `car_cruds_evidencias`. Planes, solicitudes y pagos manuales con comprobantes transaccionales (ADR-021); conexión externa conjunta pendiente. |
-| **Clases y Reservas** | Clases, capacidad, reservas, espera e índice de búsqueda derivado. | Hexagonal; catálogo, reservas/cancelación y recuperación FIFO. PostgreSQL: `clases`, `reservas`, `lista_espera`. Publicación administrativa y consulta textual pendientes. |
+| **Clases y Reservas** | Clases, capacidad, reservas, espera, operaciones administrativas e índice de búsqueda derivado. | Hexagonal. Publicación/edición ADMIN con sedes de Accesos, versiones y reintentos durables. Reservas/FIFO, retiro voluntario y suspensión mediante Inbox. Búsqueda FTS en API y portal. PostgreSQL con `clases`, `clases_operaciones`, `reservas`, `lista_espera` e índice GIN. Reconstrucción, recorrido propio y retiro verificados localmente. |
 | **Accesos y Ocupación** | Sedes, intentos y movimientos de acceso, presencias y ocupación/caché derivadas. | Capas; recepción ADMIN, ingresos/egresos, historial y ocupación con transacciones MongoDB. Cache-aside Redis sobre ocupación, invalidación y TTL; ver ADR-019 y ADR-020. |
 | **Tienda** | Consultar catálogo/disponibilidad de FAV y administrar el stock físico de una única tienda del gimnasio: reposiciones, ventas e idempotencia. FAV conserva su catálogo y stock de distribuidora. | Capas; API FAV con clave técnica, consulta/ventas ADMIN con JWT y panel. PostgreSQL 17, base `tienda`: `tienda_stock`, `tienda_reposiciones`, `tienda_ventas`, `tienda_operaciones`. El catálogo externo continúa en `503 INTEGRACION_PENDIENTE`; cliente FAV y conexión conjunta pendientes (ADR-022). |
 
@@ -19,7 +19,7 @@ NGINX sirve el portal React y enruta las solicitudes por un único puerto local 
 
 ## Arquitectura interna e identidad
 
-- **Clases, Hexagonal:** `app.ts` adapta HTTP; `application/reservas.service.ts` contiene casos de uso; `ports.ts` declara las interfaces; PostgreSQL, memoria y cliente HTTP de Socios son adaptadores. `server.ts` compone y arranca el trabajador de promociones.
+- **Clases, Hexagonal.** `app.ts` adapta HTTP. Los casos de reserva, búsqueda y administración están en `application/`. `gestion-clases.service.ts` define puertos de almacenamiento y sedes, implementados por `gestion-clases.postgres.ts` y `clients/sedes.client.ts`. `busqueda-clases.postgres.ts` consulta la base existente. `server.ts` compone adaptadores y trabajadores. El catálogo histórico conserva su contrato.
 - **Socios, Capas:** HTTP (`app.ts`, `empleados.http.ts`) → servicios de aplicación (`services.ts`, `empleados.service.ts`, `car-cruds.service.ts`, `car-cruds-vinculos.service.ts`, `car-cruds-evidencias.service.ts`) → repositorio o cliente externo `clients/car-cruds.client.ts`. Los puertos de vínculos/evidencias tienen adaptadores PostgreSQL y memoria; `car-cruds-evidencias.storage.ts` aplica las transacciones y el almacenamiento del mensaje. `server.ts` compone el cliente con configuración opcional. Criptografía y JWT están en `security.ts`.
 - **Tienda, Capas:** `app.ts` adapta HTTP y permisos → `stock.ts` valida comandos y define el puerto → `stock.postgres.ts` implementa persistencia; `server.ts` compone pool/aplicación. El servicio de catálogo conserva su respuesta pendiente y todavía no tiene adaptador externo. Accesos concreta Capas con lectura derivada de presencias abiertas; ADR-019 revisa su propuesta previa por eventos, sin introducir broker.
 - **Identidad:** JWT HS256 firmado con vencimiento configurable (una hora por defecto), rol y controles de propietario. Alta interna solo ADMIN; bootstrap local sin contraseña administrativa predeterminada nueva. El portal mantiene la sesión en memoria. [D2](adr/ADR-002-arquitectura-interna-de-servicios.md), [autenticación](adr/ADR-016-autenticacion-y-altas.md).
@@ -34,7 +34,11 @@ ADMIN → panel React → NGINX `/api/v1/accesos/*` → Accesos. El ingreso cons
 
 ### Flujo principal: reservar una clase
 
-1. El portal obtiene catálogo, reservas y espera propias con `GET /api/v1/reservas/clases` y Bearer JWT. Las consultas históricas `/api/v1/clases` conservan `X-API-Key` y el contrato anterior.
+ADMIN publica/edita mediante `/api/v1/admin/clases`. Clases consulta sedes directamente a Accesos con el JWT ADMIN y traza, fuera de la transacción. PostgreSQL confirma clase, vector e idempotencia por actor/clave juntos. La edición exige versión esperada, inicio futuro y ausencia de reservas confirmadas/espera pendiente bajo el mismo bloqueo de clase. Un cambio de horario impide confirmar una reserva con evaluación anterior de membresía. [D6](adr/ADR-006-busqueda.md), [contrato interno 1.2.0](contracts/openapi-catalogo-v1.yaml).
+
+El retiro voluntario usa el ID de entrada y el bloqueo por clase, conserva historial y funciona localmente aunque Socios falle. Una entrada promovida produce conflicto y se muestra su reserva para cancelarla explícitamente. El portal vuelve a consultar el estado después de errores o respuestas perdidas. El trabajador conserva FIFO para el siguiente candidato. [D4 y verificaciones](adr/ADR-017-consistencia-y-recuperacion-de-espera.md).
+
+1. El portal busca mediante `GET /api/v1/catalogo/clases`, con filtros, orden y páginas de 20 resultados. Consulta reservas y espera propias por separado con `GET /api/v1/reservas/clases`, cuyo detalle `clasesPersonales` conserva nombre/sede/inicio fuera de la página buscada. Ambas rutas requieren Bearer JWT. Las consultas históricas `/api/v1/clases` conservan `X-API-Key` y el contrato anterior.
 2. Antes del inicio, `POST /api/v1/reservas` recibe `claseId` y, si se eligió, `ingresarEsperaSiLlena`. La identidad se toma del token; solo ADMIN puede indicar otro socio.
 3. Clases consulta en paralelo a Socios para ahora y para la fecha de clase, con `X-Service-Key`. Cada verificación tiene presupuesto de 3000 ms, incluido cuerpo y como máximo un reintento. Una respuesta desconocida produce indisponibilidad, no habilitación.
 4. La escritura serializa por socio y bloquea la clase. Revalida inicio, suspensiones ya consumidas, duplicados, cupo y prioridad de espera antes de confirmar reserva o espera voluntaria. Los índices únicos parciales respaldan las restricciones.
@@ -121,7 +125,8 @@ flowchart TB
         gateway -->|API FAV de stock/reposiciones · X-API-Key<br/>Stock y ventas ADMIN · JWT| tienda
         
         clases -->|HTTP: consulta de habilitación<br/>Ahora y fecha de clase · X-Service-Key| socios
-        clases --> dbClases[("Base de Datos Clases<br/>PostgreSQL 17<br/>clases, reservas, lista_espera")]
+        clases -->|HTTP: validar sede al publicar/editar<br/>JWT ADMIN y contexto W3C| accesos
+        clases --> dbClases[("Base de Datos Clases<br/>PostgreSQL 17<br/>clases y operaciones idempotentes<br/>reservas, lista_espera e índice FTS")]
         socios --> dbSocios[("Base de Datos Socios<br/>PostgreSQL 17<br/>socios, membresias, solicitudes y alta externa<br/>vínculos, historial y fotografías Car Cruds")]
         accesos -->|Transacciones · propiedad exclusiva| dbAccesos[("Base de Datos Accesos<br/>MongoDB 8.0 · presencias y movimientos")]
         tienda -->|Transacciones · propiedad exclusiva| dbTienda[("Base de Datos Tienda · PostgreSQL 17<br/>Stock, reposiciones, ventas e idempotencia<br/>Única tienda del gimnasio")]
@@ -178,9 +183,9 @@ sequenceDiagram
 
 ## Limitaciones conocidas y deuda técnica aceptada
 
-- **Dominio pendiente:** políticas para reactivación, superposición, acumulación/prorrateo, credenciales de empleados y publicación de clases. Planes, solicitudes, pagos/comprobantes y nuevos períodos explícitos no superpuestos están implementados (ADR-021). Accesos ya implementa movimientos y ocupación; su caché está implementada; el consumo desde Car Cruds queda pendiente. El frontend no simula éxito de esas funciones.
+- **Dominio pendiente.** Políticas para reactivación, superposición, acumulación/prorrateo y credenciales de empleados. Publicación/edición de clases implementadas con las reglas confirmadas. Planes, solicitudes, pagos/comprobantes y nuevos períodos explícitos no superpuestos están implementados (ADR-021). Accesos ya implementa movimientos, ocupación y caché. El consumo desde Car Cruds queda pendiente.
 - **Integración externa:** Car Cruds tiene contrato fijado, lecturas, vínculo y envío durable probados localmente; faltan la imputación mensual de los nuevos cobros/ingresos y la prueba conjunta con conexión operativa. Tienda tiene stock/reposiciones/ventas locales con PostgreSQL, pero no consume todavía catálogo/disponibilidad de FAV. La publicación accesible, aceptación y pruebas entre grupos siguen pendientes (§4.1).
-- **Búsqueda y caché:** FTS/GIN creado pero sin consulta textual; Redis sobre ocupación implementado y medido localmente. Compose aislado fue verificado según [EVIDENCIA-MEMBRESIAS](EVIDENCIA-MEMBRESIAS.md); despliegue público y demanda de producción pendientes.
+- **Búsqueda y caché.** Paso 5 verificado localmente con API, portal, publicación/edición, filtros, páginas y orden. Se compararon consultas durante una reconstrucción real de GIN con dos instancias y se verificó el recorrido por NGINX. El mantenimiento local está documentado en D6. Redis de ocupación conserva su implementación y mediciones. [Evidencia de búsqueda](EVIDENCIA-BUSQUEDA.md).
 - **Mensajería.** Suspensión, Outbox/RabbitMQ/Inbox, cancelación y DLQ implementados. Consistencia eventual hasta consumo, broker único y revisión manual de DLQ. Reactivación requiere ampliar evento y proyección.
 - **Disponibilidad:** un gateway, una instancia PostgreSQL y MongoDB de un nodo. Dos réplicas HTTP no eliminan esos puntos de falla ni los errores durante detección. No hay despliegue multizona ni protección completa por circuit breaker/límite de concurrencia.
 - **Identidad:** Clases y Tienda validan el JWT hasta su vencimiento; no hay revocación inmediata ni refresh tokens. La configuración actual del POST admite un origen externo por entorno.
@@ -202,7 +207,7 @@ Estas limitaciones mantienen visibles los requisitos generales y de la presentac
 | **D4 anterior** | Consistencia y concurrencia | Reemplazada por ADR-017; antecedente | [ADR-004](adr/ADR-004-consistencia-y-concurrencia.md) |
 | **D4 vigente** | Consistencia y recuperación FIFO | Cancelación local y promoción recuperable verificadas | [ADR-017](adr/ADR-017-consistencia-y-recuperacion-de-espera.md) |
 | **D5** | Comunicación síncrona y asíncrona | HTTP conservado y suspensión mediante Outbox/RabbitMQ/Inbox, cancelación y DLQ | [ADR-005](adr/ADR-005-comunicacion-entre-servicios.md) |
-| **D6** | Búsqueda | Catálogo filtrado; FTS preparado, consulta textual pendiente | [ADR-006](adr/ADR-006-busqueda.md) |
+| **D6** | Búsqueda y catálogo | API/portal FTS, publicación/edición y reconstrucción concurrente verificados localmente | [ADR-006](adr/ADR-006-busqueda.md) |
 | **D7** | Caché | Redis implementado y medido; ADR-020 concreta ADR-007 | [ADR-007](adr/ADR-007-cache.md) |
 | **D8 inicial** | Consulta de clases | Reemplazado; contrato y pruebas conservados | [ADR-008](adr/ADR-008-contrato-propio.md) |
 | **D8 anterior** | Recepción de empleados y solicitud pendiente | Reemplazado en diseño; contrato 1.0.1 y POST local conservados | [ADR-014](adr/ADR-014-contrato-empleados.md) |

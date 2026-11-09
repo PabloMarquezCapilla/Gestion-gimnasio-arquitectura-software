@@ -1,0 +1,582 @@
+openapi: 3.1.1
+info:
+  title: Catálogo y administración interna de clases — PULSE CLUB
+  version: 1.2.0
+  description: Catálogo autenticado del portal. Clases publicadas cuyo inicio es
+    posterior a consultadoEn. PostgreSQL FTS en español sobre nombre, actividad
+    y profesor. No retiene cupos ni evalúa membresía. El GET histórico
+    /api/v1/clases conserva su contrato 1.0.0. Incluye publicación y edición
+    administrativa con sedes de Accesos, versión esperada e idempotencia durable,
+    y retiro de espera por propietario o ADMIN antes del inicio.
+servers:
+  - url: http://localhost:8080
+    description: Gateway local. Puerto configurable en GATEWAY_PORT.
+security:
+  - Bearer: []
+paths:
+  /api/v1/catalogo/clases:
+    get:
+      operationId: buscarClases
+      summary: Buscar clases futuras publicadas
+      description: JWT ADMIN o SOCIO. Todos los filtros se combinan antes de paginar.
+        Fecha desde inclusiva y hasta exclusiva. Total e items pertenecen a una
+        sentencia y snapshot SQL. Solicitudes de páginas distintas pueden
+        observar cambios. Relevancia exige texto y usa pesos A/B/C para
+        nombre/actividad/profesor. Los empates se resuelven por inicio y
+        claseId. El resultado no acredita autorización individual para reservar.
+      parameters:
+        - name: texto
+          in: query
+          description: Palabras mediante plainto_tsquery español, combinadas con AND
+            después de descartar stop words. No interpreta operadores de tsquery
+            ni busca por subcadena.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 200
+        - name: sedeId
+          in: query
+          description: ID de sede exacto. Se conserva el identificador.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 50
+        - name: profesor
+          in: query
+          description: Nombre completo con igualdad sin distinguir mayúsculas, después de
+            recortar espacios externos.
+          schema:
+            type: string
+            minLength: 1
+            maxLength: 100
+        - name: desde
+          in: query
+          description: Inicio mayor o igual a este instante y posterior a consultadoEn.
+          schema:
+            type: string
+            format: date-time
+            maxLength: 64
+        - name: hasta
+          in: query
+          description: Inicio menor que este instante. Si existen ambos límites, desde
+            debe ser menor que hasta.
+          schema:
+            type: string
+            format: date-time
+            maxLength: 64
+        - name: soloConCupo
+          in: query
+          description: Exige capacidad física libre y ausencia de espera pendiente. La
+            membresía y duplicados se validan al reservar.
+          schema:
+            type: boolean
+            default: false
+        - name: orden
+          in: query
+          description: Horario ascendente/descendente o relevancia con texto. Desempate
+            por claseId ascendente. Relevancia empata primero por horario
+            ascendente.
+          schema:
+            type: string
+            enum:
+              - inicio_asc
+              - inicio_desc
+              - relevancia
+            default: inicio_asc
+        - name: pagina
+          in: query
+          description: Entero positivo. Fuera del conjunto devuelve items vacío
+            conservando total.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000000
+            default: 1
+        - name: tamanio
+          in: query
+          description: Entero positivo de hasta 100 elementos.
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 100
+            default: 20
+      responses:
+        "200":
+          description: Página del catálogo con disponibilidad observada.
+          headers:
+            Cache-Control:
+              description: La disponibilidad se consulta al almacenamiento propietario.
+              schema:
+                type: string
+                const: no-store
+            X-Instance-ID:
+              description: Réplica de Clases que respondió.
+              schema:
+                type: string
+                minLength: 1
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Resultado"
+              example:
+                items:
+                  - claseId: clase-ficticia
+                    nombre: Yoga suave
+                    actividad: YOGA
+                    profesor: Profesora ficticia
+                    sedeId: sede-demo-01
+                    inicio: 2026-11-12T14:00:00.000Z
+                    fin: 2026-11-12T15:00:00.000Z
+                    capacidad: 10
+                    cuposDisponibles: 2
+                    reservaDirectaDisponible: true
+                pagina: 1
+                tamanio: 20
+                total: 1
+                consultadoEn: 2026-11-07T15:00:00.000Z
+        "400":
+          description: PARAMETROS_INVALIDOS. Parámetro desconocido/repetido, vacío, fuera
+            de límites o combinación inválida. Fechas RFC 3339 con zona y
+            booleano true/false.
+          headers:
+            Cache-Control:
+              description: La disponibilidad se consulta al almacenamiento propietario.
+              schema:
+                type: string
+                const: no-store
+            X-Instance-ID:
+              description: Réplica de Clases que respondió.
+              schema:
+                type: string
+                minLength: 1
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "401":
+          description: NO_AUTENTICADO. Falta JWT Bearer válido y vigente. La clave técnica
+            histórica no autoriza esta operación.
+          headers:
+            Cache-Control:
+              description: La disponibilidad se consulta al almacenamiento propietario.
+              schema:
+                type: string
+                const: no-store
+            X-Instance-ID:
+              description: Réplica de Clases que respondió.
+              schema:
+                type: string
+                minLength: 1
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          description: ERROR_INTERNO. Fallo inesperado.
+          headers:
+            Cache-Control:
+              description: La disponibilidad se consulta al almacenamiento propietario.
+              schema:
+                type: string
+                const: no-store
+            X-Instance-ID:
+              description: Réplica de Clases que respondió.
+              schema:
+                type: string
+                minLength: 1
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: BUSQUEDA_NO_DISPONIBLE. PostgreSQL no está configurado o la
+            consulta falló. No representa un catálogo vacío.
+          headers:
+            Cache-Control:
+              description: La disponibilidad se consulta al almacenamiento propietario.
+              schema:
+                type: string
+                const: no-store
+            X-Instance-ID:
+              description: Réplica de Clases que respondió.
+              schema:
+                type: string
+                minLength: 1
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /api/v1/admin/clases:
+    post:
+      operationId: publicarClase
+      summary: Publicar directamente una clase futura
+      description: >-
+        Exclusivo ADMIN. Nombre, actividad y profesor se recortan en sus extremos;
+        sedeId se conserva y debe existir en Accesos. Inicio futuro, fin posterior
+        y capacidad entera positiva. Fechas RFC 3339 con zona, normalizadas
+        a milisegundos UTC. Idempotencia por administrador y clave, compartida entre
+        alta y edición, sin TTL. Repetir clave y contenido normalizado devuelve el
+        resultado original, incluso después del inicio o con Accesos caído.
+        Reutilizar clave con otro contenido o destino devuelve 409.
+        La clase, vector FTS y resultado idempotente se confirman en una transacción.
+        Frente a red/5xx o respuesta incompatible, repetir exactamente la operación.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Publicacion' }
+            example:
+              nombre: Yoga suave
+              actividad: YOGA
+              profesor: Profesora ficticia
+              sedeId: sede-demo-01
+              inicio: '2030-01-02T15:00:00-03:00'
+              fin: '2030-01-02T16:00:00-03:00'
+              capacidad: 10
+      responses:
+        '201': { $ref: '#/components/responses/ClaseGestion' }
+        '400': { $ref: '#/components/responses/ErrorGestion' }
+        '401': { $ref: '#/components/responses/ErrorGestion' }
+        '403': { $ref: '#/components/responses/ErrorGestion' }
+        '409': { $ref: '#/components/responses/ErrorGestion' }
+        '422': { $ref: '#/components/responses/ErrorGestion' }
+        '500': { $ref: '#/components/responses/ErrorGestion' }
+        '503': { $ref: '#/components/responses/ErrorGestion' }
+  /api/v1/admin/clases/{claseId}:
+    parameters:
+      - $ref: '#/components/parameters/ClaseId'
+    get:
+      operationId: obtenerClaseAdministrativa
+      summary: Leer los datos y la versión actual para editar
+      description: Exclusivo ADMIN. Puede leer una clase publicada ya iniciada,
+        aunque su edición esté bloqueada. Registros anteriores conservan null en
+        actividad/profesor y reciben versión 1 durante la actualización del esquema.
+      responses:
+        '200': { $ref: '#/components/responses/ClaseGestion' }
+        '400': { $ref: '#/components/responses/ErrorGestion' }
+        '401': { $ref: '#/components/responses/ErrorGestion' }
+        '403': { $ref: '#/components/responses/ErrorGestion' }
+        '404': { $ref: '#/components/responses/ErrorGestion' }
+        '500': { $ref: '#/components/responses/ErrorGestion' }
+        '503': { $ref: '#/components/responses/ErrorGestion' }
+    put:
+      operationId: editarClase
+      summary: Editar una clase futura sin inscriptos
+      description: >-
+        Exclusivo ADMIN. Requiere todos los campos de publicación y versionEsperada
+        obtenida del GET administrativo. Valida sede mediante Accesos. Antes de
+        escribir bloquea la misma fila que las reservas/espera y comprueba inicio
+        original futuro, ausencia de reservas CONFIRMADAS y espera PENDIENTE,
+        versión esperada e inicio nuevo futuro. El historial cerrado permite editar.
+        Cada edición incrementa versión. Una lectura anterior de membresía sobre
+        otro inicio se rechaza con CLASE_MODIFICADA al reservar/entrar en espera.
+        Idempotencia y recuperación conservan las reglas del POST. El replay es la
+        fotografía del resultado original y puede tener una versión anterior al GET.
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Edicion' }
+      responses:
+        '200': { $ref: '#/components/responses/ClaseGestion' }
+        '400': { $ref: '#/components/responses/ErrorGestion' }
+        '401': { $ref: '#/components/responses/ErrorGestion' }
+        '403': { $ref: '#/components/responses/ErrorGestion' }
+        '404': { $ref: '#/components/responses/ErrorGestion' }
+        '409': { $ref: '#/components/responses/ErrorGestion' }
+        '422': { $ref: '#/components/responses/ErrorGestion' }
+        '500': { $ref: '#/components/responses/ErrorGestion' }
+        '503': { $ref: '#/components/responses/ErrorGestion' }
+  /api/v1/clases/{claseId}/espera/{esperaId}/retirar:
+    post:
+      operationId: retirarEspera
+      summary: Retirarse de una inscripción concreta en la lista de espera
+      description: >-
+        JWT del propietario o ADMIN. La transición PENDIENTE a CANCELADO sólo
+        se permite antes del inicio y se serializa con reserva/promoción mediante
+        el bloqueo de clase. No consulta Socios. Conserva historial y orden.
+        Repetir una entrada CANCELADO devuelve 200 sin volver a modificarla,
+        incluso tras el inicio, y no afecta otra inscripción posterior.
+        El identificador de la entrada da idempotencia a esta transición y no
+        se requiere Idempotency-Key. Si la entrada está PROMOVIDO devuelve 409,
+        con la reserva confirmada actual cuando exista. El cliente actualiza
+        Mis Reservas y exige una cancelación explícita de esa reserva.
+        reasignacionPendiente indica cupo libre y otro candidato pendiente que
+        evaluará el trabajador FIFO existente. La disponibilidad puede cambiar.
+      parameters:
+        - $ref: '#/components/parameters/ClaseId'
+        - name: esperaId
+          in: path
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 50, pattern: '\S' }
+      responses:
+        '200':
+          description: Entrada cancelada o repetición de un retiro ya confirmado.
+          headers:
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/RetiroEspera' }
+              example:
+                exito: true
+                reasignacionPendiente: false
+                espera:
+                  esperaId: espera-ficticia
+                  claseId: clase-ficticia
+                  socioId: socio-ficticio
+                  orden: 1
+                  estado: CANCELADO
+                  createdAt: '2026-11-08T12:00:00Z'
+                  updatedAt: '2026-11-08T12:01:00Z'
+        '400':
+          description: PARAMETROS_INVALIDOS o CLASE_INICIADA para una entrada todavía pendiente.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '401':
+          description: NO_AUTENTICADO. Falta sesión válida.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '403':
+          description: NO_AUTORIZADO. Un SOCIO intenta retirar una entrada ajena.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '404':
+          description: ESPERA_NO_ENCONTRADA. Falta la entrada o no pertenece a la clase indicada.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: La espera ya fue promovida y se conserva la reserva.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [codigo, mensaje, espera]
+                properties:
+                  codigo: { type: string, const: ESPERA_PROMOVIDA }
+                  mensaje: { type: string, minLength: 1 }
+                  espera: { $ref: '#/components/schemas/EntradaEspera' }
+                  reserva: { $ref: '#/components/schemas/ReservaConfirmada' }
+        '500':
+          description: ERROR_INTERNO. El retiro no pudo confirmarse. Consultar estado y repetir la misma entrada.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '503':
+          description: SERVICIO_NO_DISPONIBLE. Consultar estado y repetir la misma entrada.
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+components:
+  parameters:
+    ClaseId:
+      name: claseId
+      in: path
+      required: true
+      schema: { type: string, minLength: 1, maxLength: 50, pattern: '\S' }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: true
+      schema: { type: string, minLength: 8, maxLength: 128, pattern: '^[A-Za-z0-9_-]+$' }
+  responses:
+    ClaseGestion:
+      description: Datos confirmados de la clase. En reintentos se devuelve la fotografía original.
+      headers:
+        Cache-Control:
+          schema: { type: string, const: no-store }
+        X-Instance-ID:
+          schema: { type: string, minLength: 1 }
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/ClaseAdministrada' }
+    ErrorGestion:
+      description: >-
+        400 PARAMETROS_INVALIDOS/FECHAS_INVALIDAS/IDEMPOTENCIA_INVALIDA;
+        401 NO_AUTENTICADO; 403 NO_AUTORIZADO; 404 CLASE_NO_ENCONTRADA;
+        409 CLASE_INICIADA/CLASE_CON_INSCRIPTOS/VERSION_CONFLICTO/IDEMPOTENCIA_CONFLICTO/VERSION_AGOTADA;
+        422 SEDE_NO_ENCONTRADA; 503 SEDES_NO_DISPONIBLES/ALMACENAMIENTO_NO_DISPONIBLE/GESTION_CLASES_NO_DISPONIBLE;
+        500 ERROR_INTERNO. Los rechazos 400/404/409 de fecha, inscriptos o versión/422 no guardan una mutación.
+        Un conflicto de idempotencia requiere recuperar la operación original.
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+  securitySchemes:
+    Bearer:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  schemas:
+    EntradaEspera:
+      type: object
+      additionalProperties: false
+      required: [esperaId, claseId, socioId, orden, estado, createdAt, updatedAt]
+      properties:
+        esperaId: { type: string, minLength: 1 }
+        claseId: { type: string, minLength: 1 }
+        socioId: { type: string, minLength: 1 }
+        orden: { type: integer, minimum: 1 }
+        estado: { type: string, enum: [PENDIENTE, CANCELADO, PROMOVIDO] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    ReservaConfirmada:
+      type: object
+      additionalProperties: false
+      required: [reservaId, claseId, socioId, estado, createdAt, updatedAt]
+      properties:
+        reservaId: { type: string, minLength: 1 }
+        claseId: { type: string, minLength: 1 }
+        socioId: { type: string, minLength: 1 }
+        estado: { type: string, const: CONFIRMADA }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    RetiroEspera:
+      type: object
+      additionalProperties: false
+      required: [exito, espera, reasignacionPendiente]
+      properties:
+        exito: { type: boolean, const: true }
+        espera:
+          allOf:
+            - { $ref: '#/components/schemas/EntradaEspera' }
+            - { type: object, properties: { estado: { const: CANCELADO } } }
+        reasignacionPendiente: { type: boolean }
+    Publicacion:
+      type: object
+      additionalProperties: false
+      required: [nombre, actividad, profesor, sedeId, inicio, fin, capacidad]
+      properties:
+        nombre: { type: string, minLength: 1, maxLength: 100, pattern: '\S' }
+        actividad: { type: string, minLength: 1, maxLength: 50, pattern: '\S' }
+        profesor: { type: string, minLength: 1, maxLength: 100, pattern: '\S' }
+        sedeId: { type: string, minLength: 1, maxLength: 50, pattern: '\S' }
+        inicio: { type: string, format: date-time, maxLength: 64 }
+        fin: { type: string, format: date-time, maxLength: 64 }
+        capacidad: { type: integer, minimum: 1, maximum: 2147483647 }
+    Edicion:
+      type: object
+      additionalProperties: false
+      required: [nombre, actividad, profesor, sedeId, inicio, fin, capacidad, versionEsperada]
+      properties:
+        nombre: { type: string, minLength: 1, maxLength: 100, pattern: '\S' }
+        actividad: { type: string, minLength: 1, maxLength: 50, pattern: '\S' }
+        profesor: { type: string, minLength: 1, maxLength: 100, pattern: '\S' }
+        sedeId: { type: string, minLength: 1, maxLength: 50, pattern: '\S' }
+        inicio: { type: string, format: date-time, maxLength: 64 }
+        fin: { type: string, format: date-time, maxLength: 64 }
+        capacidad: { type: integer, minimum: 1, maximum: 2147483647 }
+        versionEsperada: { type: integer, minimum: 1, maximum: 2147483647 }
+    ClaseAdministrada:
+      type: object
+      additionalProperties: false
+      required: [claseId, nombre, actividad, profesor, sedeId, inicio, fin, capacidad, publicada, version]
+      properties:
+        claseId: { type: string, minLength: 1, maxLength: 50 }
+        nombre: { type: string, minLength: 1 }
+        actividad: { type: [string, 'null'] }
+        profesor: { type: [string, 'null'] }
+        sedeId: { type: string, minLength: 1 }
+        inicio: { type: string, format: date-time }
+        fin: { type: string, format: date-time }
+        capacidad: { type: integer, minimum: 0 }
+        publicada: { type: boolean, const: true }
+        version: { type: integer, minimum: 1, maximum: 2147483647 }
+    Clase:
+      type: object
+      additionalProperties: false
+      required:
+        - claseId
+        - nombre
+        - actividad
+        - profesor
+        - sedeId
+        - inicio
+        - fin
+        - capacidad
+        - cuposDisponibles
+        - reservaDirectaDisponible
+      properties:
+        claseId:
+          type: string
+          minLength: 1
+        nombre:
+          type: string
+          minLength: 1
+        actividad:
+          type:
+            - string
+            - "null"
+        profesor:
+          type:
+            - string
+            - "null"
+        sedeId:
+          type: string
+          minLength: 1
+        inicio:
+          type: string
+          format: date-time
+          maxLength: 64
+        fin:
+          type: string
+          format: date-time
+          maxLength: 64
+        capacidad:
+          type: integer
+          minimum: 0
+        cuposDisponibles:
+          type: integer
+          minimum: 0
+        reservaDirectaDisponible:
+          type: boolean
+    Resultado:
+      type: object
+      additionalProperties: false
+      required:
+        - items
+        - pagina
+        - tamanio
+        - total
+        - consultadoEn
+      properties:
+        items:
+          type: array
+          items:
+            $ref: "#/components/schemas/Clase"
+        pagina:
+          type: integer
+          minimum: 1
+          maximum: 1000000
+        tamanio:
+          type: integer
+          minimum: 1
+          maximum: 100
+        total:
+          type: integer
+          minimum: 0
+        consultadoEn:
+          type: string
+          format: date-time
+          maxLength: 64
+    Error:
+      type: object
+      additionalProperties: false
+      required:
+        - codigo
+        - mensaje
+      properties:
+        codigo:
+          type: string
+          minLength: 1
+        mensaje:
+          type: string
+          minLength: 1

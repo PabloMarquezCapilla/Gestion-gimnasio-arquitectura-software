@@ -59,19 +59,23 @@ La confirmación del pago asociado al alta o a la renovación habilita la membre
 - Lista de espera.
 - Reasignación de cupos.
 
+**Reglas confirmadas el 07/11/2026 para publicación y edición.** ADMIN completa nombre, actividad, profesor, sede, inicio, fin y capacidad. El alta publica directamente con inicio futuro, fin posterior al inicio y capacidad entera positiva. La edición de esos datos se permite antes del inicio únicamente si no existen reservas confirmadas ni personas pendientes en espera. Implementadas localmente en el bloque 5.4, con selección/validación de sedes en Accesos, versión esperada y reintentos durables. Los límites de longitud y capacidad del contrato responden al almacenamiento existente.
+
 ### Búsqueda
 La entidad principal para la búsqueda será **Clase/Actividad**.
 
-Criterios preliminares:
-- texto: nombre o tipo de actividad;
+Criterios confirmados el 07/11/2026:
+- texto en nombre, actividad o profesor;
 - sede;
 - profesor;
-- día;
-- franja horaria;
-- disponibilidad;
-- nivel o categoría.
+- rango de fecha/hora de inicio, que permite delimitar un día o una franja horaria;
+- disponibilidad de cupo para reserva directa, respetando la prioridad de espera.
 
-La búsqueda deberá admitir paginación y ordenamiento.
+La búsqueda admite paginación y orden por horario ascendente, horario descendente o relevancia cuando hay texto. El portal conserva su recorrido de clases futuras. El filtro de disponibilidad evalúa capacidad libre y ausencia de espera pendiente, y la membresía y duplicados se verifican al reservar. Nivel/categoría queda pendiente de definición para una ampliación.
+
+**Implementación de los bloques 5.2–5.4.** `GET /api/v1/catalogo/clases` incorpora búsqueda PostgreSQL FTS para JWT SOCIO/ADMIN. Total y página se calculan con la misma sentencia. El portal conecta los filtros, orden y páginas de 20 resultados, distingue vacío/error y permite reservar o elegir la espera respetando su prioridad. Las reservas propias conservan el detalle de sus clases al cambiar filtros o recargar. La publicación/edición administrativa actualiza el mismo catálogo y vector. [Contrato vigente 1.2.0](contracts/openapi-catalogo-v1.yaml), [evidencia](EVIDENCIA-BUSQUEDA.md).
+
+**Cierre del bloque 5.5.** Se verificaron publicación, edición, búsqueda y reconstrucción concurrente del índice sobre bases temporales. Cinco consultas conservaron resultados, filtros, orden y páginas, con veinte lecturas completadas en dos instancias durante REINDEX y datos de negocio equivalentes después. El ensayo por NGINX confirmó el recorrido publicado/editado antes y después del mantenimiento. RF-04/RF-06 y CA-G04 quedan verificados localmente. El procedimiento está en D6 y el retiro voluntario de espera conserva el paso 6.
 
 ### Control de acceso y ocupación
 Cada intento de ingreso validará el estado de la membresía. Recepción registra los ingresos y egresos desde la aplicación. El sistema registra el resultado del acceso y mantiene información de ocupación de la sede.
@@ -122,7 +126,7 @@ Los datos de prueba serán ficticios; está pendiente confirmar si esa condició
 | RF-04 | El administrador puede publicar clases con sede, horario y capacidad máxima. |
 | RF-05 | El socio puede consultar su membresía y el estado de sus reservas. |
 | RF-06 | El socio puede buscar clases por los criterios del apartado Búsqueda, con paginación y ordenamiento. |
-| RF-07 | El socio puede reservar y cancelar clases o elegir ingresar a una lista de espera según las reglas de CU-01. |
+| RF-07 | El socio puede reservar y cancelar clases, elegir ingresar a una lista de espera y retirarse de ella según las reglas de CU-01. |
 | RF-08 | Recepción puede registrar intentos de ingreso y egresos de una sede desde la aplicación, validando la membresía y la alternancia de los movimientos. |
 | RF-09 | El sistema permite consultar la ocupación actual por sede a partir de los ingresos aceptados y sus egresos. |
 | RF-10 | El administrador consulta empleados de Car Cruds y los vincula manualmente con socios; Socios y Membresías envía fotografías mensuales conforme al contrato externo, con hechos desconocidos explícitos y reintentos sin duplicación. |
@@ -233,7 +237,7 @@ Condiciones:
 
 ## Caso de uso CU-01: reservar una clase
 
-**Estado:** reglas confirmadas para la primera versión. Reservas, espera y recuperación están implementadas; la cancelación por cambios posteriores de membresía sigue pendiente. Ver D4/D5 en la arquitectura.
+**Estado.** Reglas confirmadas para la primera versión. Reservas, espera y recuperación implementadas. La cancelación por suspensión administrativa se concreta mediante eventos, según la cobertura de RN-R08/CA-R09 detallada más abajo. Otros cambios de membresía conservan sus pendientes. Ver D4/D5 en la arquitectura.
 
 ### Actor y objetivo
 
@@ -273,6 +277,7 @@ Las validaciones anteriores describen condiciones de negocio. Su implementación
 | RN-R10 | Las nuevas reservas y los ingresos a la lista de espera solo se permiten antes del inicio de la clase. |
 | RN-R11 | Para la primera versión, cualquier membresía vigente y habilitada permite reservar cualquier clase y sede. No se establecen límites adicionales de cantidad de reservas ni validaciones por superposición de horarios; se mantienen el cupo por clase y la prohibición de duplicados. |
 | RN-R12 | Si Socios no responde al reasignar un cupo, la cancelación local se acepta, se conserva al primero de la espera y el cupo no se asigna a nuevas solicitudes. La reasignación se reintenta automáticamente cuando se recupera Socios. Un error de comunicación no equivale a perder la habilitación. |
+| RN-R13 | El socio puede retirarse de una inscripción pendiente antes del inicio. El retiro conserva historial y orden. Si la inscripción ya fue promovida, se informa y se actualizan sus reservas para una cancelación explícita. |
 
 ### Criterios de aceptación
 
@@ -292,8 +297,13 @@ Los escenarios que esperan una nueva reserva confirmada presuponen que la clase 
 | CA-R08 | El socio solicita nuevamente una clase cuya reserva había cancelado y cumple las condiciones vigentes. | La cancelación anterior no impide confirmar la nueva reserva si existe cupo para él. |
 | CA-R09 | Una membresía se suspende o pierde la habilitación para una clase futura ya reservada. | Se cancela la reserva afectada, se libera el cupo y se aplica la política de reasignación. |
 | CA-R10 | Se cancela antes del inicio y Socios está indisponible al evaluar al primero de la espera. | La reserva queda cancelada; no se elimina al candidato ni se adelanta a otro. Tras recuperarse Socios, se valida y reasigna respetando el orden y la capacidad. |
+| CA-R11 | El propietario se retira de su espera antes del inicio, incluso con Socios caído. | Su entrada queda CANCELADO y conserva historial. Repetir el retiro no afecta una inscripción posterior. |
+| CA-R12 | Se intenta retirar una entrada pendiente al inicio o después. | Se rechaza el retiro y se conserva la entrada. Repetir una entrada ya cancelada recupera su estado cerrado. |
+| CA-R13 | Retiro y promoción compiten. | Si gana el retiro, el candidato anterior no se promueve y se respeta al siguiente. Si gana la promoción, se informa el conflicto y se muestra la reserva confirmada para cancelarla explícitamente. |
 
 **Cobertura actual, 07/11/2026.** RN-R08/CA-R09 se concretan para suspensión administrativa mediante evento de dominio, con cancelación de reservas futuras afectadas y recuperación FIFO. Las reglas anteriores se conservan. [D5](adr/ADR-005-comunicacion-entre-servicios.md) y [evidencia específica](EVIDENCIA-EVENTOS-MEMBRESIA.md) distinguen las verificaciones realizadas de los pendientes.
+
+**Retiro de espera, 08/11/2026.** RN-R13 y CA-R11–R13 concretan las reglas confirmadas previamente por el equipo. La operación se dirige a una entrada por su identificador, bajo el mismo bloqueo de clase que la promoción. La nueva inscripción utiliza otra entrada y queda al final según el orden de ingreso existente. El portal ofrece «Salir de espera» en clases y reservas propias y actualiza el estado si la promoción ya ocurrió. [D4 y verificación](adr/ADR-017-consistencia-y-recuperacion-de-espera.md), [contrato interno 1.2.0](contracts/openapi-catalogo-v1.yaml).
 
 ## Fuera de alcance inicial
 

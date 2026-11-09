@@ -16,6 +16,173 @@ const json = (data, status = 200) => new Response(JSON.stringify(data), {
   status, headers: { 'Content-Type': 'application/json' },
 });
 
+const claseCatalogo = {
+  claseId:'clase-busqueda',nombre:'Yoga de prueba',actividad:'YOGA',profesor:'Ana de prueba',sedeId:'sede-1',
+  inicio:'2026-11-12T15:00:00Z',fin:'2026-11-12T16:00:00Z',capacidad:5,cuposDisponibles:2,reservaDirectaDisponible:true,
+};
+const paginaCatalogo = {items:[claseCatalogo],pagina:1,tamanio:20,total:1,consultadoEn:'2026-11-08T12:00:00Z'};
+
+const retiroEspera = { exito:true,reasignacionPendiente:false,espera:{
+  esperaId:'espera-ficticia',claseId:'clase-ficticia',socioId:'socio-prueba',orden:2,estado:'CANCELADO',
+  createdAt:'2026-11-08T12:00:00Z',updatedAt:'2026-11-08T12:01:00Z',
+} };
+test('Retiro de espera usa su identificador estable, JWT y confirma el estado cancelado',async()=>{
+  api.setApiSession('jwt-retiro');
+  globalThis.fetch=async(url,options)=>{
+    assert.equal(url,'/api/v1/clases/clase-ficticia/espera/espera-ficticia/retirar');
+    assert.equal(options.method,'POST');assert.equal(options.body,undefined);
+    assert.equal(options.headers.get('Authorization'),'Bearer jwt-retiro');
+    return json(retiroEspera);
+  };
+  assert.deepEqual(await api.apiRetirarEspera('clase-ficticia','espera-ficticia'),retiroEspera);
+});
+
+test('Retiro no confirma éxito ante respuesta incompleta, otra entrada o espera aún pendiente',async()=>{
+  api.setApiSession('jwt-retiro');
+  for(const body of [{}, {...retiroEspera,exito:false},{...retiroEspera,reasignacionPendiente:undefined},
+    ...[{esperaId:'otra'},{claseId:'otra'},{estado:'PENDIENTE'},{orden:0},{updatedAt:'2026-11-08T11:59:00Z'}]
+      .map(fields=>({...retiroEspera,espera:{...retiroEspera.espera,...fields}}))]){
+    globalThis.fetch=async()=>json(body);
+    await assert.rejects(api.apiRetirarEspera('clase-ficticia','espera-ficticia'),{status:502,codigo:'RESPUESTA_INVALIDA'});
+  }
+});
+
+test('Espera promovida propaga conflicto conservando la sesión y el destino de retiro',async()=>{
+  let calls=0,expired=false;api.setApiSession('jwt-retiro',()=>{expired=true;});
+  globalThis.fetch=async url=>{
+    calls++;assert.ok(url.endsWith('/espera/espera-ficticia/retirar'));
+    return json({codigo:'ESPERA_PROMOVIDA',mensaje:'Ya fue promovida.'},409);
+  };
+  await assert.rejects(api.apiRetirarEspera('clase-ficticia','espera-ficticia'),{status:409,codigo:'ESPERA_PROMOVIDA'});
+  assert.equal(calls,1);assert.equal(expired,false);
+});
+
+const datosGestion = { nombre:'Yoga',actividad:'YOGA',profesor:'Profesora ficticia',sedeId:'sede-1',
+  inicio:'2030-01-02T15:00:00Z',fin:'2030-01-02T16:00:00Z',capacidad:5 };
+const claseGestion = { ...datosGestion,claseId:'clase-gestion',publicada:true,version:1 };
+
+test('Administración envía publicación y edición con JWT, clave y versión esperada',async()=>{
+  api.setApiSession('jwt-admin');
+  for(const claseId of [null,'clase-gestion']) {
+    const datos=claseId===null?datosGestion:{...datosGestion,versionEsperada:1};
+    globalThis.fetch=async(url,options)=>{
+      assert.equal(url,'/api/v1/admin/clases'+(claseId===null?'':'/clase-gestion'));
+      assert.equal(options.method,claseId===null?'POST':'PUT');
+      assert.equal(options.headers.get('Authorization'),'Bearer jwt-admin');
+      assert.equal(options.headers.get('Idempotency-Key'),'operacion-ficticia');
+      assert.deepEqual(JSON.parse(options.body),datos);
+      return json({...claseGestion,version:claseId===null?1:2},claseId===null?201:200);
+    };
+    assert.equal((await api.apiGuardarClase({clave:'operacion-ficticia',claseId,datos})).version,claseId===null?1:2);
+  }
+});
+
+test('Administración conserva el mismo comando al recuperar una respuesta perdida',async()=>{
+  api.setApiSession('jwt-admin');
+  const op={clave:'operacion-ficticia',claseId:null,datos:datosGestion};const original=structuredClone(op);
+  const requests=[];let first=true;
+  globalThis.fetch=async(url,options)=>{
+    requests.push({url,method:options.method,key:options.headers.get('Idempotency-Key'),body:options.body});
+    if(first){first=false;throw new Error('Conexión perdida después del commit');}
+    return json(claseGestion,201);
+  };
+  await assert.rejects(api.apiGuardarClase(op),{status:0});
+  assert.equal((await api.apiGuardarClase(op)).claseId,claseGestion.claseId);
+  assert.deepEqual(requests[0],requests[1]);assert.deepEqual(op,original);
+});
+
+test('Administración rechaza confirmaciones de otra clase, datos o versión y tolera lecturas antiguas',async()=>{
+  api.setApiSession('jwt-admin');
+  const op={clave:'operacion-ficticia',claseId:'clase-gestion',datos:{...datosGestion,versionEsperada:1}};
+  for(const cambio of [{claseId:'otra'},{nombre:'Otra'},{version:1},{inicio:'2030-01-02T16:00:00Z'},{capacidad:6},{profesor:null}]) {
+    globalThis.fetch=async()=>json({...claseGestion,version:2,...cambio});
+    await assert.rejects(api.apiGuardarClase(op),{status:502,codigo:'RESPUESTA_INVALIDA'});
+  }
+  globalThis.fetch=async()=>json({...claseGestion,profesor:null,actividad:null});
+  assert.equal((await api.apiObtenerClaseAdmin('clase-gestion')).profesor,null);
+  globalThis.fetch=async()=>json({...claseGestion,claseId:'otra'});
+  await assert.rejects(api.apiObtenerClaseAdmin('clase-gestion'),{status:502});
+});
+
+test('Operaciones recuperadas y sedes inválidas se rechazan antes de escribir otra clase',async()=>{
+  api.setApiSession('jwt-admin');
+  for(const datos of [{...datosGestion,extra:true},{...datosGestion,capacidad:0},{...datosGestion,profesor:''},
+    {...datosGestion,fin:datosGestion.inicio}]) {
+    let called=false;globalThis.fetch=async()=>{called=true;return json(claseGestion,201);};
+    await assert.rejects(api.apiGuardarClase({clave:'operacion-ficticia',claseId:null,datos}),{status:400});
+    assert.equal(called,false);
+  }
+  for(const body of [{}, {items:[{sedeId:'sede-1'}]}, {items:[{sedeId:'repetida',nombre:'Una'},{sedeId:'repetida',nombre:'Otra'}]}]) {
+    globalThis.fetch=async()=>json(body);
+    await assert.rejects(api.apiAccesosSedes(),{status:502,codigo:'RESPUESTA_INVALIDA'});
+  }
+});
+
+test('Búsqueda del portal serializa filtros y páginas con JWT y señal de cancelación',async()=>{
+  api.setApiSession('jwt-busqueda');
+  const controller=new AbortController();
+  globalThis.fetch=async(url,options)=>{
+    const u=new URL(url,'http://prueba.invalid');
+    assert.equal(u.pathname,'/api/v1/catalogo/clases');
+    for(const [key,value] of Object.entries({texto:'Yoga',sedeId:'sede-1',profesor:'Ana de prueba',
+      desde:'2026-11-12T00:00:00-03:00',hasta:'2026-11-13T00:00:00-03:00',soloConCupo:'true',orden:'inicio_desc',pagina:'2',tamanio:'20'})){
+      assert.equal(u.searchParams.get(key),value);
+    }
+    assert.equal(options.headers.get('Authorization'),'Bearer jwt-busqueda');
+    assert.equal(options.headers.get('X-API-Key'),null);assert.equal(options.signal,controller.signal);
+    return json({...paginaCatalogo,pagina:2,total:21});
+  };
+  assert.equal((await api.apiBuscarClases({texto:' Yoga ',sedeId:'sede-1',profesor:'Ana de prueba',
+    desde:'2026-11-12T00:00:00-03:00',hasta:'2026-11-13T00:00:00-03:00',soloConCupo:true,orden:'inicio_desc',pagina:2,tamanio:20},controller.signal)).total,21);
+});
+
+test('Búsqueda conserva null, cupos protegidos y páginas fuera de rango con total real',async()=>{
+  api.setApiSession('jwt-busqueda');
+  globalThis.fetch=async()=>json({...paginaCatalogo,items:[{...claseCatalogo,actividad:null,profesor:null,reservaDirectaDisponible:false}]});
+  assert.equal((await api.apiBuscarClases()).items[0].profesor,null);
+  assert.equal((await api.apiBuscarClases()).items[0].reservaDirectaDisponible,false);
+  globalThis.fetch=async()=>json({...paginaCatalogo,items:[],pagina:3,total:21});
+  assert.equal((await api.apiBuscarClases({pagina:3})).total,21);
+});
+
+test('Búsqueda rechaza respuestas incompatibles, cantidades imposibles y páginas parciales',async()=>{
+  api.setApiSession('jwt-busqueda');
+  for(const body of [{}, {...paginaCatalogo,pagina:2},{...paginaCatalogo,total:1.5},{...paginaCatalogo,items:[]},
+    {...paginaCatalogo,items:[claseCatalogo,claseCatalogo],total:2},
+    ...[{cuposDisponibles:6},{capacidad:-1},{capacidad:Number.MAX_SAFE_INTEGER+1},{actividad:undefined},
+      {inicio:'fecha'},{inicio:'2026-01-01T00:00:00Z'},{reservaDirectaDisponible:'sí'},
+      {cuposDisponibles:0,reservaDirectaDisponible:true}].map(fields=>({...paginaCatalogo,items:[{...claseCatalogo,...fields}]}))]){
+    globalThis.fetch=async()=>json(body);
+    await assert.rejects(api.apiBuscarClases(),{status:502,codigo:'RESPUESTA_INVALIDA'});
+  }
+  globalThis.fetch=async()=>json(paginaCatalogo,201);
+  await assert.rejects(api.apiBuscarClases(),{status:502});
+});
+
+test('Búsqueda distingue catálogo vacío de caída, red y expiración de sesión',async()=>{
+  api.setApiSession('jwt-busqueda');
+  globalThis.fetch=async()=>json({...paginaCatalogo,items:[],total:0});
+  assert.deepEqual((await api.apiBuscarClases()).items,[]);
+  globalThis.fetch=async()=>json({codigo:'BUSQUEDA_NO_DISPONIBLE',mensaje:'No disponible'},503);
+  await assert.rejects(api.apiBuscarClases(),{status:503,codigo:'BUSQUEDA_NO_DISPONIBLE'});
+  globalThis.fetch=async()=>{throw new TypeError('sin red');};
+  await assert.rejects(api.apiBuscarClases(),{status:0});
+  let vencida=false;api.setApiSession('jwt-busqueda',()=>{vencida=true;});
+  globalThis.fetch=async()=>json({codigo:'NO_AUTENTICADO'},401);
+  await assert.rejects(api.apiBuscarClases(),{status:401});assert.equal(vencida,true);
+});
+
+test('Detalles personales de reservas se conservan separados de los resultados de búsqueda',async()=>{
+  api.setApiSession('jwt-busqueda');
+  const data={items:[],reservasSocio:[],esperaSocio:[],clasesPersonales:[{
+    claseId:'fuera-de-pagina',nombre:'Clase de otra página',sedeId:'sede-1',inicio:'2026-11-12T15:00:00Z',
+  }]};
+  globalThis.fetch=async()=>json(data);
+  assert.deepEqual((await api.apiObtenerClasesYReservas('socio-1')).clasesPersonales,data.clasesPersonales);
+  globalThis.fetch=async()=>json({...data,clasesPersonales:[{...data.clasesPersonales[0],inicio:'inválida'}]});
+  await assert.rejects(api.apiObtenerClasesYReservas('socio-1'),{status:502});
+});
+
 test('Suspensión usa JWT y clave estable, y distingue guardado de respuesta inválida',async()=>{
   api.setApiSession('jwt-ficticio');
   const resultado={membresiaId:'mem-1',socioId:'socio-1',estado:'SUSPENDIDA',eventId:'e01bc7ee-36e0-48d9-b260-118fb7ad96fc',
@@ -31,6 +198,55 @@ test('Suspensión usa JWT y clave estable, y distingue guardado de respuesta inv
   await assert.rejects(api.apiOperacionMembresia('/api/v1/membresias/mem-1/suspender','POST',{},'suspension-estable'),{status:502});
   globalThis.fetch=async()=>json({codigo:'ERROR_INTERNO'},500);
   await assert.rejects(api.apiOperacionMembresia('/api/v1/membresias/mem-1/suspender','POST',{},'suspension-estable'),{status:500});
+});
+
+test('La gestión libera una consulta que no recibe respuesta al agotarse su plazo', async t => {
+  const controller = new AbortController();
+  t.mock.method(AbortSignal, 'timeout', milliseconds => {
+    assert.equal(milliseconds, 15000);
+    return controller.signal;
+  });
+  api.setApiSession('jwt-gestion');
+  globalThis.fetch = async (_url, { signal }) => new Promise((_resolve, reject) => {
+    signal.addEventListener('abort', () => reject(signal.reason), { once: true });
+  });
+  const rejected = assert.rejects(api.apiPlanesMembresia(), { status: 0, codigo: 'TIEMPO_AGOTADO' });
+  controller.abort(new DOMException('Plazo agotado', 'TimeoutError'));
+  await rejected;
+});
+
+test('Una suspensión con cuerpo interrumpido vence y se recupera con la misma clave y sesión', async t => {
+  let controller = new AbortController();
+  t.mock.method(AbortSignal, 'timeout', () => controller.signal);
+  let expired = false;
+  api.setApiSession('jwt-suspension', () => { expired = true; });
+  const resultado = { membresiaId: 'mem-1', socioId: 'socio-1', estado: 'SUSPENDIDA',
+    eventId: 'e01bc7ee-36e0-48d9-b260-118fb7ad96fc', suspendidaEn: '2026-11-07T15:00:00Z',
+    fechaInicio: '2026-11-01T00:00:00Z', fechaFin: '2026-11-30T23:59:59Z' };
+  const requests = [];
+  globalThis.fetch = async (url, options) => {
+    requests.push({ url, key: options.headers.get('Idempotency-Key'),
+      token: options.headers.get('Authorization'), body: options.body });
+    return { ok: true, status: 200, headers: new Headers({ 'Content-Type': 'application/json' }),
+      json: () => new Promise((_resolve, reject) => {
+        options.signal.addEventListener('abort', () => reject(options.signal.reason), { once: true });
+      }) };
+  };
+  const operation = () => api.apiOperacionMembresia('/api/v1/membresias/mem-1/suspender', 'POST', {}, 'suspension-estable');
+  const rejected = assert.rejects(operation(), { status: 0, codigo: 'TIEMPO_AGOTADO' });
+  await Promise.resolve();
+  controller.abort(new DOMException('Cuerpo incompleto', 'TimeoutError'));
+  await rejected;
+  controller = new AbortController();
+  globalThis.fetch = async (url, options) => {
+    requests.push({ url, key: options.headers.get('Idempotency-Key'),
+      token: options.headers.get('Authorization'), body: options.body });
+    return json(resultado);
+  };
+  assert.deepEqual(await operation(), resultado);
+  assert.equal(expired, false);
+  assert.equal(requests.length, 2);
+  assert.deepEqual(requests[0], requests[1]);
 });
 
 test('Historial de membresías verifica propietario, períodos y estados',async()=>{

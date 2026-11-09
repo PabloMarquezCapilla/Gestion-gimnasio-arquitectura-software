@@ -31,6 +31,98 @@ function environment(client = { verificarHabilitacion: enabled }, cupos = 1) {
   return { time, clock, repository, service, client };
 }
 
+test('retirarse conserva historial y permite repetir el retiro sin afectar otra inscripción posterior', async () => {
+  const { service, repository, time } = environment(undefined, 0);
+  const first = (await service.ingresarEspera('clase-ficticia', 'socio-a')).espera;
+  const removed = await service.retirarEspera(first.esperaId);
+  assert.equal(removed.exito, true); assert.equal(removed.espera.estado, 'CANCELADO');
+  const second = (await service.ingresarEspera('clase-ficticia', 'socio-a')).espera;
+  assert.notEqual(second.esperaId, first.esperaId); assert.ok(second.orden > first.orden);
+  assert.deepEqual(await service.retirarEspera(first.esperaId), removed);
+  assert.equal((await repository.obtenerEntradaEspera(second.esperaId)).estado, 'PENDIENTE');
+  time.value = inicio;
+  assert.equal((await service.retirarEspera(first.esperaId)).exito, true);
+  assert.equal((await repository.obtenerEntradaEspera(second.esperaId)).estado, 'PENDIENTE');
+});
+
+test('retiro pendiente respeta el inicio exacto y rechaza entradas inexistentes', async () => {
+  for (const fecha of [inicio, '2026-11-20T19:00:00Z']) {
+    const { service, repository, time } = environment(undefined, 0);
+    const espera = (await service.ingresarEspera('clase-ficticia', 'socio-a')).espera;
+    time.value = fecha;
+    assert.equal((await service.retirarEspera(espera.esperaId)).codigo, 'CLASE_INICIADA');
+    assert.equal((await repository.obtenerEntradaEspera(espera.esperaId)).estado, 'PENDIENTE');
+  }
+  assert.equal((await environment().service.retirarEspera('inexistente')).codigo, 'ESPERA_NO_ENCONTRADA');
+});
+
+test('retirarse de una espera promovida informa el conflicto y conserva la reserva confirmada', async () => {
+  const { service, repository } = environment(undefined, 0);
+  const espera = (await service.ingresarEspera('clase-ficticia', 'socio-a')).espera;
+  await service.cancelarReserva('res-init-clase-ficticia-1');
+  await service.procesarPendientes();
+  const result = await service.retirarEspera(espera.esperaId);
+  assert.equal(result.exito, false); assert.equal(result.codigo, 'ESPERA_PROMOVIDA');
+  assert.equal(result.reserva.estado, 'CONFIRMADA');
+  assert.equal((await repository.obtenerReserva(result.reserva.reservaId)).estado, 'CONFIRMADA');
+  await service.cancelarReserva(result.reserva.reservaId);
+  const replay = await service.retirarEspera(espera.esperaId);
+  assert.equal(replay.codigo, 'ESPERA_PROMOVIDA'); assert.equal(replay.reserva, undefined);
+});
+
+test('retirar al primero invalida su evaluación en curso y conserva la prioridad del siguiente', async () => {
+  const { service, repository } = environment(undefined, 0);
+  const first = (await service.ingresarEspera('clase-ficticia', 'socio-a')).espera;
+  const second = (await service.ingresarEspera('clase-ficticia', 'socio-b')).espera;
+  await service.cancelarReserva('res-init-clase-ficticia-1');
+  const candidate = await repository.obtenerPrimerCandidato('clase-ficticia');
+  const local = new ReservasService(repository, { verificarHabilitacion: async () => { throw new Error('Socios caído'); } }, { clock: () => new Date(now) });
+  const result = await local.retirarEspera(first.esperaId);
+  assert.equal(result.exito, true); assert.equal(result.reasignacionPendiente, true);
+  assert.equal((await repository.aplicarEvaluacionEspera('clase-ficticia', candidate.espera.esperaId, true, now)).estado, 'CAMBIO');
+  assert.equal((await repository.obtenerPrimerCandidato('clase-ficticia')).espera.esperaId, second.esperaId);
+  await service.procesarPendientes();
+  assert.equal((await repository.obtenerReservasPorSocio('socio-a')).reservas.length, 0);
+  assert.equal((await repository.obtenerReservasPorSocio('socio-b')).reservas.length, 1);
+});
+
+test('promoción y retiro simultáneos se resuelven bajo un único bloqueo de clase', async () => {
+  for (const retirarPrimero of [true, false]) {
+    const { service, repository } = environment(undefined, 0);
+    const espera = (await service.ingresarEspera('clase-ficticia', 'socio-a')).espera;
+    await service.cancelarReserva('res-init-clase-ficticia-1');
+    let retiro, promocion;
+    if (retirarPrimero) {
+      [retiro, promocion] = await Promise.all([service.retirarEspera(espera.esperaId), repository.aplicarEvaluacionEspera('clase-ficticia', espera.esperaId, true, now)]);
+    } else {
+      [promocion, retiro] = await Promise.all([repository.aplicarEvaluacionEspera('clase-ficticia', espera.esperaId, true, now), service.retirarEspera(espera.esperaId)]);
+    }
+    assert.equal(retiro.exito, retirarPrimero);
+    assert.equal(promocion.estado, retirarPrimero ? 'CAMBIO' : 'PROMOVIDO');
+    assert.equal((await repository.obtenerReservasPorSocio('socio-a')).reservas.length, retirarPrimero ? 0 : 1);
+  }
+});
+
+test('retiro HTTP exige sesión y propietario, permite ADMIN y conserva independencia de Socios', async () => {
+  const env = environment(undefined, 0);
+  const espera = (await env.service.ingresarEspera('clase-ficticia', 'socio-a')).espera;
+  const app = buildApp({ ...configuration, repository: env.repository, clock: env.clock,
+    sociosClient: { verificarHabilitacion: async () => { throw new Error('No consultar Socios al retirarse'); } } });
+  try {
+    await app.ready();
+    const token = rol => app.jwt.sign({ sub: rol === 'ADMIN' ? 'administrador' : 'otro-socio', rol });
+    const url = '/api/v1/clases/clase-ficticia/espera/' + espera.esperaId + '/retirar';
+    assert.equal((await app.inject({ method: 'POST', url })).statusCode, 401);
+    assert.equal((await app.inject({ method: 'POST', url, headers: { authorization: 'Bearer ' + token('SOCIO') } })).statusCode, 403);
+    const owner = { authorization: 'Bearer ' + app.jwt.sign({ sub: 'socio-a', rol: 'SOCIO' }) };
+    assert.equal((await app.inject({ method: 'POST', url: url.replace('/clase-ficticia/', '/otra-clase/'), headers: owner })).statusCode, 404);
+    const result = await app.inject({ method: 'POST', url, headers: owner });
+    assert.equal(result.statusCode, 200); assert.equal(result.json().espera.estado, 'CANCELADO');
+    assert.equal(result.headers['cache-control'], 'no-store');
+    assert.equal((await app.inject({ method: 'POST', url, headers: { authorization: 'Bearer ' + token('ADMIN') } })).statusCode, 200);
+  } finally { await app.close(); }
+});
+
 test('comprueba vigencia actual y al inicio; no admite cobertura solo futura ni solo actual', async () => {
   for (const fechaRechazada of [now, inicio]) {
     const checked = [];

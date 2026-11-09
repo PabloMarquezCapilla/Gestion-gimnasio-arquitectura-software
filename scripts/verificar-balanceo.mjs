@@ -54,9 +54,9 @@ async function replicas() {
   }
   return result;
 }
-async function request(path, { token, body, apiKey = keys.CAPACIDAD_API_KEY, idempotencyKey } = {}) {
+async function request(path, { token, body, apiKey = keys.CAPACIDAD_API_KEY, idempotencyKey, method = body ? 'POST' : 'GET' } = {}) {
   try {
-    const response = await fetch(base + path, { method: body ? 'POST' : 'GET', headers: {
+    const response = await fetch(base + path, { method, headers: {
       Connection: 'close', 'X-API-Key': apiKey,
       ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
       ...(token ? { Authorization: 'Bearer ' + token } : {}),
@@ -138,6 +138,12 @@ try {
     const login = await request('/api/v1/auth/login', { body: { emailOrDni: dni, password: 'socio123' } });
     assert.equal(login.status, 200); tokens.push(login.data.token);
   }
+  const searchPath='/api/v1/catalogo/clases?'+new URLSearchParams({texto:'Prueba ficticia',sedeId:'sede-demo-01',soloConCupo:'true'});
+  assert.equal((await request(searchPath)).status,401);
+  const searchBefore=await request(searchPath,{token:tokens[0]});
+  assert.equal(searchBefore.status,200);assert.equal(searchBefore.data.total,1);
+  assert.equal(searchBefore.data.items[0].claseId,'balanceo-cupo');
+  assert.equal(searchBefore.data.items[0].reservaDirectaDisponible,true);
   const writes = await Promise.all(Array.from({ length: 12 }, (_, i) => request('/api/v1/reservas', {
     token: tokens[i % tokens.length], body: { claseId: 'balanceo-cupo' },
   })));
@@ -145,6 +151,9 @@ try {
   assert.equal(writes.filter(r => r.status === 409).length, 11);
   const occupied = await request('/api/v1/clases/balanceo-cupo');
   assert.equal(occupied.data.cuposDisponibles, 0);
+  const searchAfter=await request(searchPath,{token:tokens[0]});
+  assert.equal(searchAfter.status,200);assert.equal(searchAfter.data.total,0);
+  console.log('Búsqueda por NGINX: JWT, texto y cupo directo verificados antes/después de reservar.');
 
   // El mismo gateway debe enrutar la capacidad nueva sin mezclar credenciales.
   assert.equal((await request('/api/v1/consignaciones/stock?proveedorId=fav')).status, 401);
@@ -164,6 +173,51 @@ try {
     "UPDATE socios SET rol='ADMIN' WHERE dni='11111111'");
   const adminLogin = await request('/api/v1/auth/login', { body: { emailOrDni: '11111111', password: 'socio123' } });
   assert.equal(adminLogin.status, 200); assert.equal(adminLogin.data.socio.rol, 'ADMIN');
+  const claseNueva = { nombre: 'Clase administrativa hafnio', actividad: 'MOVILIDAD', profesor: 'Profesora ficticia',
+    sedeId: 'sede-demo-01', inicio: classStart, fin: classEnd, capacidad: 3 };
+  const publicar = { token: adminLogin.data.token, body: claseNueva, idempotencyKey: 'alta-clase-balanceo' };
+  assert.equal((await request('/api/v1/admin/clases', { ...publicar, token: tokens[1] })).status, 403);
+  const publicada = await request('/api/v1/admin/clases', publicar);
+  assert.equal(publicada.status, 201, JSON.stringify(publicada.data));
+  assert.deepEqual((await request('/api/v1/admin/clases', publicar)).data, publicada.data);
+  const editada = await request('/api/v1/admin/clases/' + publicada.data.claseId, { token: adminLogin.data.token,
+    method: 'PUT', body: { ...claseNueva, nombre: 'Clase administrativa renio', versionEsperada: 1 }, idempotencyKey: 'editar-clase-balanceo' });
+  assert.equal(editada.status, 200); assert.equal(editada.data.version, 2);
+  const encontrada = await request('/api/v1/catalogo/clases?texto=renio', { token: tokens[1] });
+  assert.equal(encontrada.status, 200); assert.equal(encontrada.data.items[0].claseId, publicada.data.claseId);
+  assert.equal((await request('/api/v1/catalogo/clases?texto=hafnio', { token: tokens[1] })).data.total, 0);
+  const resultadoReconstruccion = await Promise.all([
+    compose('exec', '-T', 'postgres', 'psql', '-U', 'postgres', '-d', 'clases', '-v', 'ON_ERROR_STOP=1',
+      '-c', 'REINDEX INDEX CONCURRENTLY idx_clases_fts'),
+    Promise.all(Array.from({ length: 16 }, () => request('/api/v1/catalogo/clases?texto=renio', { token: tokens[1] }))),
+  ]);
+  for (const respuesta of resultadoReconstruccion[1]) {
+    assert.equal(respuesta.status, 200);
+    assert.deepEqual(respuesta.data.items, encontrada.data.items);
+    assert.equal(respuesta.data.total, encontrada.data.total);
+  }
+  const despuesReconstruccion = await request('/api/v1/catalogo/clases?texto=renio', { token: tokens[1] });
+  assert.equal(despuesReconstruccion.status, 200);
+  assert.deepEqual(despuesReconstruccion.data.items, encontrada.data.items);
+  assert.equal(despuesReconstruccion.data.total, encontrada.data.total);
+  const claseDespuesReconstruccion = await request('/api/v1/admin/clases/' + publicada.data.claseId, { token: adminLogin.data.token });
+  assert.equal(claseDespuesReconstruccion.status, 200);
+  assert.deepEqual(claseDespuesReconstruccion.data, editada.data);
+  console.log('Cierre D6 por NGINX: clase publicada/editada y resultados equivalentes después de reconstruir GIN; 16 lecturas adicionales aprobadas.');
+  const claseRetiro = await request('/api/v1/admin/clases', { token: adminLogin.data.token,
+    body: { ...claseNueva, nombre: 'Clase de retiro de espera', capacidad: 1 }, idempotencyKey: 'clase-retiro-balanceo' });
+  assert.equal(claseRetiro.status, 201);
+  assert.equal((await request('/api/v1/reservas', { token: tokens[0], body: { claseId: claseRetiro.data.claseId } })).status, 201);
+  const entradaEspera = await request('/api/v1/clases/' + claseRetiro.data.claseId + '/espera', { token: tokens[1], body: {} });
+  assert.equal(entradaEspera.status, 201);
+  const rutaRetiro = '/api/v1/clases/' + claseRetiro.data.claseId + '/espera/' + entradaEspera.data.esperaId + '/retirar';
+  assert.equal((await request(rutaRetiro, { method: 'POST', token: tokens[2] })).status, 403);
+  const retirada = await request(rutaRetiro, { method: 'POST', token: tokens[1] });
+  assert.equal(retirada.status, 200); assert.equal(retirada.data.espera.estado, 'CANCELADO');
+  assert.deepEqual((await request(rutaRetiro, { method: 'POST', token: tokens[1] })).data, retirada.data);
+  assert.equal((await request('/api/v1/clases/' + claseRetiro.data.claseId)).data.cuposDisponibles, 0);
+  console.log('Retiro por NGINX: propietario, historial cancelado, replay y reserva existente conservada verificados.');
+  console.log('Administración por NGINX: ADMIN, Accesos/MongoDB, publicación/replay, edición y FTS actualizados verificados.');
   const sale = { token: adminLogin.data.token, body: { productoCodigo: delivery.productoCodigo, unidades: 2 }, idempotencyKey: 'venta-balanceo-ficticia' };
   const sold = await request('/api/v1/tienda/ventas', sale);
   assert.equal(sold.status, 201); assert.deepEqual((await request('/api/v1/tienda/ventas', sale)).data, sold.data);
@@ -251,6 +305,9 @@ try {
     tiempoDeteccionYMuestreoMs: detectionMs, unaReplica: summary(degraded),
     transicionRecuperacion: summary(recoveryTransition), recuperacion: summary(recovered),
     escrituras: { intentos: 12, confirmadas: 1, conflictos: 11 },
+    busqueda: { publicacionYEdicion: true, reconstruccionGIN: true, lecturasAdicionales: 16,
+      resultadosYClaseConservados: true },
+    espera: { retiroYReplay: true, propietario: true, reservaExistenteConservada: true },
     tienda: { reposiciones: 1, ventas: 1, disponibles: 19, vendidas: 2, repeticionesSinDuplicacion: true },
     eventoMembresia: { suspensionGuardada: true, cancelacionYPromocionFifo: eventoVerificado },
     gatewayReiniciado: false, registrosProxy: proxied.length,

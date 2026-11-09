@@ -1,6 +1,7 @@
 import { Pool, PoolClient } from 'pg';
 import { randomUUID } from 'node:crypto';
 import { CLASES_EVENTOS_DDL, bloquearSocioReservas, suspensionImpideReserva } from './membresias-eventos.postgres';
+import { GESTION_CLASES_DDL } from './gestion-clases.postgres';
 import { IClaseRepository, Instante, OpcionesReserva, ResultadoPromocion } from './ports';
 export { IClaseRepository } from './ports';
 
@@ -14,6 +15,7 @@ import {
   Reserva,
   ResultadoCancelacion,
   ResultadoReserva,
+  ResultadoRetiroEspera,
 } from './types';
 import { mockClasses, MockClass } from './mock-data';
 
@@ -120,6 +122,13 @@ export class MemoryClaseRepository implements IClaseRepository {
     return clase ? { ...clase } : null;
   }
 
+  async obtenerDetallesClases(claseIds: readonly string[]) {
+    const ids = new Set(claseIds);
+    return [...this.clases.values()].filter(clase => ids.has(clase.claseId)).map(clase => ({
+      claseId: clase.claseId, nombre: clase.nombre, sedeId: clase.sedeId, inicio: clase.inicio,
+    }));
+  }
+
 
   private bloqueos = new Map<string, Promise<void>>();
 
@@ -168,6 +177,7 @@ export class MemoryClaseRepository implements IClaseRepository {
       const ahora = instante(opciones?.ahora);
       const clase = this.clases.get(claseId);
       if (!clase?.publicada) return { exito: false, codigo: 'CLASE_NO_ENCONTRADA' };
+      if (opciones?.inicioEvaluado && Date.parse(opciones.inicioEvaluado) !== Date.parse(clase.inicio)) return { exito: false, codigo: 'CLASE_MODIFICADA' };
       if (Date.parse(ahora) >= Date.parse(clase.inicio)) return { exito: false, codigo: 'CLASE_INICIADA' };
       if ([...this.reservas.values()].some((r) => r.claseId === claseId && r.socioId === socioId && r.estado === 'CONFIRMADA')) {
         return { exito: false, codigo: 'RESERVA_DUPLICADA' };
@@ -186,11 +196,12 @@ export class MemoryClaseRepository implements IClaseRepository {
     });
   }
 
-  async ingresarListaEspera(claseId: string, socioId: string, momento?: Instante) {
+  async ingresarListaEspera(claseId: string, socioId: string, momento?: Instante, inicioEvaluado?: string) {
     return this.conClase(claseId, () => {
       const ahora = instante(momento);
       const clase = this.clases.get(claseId);
       if (!clase?.publicada) return { exito: false, codigo: 'CLASE_NO_ENCONTRADA' };
+      if (inicioEvaluado && Date.parse(inicioEvaluado) !== Date.parse(clase.inicio)) return { exito: false, codigo: 'CLASE_MODIFICADA' };
       if (Date.parse(ahora) >= Date.parse(clase.inicio)) return { exito: false, codigo: 'CLASE_INICIADA' };
       if ([...this.reservas.values()].some((r) => r.claseId === claseId && r.socioId === socioId && r.estado === 'CONFIRMADA')) {
         return { exito: false, codigo: 'TIENE_RESERVA_CONFIRMADA' };
@@ -220,6 +231,35 @@ export class MemoryClaseRepository implements IClaseRepository {
         exito: true, reserva: { ...reserva },
         reasignacionPendiente: Date.parse(ahora) < Date.parse(clase.inicio) && !!this.primero(clase.claseId),
       };
+    });
+  }
+
+  async obtenerEntradaEspera(esperaId: string): Promise<EntradaEspera | null> {
+    const espera = this.listaEspera.get(esperaId);
+    return espera ? { ...espera } : null;
+  }
+
+  async retirarEspera(esperaId: string, momento?: Instante): Promise<ResultadoRetiroEspera> {
+    const original = this.listaEspera.get(esperaId);
+    if (!original) return { exito: false, codigo: 'ESPERA_NO_ENCONTRADA' };
+    return this.conClase<ResultadoRetiroEspera>(original.claseId, () => {
+      const espera = this.listaEspera.get(esperaId)!;
+      const clase = this.clases.get(espera.claseId);
+      if (!clase) return { exito: false, codigo: 'ESPERA_NO_ENCONTRADA' };
+      if (espera.estado === 'PROMOVIDO') {
+        const reserva = [...this.reservas.values()].find(item => item.claseId === espera.claseId
+          && item.socioId === espera.socioId && item.estado === 'CONFIRMADA');
+        return { exito: false, codigo: 'ESPERA_PROMOVIDA', espera: { ...espera },
+          ...(reserva ? { reserva: { ...reserva } } : {}) };
+      }
+      const ahora = instante(momento);
+      if (espera.estado === 'PENDIENTE') {
+        if (Date.parse(ahora) >= Date.parse(clase.inicio)) return { exito: false, codigo: 'CLASE_INICIADA' };
+        espera.estado = 'CANCELADO';
+        espera.updatedAt = ahora;
+      }
+      return { exito: true, espera: { ...espera }, reasignacionPendiente: Date.parse(ahora) < Date.parse(clase.inicio)
+        && this.calcularCuposDisponibles(clase.claseId, clase.capacidad) > 0 && !!this.primero(clase.claseId) };
     });
   }
 
@@ -353,6 +393,7 @@ export class PostgresClaseRepository implements IClaseRepository {
       `);
 
       await client.query(CLASES_EVENTOS_DDL);
+      await client.query(GESTION_CLASES_DDL);
       const countRes = await client.query('SELECT count(*)::int AS count FROM clases');
       if (countRes.rows[0].count === 0) {
         for (const c of mockClasses) {
@@ -489,6 +530,16 @@ export class PostgresClaseRepository implements IClaseRepository {
   }
 
 
+  async obtenerDetallesClases(claseIds: readonly string[]) {
+    const result = await this.pool.query(
+      'SELECT clase_id,nombre,sede_id,inicio FROM clases WHERE clase_id=ANY($1::varchar[]) ORDER BY clase_id', [claseIds],
+    );
+    return result.rows.map(clase => ({
+      claseId: clase.clase_id as string, nombre: clase.nombre as string,
+      sedeId: clase.sede_id as string, inicio: (clase.inicio as Date).toISOString(),
+    }));
+  }
+
   private async conClase<T>(
     claseId: string,
     operation: (client: PoolClient, clase: { clase_id: string; capacidad: number; inicio: Date; publicada: boolean } | null) => Promise<T>,
@@ -548,6 +599,7 @@ export class PostgresClaseRepository implements IClaseRepository {
     return this.conClase<ResultadoReserva>(claseId, async (client, clase) => {
       const ahora = instante(opciones?.ahora);
       if (!clase?.publicada) return { exito: false, codigo: 'CLASE_NO_ENCONTRADA' };
+      if (opciones?.inicioEvaluado && Date.parse(opciones.inicioEvaluado) !== clase.inicio.getTime()) return { exito: false, codigo: 'CLASE_MODIFICADA' };
       if (Date.parse(ahora) >= clase.inicio.getTime()) return { exito: false, codigo: 'CLASE_INICIADA' };
       if (await suspensionImpideReserva(client,socioId,ahora,clase.inicio)) return { exito: false, codigo: 'MEMBRESIA_NO_HABILITADA' };
       const dup = await client.query("SELECT 1 FROM reservas WHERE clase_id=$1 AND socio_id=$2 AND estado='CONFIRMADA'", [claseId, socioId]);
@@ -569,10 +621,11 @@ export class PostgresClaseRepository implements IClaseRepository {
     },socioId);
   }
 
-  async ingresarListaEspera(claseId: string, socioId: string, momento?: Instante) {
+  async ingresarListaEspera(claseId: string, socioId: string, momento?: Instante, inicioEvaluado?: string) {
     return this.conClase(claseId, async (client, clase) => {
       const ahora = instante(momento);
       if (!clase?.publicada) return { exito: false, codigo: 'CLASE_NO_ENCONTRADA' };
+      if (inicioEvaluado && Date.parse(inicioEvaluado) !== clase.inicio.getTime()) return { exito: false, codigo: 'CLASE_MODIFICADA' };
       if (Date.parse(ahora) >= clase.inicio.getTime()) return { exito: false, codigo: 'CLASE_INICIADA' };
       if (await suspensionImpideReserva(client,socioId,ahora,clase.inicio)) return { exito: false, codigo: 'MEMBRESIA_NO_HABILITADA' };
       const dup = await client.query("SELECT 1 FROM reservas WHERE clase_id=$1 AND socio_id=$2 AND estado='CONFIRMADA'", [claseId, socioId]);
@@ -607,6 +660,43 @@ export class PostgresClaseRepository implements IClaseRepository {
         },
         reasignacionPendiente: Date.parse(ahora) < clase.inicio.getTime() && !!await this.primero(client, original.claseId),
       };
+    });
+  }
+
+  async obtenerEntradaEspera(esperaId: string): Promise<EntradaEspera | null> {
+    const result = await this.pool.query('SELECT * FROM lista_espera WHERE espera_id=$1', [esperaId]);
+    const row = result.rows[0];
+    return row ? { esperaId: row.espera_id, claseId: row.clase_id, socioId: row.socio_id, orden: row.orden,
+      estado: row.estado, createdAt: row.created_at.toISOString(), updatedAt: row.updated_at.toISOString() } : null;
+  }
+
+  async retirarEspera(esperaId: string, momento?: Instante): Promise<ResultadoRetiroEspera> {
+    const original = await this.obtenerEntradaEspera(esperaId);
+    if (!original) return { exito: false, codigo: 'ESPERA_NO_ENCONTRADA' };
+    return this.conClase<ResultadoRetiroEspera>(original.claseId, async (client, clase) => {
+      const result = await client.query('SELECT estado,updated_at FROM lista_espera WHERE espera_id=$1 FOR UPDATE', [esperaId]);
+      const row = result.rows[0];
+      if (!row || !clase) return { exito: false, codigo: 'ESPERA_NO_ENCONTRADA' };
+      const espera: EntradaEspera = { ...original, estado: row.estado, updatedAt: row.updated_at.toISOString() };
+      if (espera.estado === 'PROMOVIDO') {
+        const reservas = await client.query(`SELECT * FROM reservas WHERE clase_id=$1 AND socio_id=$2
+          AND estado='CONFIRMADA' ORDER BY created_at DESC,reserva_id LIMIT 1`, [espera.claseId, espera.socioId]);
+        const confirmada = reservas.rows[0];
+        const reserva: Reserva | undefined = confirmada ? {
+          reservaId: confirmada.reserva_id, claseId: confirmada.clase_id, socioId: confirmada.socio_id,
+          estado: confirmada.estado, createdAt: confirmada.created_at.toISOString(), updatedAt: confirmada.updated_at.toISOString(),
+        } : undefined;
+        return { exito: false, codigo: 'ESPERA_PROMOVIDA', espera, ...(reserva ? { reserva } : {}) };
+      }
+      const ahora = instante(momento);
+      if (espera.estado === 'PENDIENTE') {
+        if (Date.parse(ahora) >= clase.inicio.getTime()) return { exito: false, codigo: 'CLASE_INICIADA' };
+        await client.query("UPDATE lista_espera SET estado='CANCELADO',updated_at=$2 WHERE espera_id=$1", [esperaId, ahora]);
+        espera.estado = 'CANCELADO'; espera.updatedAt = ahora;
+      }
+      const count = await client.query("SELECT count(*)::int AS ocupados FROM reservas WHERE clase_id=$1 AND estado='CONFIRMADA'", [espera.claseId]);
+      return { exito: true, espera, reasignacionPendiente: Date.parse(ahora) < clase.inicio.getTime()
+        && clase.capacidad > count.rows[0].ocupados && !!await this.primero(client, espera.claseId) };
     });
   }
 

@@ -5,7 +5,14 @@ import pg from 'pg';
 export async function postgresPrueba() {
  const id='pulse-membresias-'+randomUUID(),password=randomBytes(24).toString('hex');let created=false;const pools=[];
  const docker=(args,env={})=>{const r=spawnSync('docker',args,{encoding:'utf8',env:{...process.env,...env}});if(r.status!==0)throw new Error(r.stderr||r.error?.message||'Docker falló');return r.stdout.trim();};
- const pool=database=>{const p=new pg.Pool({host:'127.0.0.1',port,user:'postgres',password,database,connectionTimeoutMillis:2000,statement_timeout:5000,lock_timeout:3000});pools.push(p);return p;};
+ const pool=database=>{
+  const p=new pg.Pool({host:'127.0.0.1',port,user:'postgres',password,database,connectionTimeoutMillis:2000,statement_timeout:5000,lock_timeout:3000});
+  // Las pruebas de indisponibilidad detienen esta base deliberadamente.
+  // Los comandos activos siguen rechazando su promesa, que cada ensayo verifica.
+  p.on('error',()=>{});
+  pools.push(p);
+  return p;
+ };
  let port;
  const close=async()=>{await Promise.all(pools.map(p=>p.end()));if(created){if(docker(['inspect','--format','{{index .Config.Labels "pulse.membresias.test"}}',id])!==id)throw new Error('Identidad del recurso de prueba inesperada');docker(['rm','--force',id]);}};
  try {

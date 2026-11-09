@@ -4,6 +4,8 @@
 
 **Estado:** aceptada e implementada, 19/10/2026. Reemplaza [ADR-004](ADR-004-consistencia-y-concurrencia.md).
 
+**Ampliación de retiro voluntario, 08/11/2026.** Implementado por propietario o ADMIN, antes del inicio, con exclusión por clase y conservación del historial. La promoción ganadora se informa para una cancelación explícita de la reserva.
+
 **Referencias:** consistencia en sección 2.8, página 3; fallas de comunicación en sección 2.5, página 2; D4 e historia de decisiones en sección 5, páginas 6–7. El equipo confirmó que una cancelación debe aceptarse aunque Socios esté caído y que debe conservarse la prioridad FIFO.
 
 ## Contexto
@@ -18,6 +20,16 @@ Cancelar y validar remotamente a todos los candidatos dentro de una transacción
 4. **Promoción recuperable.** Un trabajador del servidor busca clases futuras con cupo y espera pendiente. Obtiene el primer candidato, valida su membresía fuera de la transacción y vuelve a bloquear la clase para comprobar que sigue siendo el primero, que no comenzó la clase y que existe cupo. Solo entonces confirma la reserva y marca la espera promovida, atómicamente.
 5. **Falla versus inhabilitación.** Una falla de red conserva al primero y deja pendiente el trabajo. Una inhabilitación comprobada retira al candidato y evalúa al siguiente. El trabajador se ejecuta al iniciar y cada `RESERVAS_REINTENTO_MS` (5000 ms por defecto); no superpone pasadas en una instancia. Dos instancias pueden procesar lo mismo: la comprobación transaccional evita duplicar la promoción.
 6. **Estado durable sin tabla adicional.** La combinación de cupo libre y espera pendiente ya almacenada permite que otra instancia o un proceso reiniciado recupere la tarea. No se incorpora un nuevo broker ni una tabla de tareas para esta recuperación.
+
+## Retiro voluntario de espera
+
+`ReservasService.retirarEspera` delega al repositorio local y recibe el reloj de aplicación. Ambos adaptadores, memoria y PostgreSQL, usan el bloqueo existente por clase. PostgreSQL vuelve a leer la entrada bajo bloqueo de fila, y actualiza su estado a `CANCELADO` y su fecha de modificación en una transacción. Conserva ID, orden y fechas históricas. El retiro puede completarse con Socios indisponible.
+
+La autorización HTTP comprueba JWT y propietario de la entrada, con excepción ADMIN. La entrada debe pertenecer a la clase de la ruta. La operación apunta al ID de la espera. Una repetición cancelada devuelve el estado cerrado, aun después del inicio. Una inscripción posterior tiene otro ID y un orden nuevo, por lo que repetir el retiro anterior no la afecta.
+
+Si una evaluación de membresía terminó después del retiro, `aplicarEvaluacionEspera` vuelve a comprobar al primero y descarta ese candidato. El trabajador continúa con el siguiente manteniendo FIFO. Si hay cupo y otro candidato, la respuesta indica `reasignacionPendiente` para el trabajador existente. Cuando se retira el último pendiente, la lectura de disponibilidad vuelve a permitir reserva directa si hay capacidad.
+
+Si la promoción ganó el bloqueo, el retiro devuelve 409 `ESPERA_PROMOVIDA`, con la reserva confirmada actual cuando exista. La reserva conserva su estado. El portal avisa, actualiza las inscripciones y abre «Mis Reservas». «Cancelar reserva» exige una nueva acción del usuario y conserva el límite temporal existente. [Contrato interno 1.2.0 y uso](../contracts/README.md#retirarse-de-la-lista-de-espera).
 
 ## Alternativas y consecuencias
 
@@ -42,6 +54,28 @@ Las fotografías Car Cruds agregan otra operación local en Socios: preparación
 ### Reservas y recuperación
 
 Pruebas de aplicación y repositorio en `services/clases-reservas/test/reservas.test.mjs`, concurrencia del último cupo en `test/concurrencia.test.mjs` y flujo en `test/flujo-principal.test.mjs`. `npm run test:postgres` ejecuta HTTP real y dos instancias con pools independientes, comprueba el último cupo y la cancelación con caída/recuperación de Socios, y retira únicamente su contenedor efímero. La reproducción se documenta en README; los resultados de caída y carga están en POSTMORTEM y D13.
+
+### Verificación de retiro voluntario
+
+`npm test` aprobó **239 pruebas**, incluidas **54 del cliente web**, y la compilación frontend aprobó **37 módulos**. Se añadieron seis pruebas de aplicación/API en memoria y tres del cliente para retiro, historial, límite exacto, reintentos, nueva inscripción, promoción y autorización. El cliente valida la confirmación `CANCELADO`, su clase e ID, y conserva el conflicto de promoción para actualizar la vista.
+
+`npm run test:gestion-clases` aprobó **17 pruebas** con PostgreSQL, Accesos/MongoDB y Socios HTTP reales y dos instancias de Clases. Cinco escenarios adicionales verifican los siguientes resultados.
+
+- Veinte retiros concurrentes por las dos instancias producen el mismo resultado, con autorización de propietario/ADMIN y rechazo de clase incorrecta. El replay sobrevive a recrear la aplicación y conserva otra inscripción posterior. Una pendiente al inicio exacto se rechaza.
+- Retirar al candidato ya evaluado descarta esa evaluación y permite promover al siguiente mediante el trabajador real, conservando la prioridad frente a nuevas reservas.
+- Una transacción del fixture mantiene una promoción sin commit mientras el retiro HTTP espera el bloqueo de clase. Al confirmar, el retiro informa el conflicto y conserva la reserva. Sólo una cancelación explícita posterior la modifica.
+- Un trigger de fallo del fixture obliga a revertir la actualización. La entrada queda pendiente y el reintento del mismo ID completa el retiro.
+- Se cierra la API real de Socios y se cancela/retira localmente. Al quedar cupo sin candidatos pendientes, la consulta de catálogo informa disponibilidad directa.
+
+Estos ensayos usan datos ficticios y bases exclusivas temporales. La ventana de promoción y el trigger de fallo pertenecen al fixture de pruebas.
+
+Chrome comprobó el retiro desde el catálogo y «Mis Reservas» contra los servicios reales y bases temporales. El fixture interrumpió una respuesta después del commit y la actualización de pantalla recuperó el estado cancelado. Tres inscripciones sucesivas conservaron IDs distintos y órdenes 1, 2 y 3. También adelantó la ejecución del trabajador real al retiro para reproducir una promoción ganadora. El POST respondió 409, el portal mostró la reserva confirmada y sólo una acción posterior de «Cancelar reserva» la canceló. El estado final de PostgreSQL confirmó las tres esperas canceladas y la reserva cancelada explícitamente.
+
+`npm run test:balanceo` verificó por NGINX retiro, replay, rechazo de otro propietario y conservación de la reserva existente, con dos réplicas de Clases. El ensayo completo volvió a observar cuatro respuestas 504 transitorias durante la detección pasiva de una réplica detenida. Después, la réplica restante atendió 40 de 40 solicitudes. Las rondas inicial y final también atendieron 40 de 40, con distribución final 20/20. Esta limitación de la transición queda pendiente para la revisión de fallas del paso 8.
+
+El navegador, los servidores y los contenedores temporales de estos recorridos se cerraron al terminar. Los cambios se conservan en `feat/membresias-eventos`; la apertura de PR queda pendiente por decisión del equipo.
+
+La revisión documental comprobó 36 archivos Markdown y 280 enlaces locales, sin destinos ausentes. El OpenAPI interno 1.2.0 tiene 48 referencias resueltas, nueve esquemas compilados y tres ejemplos válidos. `git diff --check` aprobó y `.env` continúa ignorado.
 
 ### Planes y pagos manuales — etapa 3
 

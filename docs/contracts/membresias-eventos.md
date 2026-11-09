@@ -8,6 +8,8 @@ ADMIN entra a **Planes, pagos y membresías**, selecciona un socio y revisa sus 
 
 Una respuesta perdida conserva operación y clave en sessionStorage por administrador. Reintentar recupera el mismo resultado. El token continúa sólo en memoria. Una respuesta tardía de un panel cerrado no retira una operación diferente. Un conflicto requiere revisión y conserva la operación incierta.
 
+Las consultas y escrituras de gestión tienen un plazo técnico de 15 segundos, incluida la lectura de la respuesta. Al agotarse, el panel informa el error y conserva la operación para reintentar. El aviso de recuperación recibe el foco al terminar un intento incierto o al recuperar la operación después de ingresar nuevamente. «Reintentar la misma operación de membresía» utiliza la clave y los datos originales. La selección de socios y la consulta de membresías siguen disponibles con una operación pendiente. Las nuevas escrituras se habilitan al recuperar su resultado.
+
 ## API propia
 
 [OpenAPI de membresías 1.1.0](openapi-membresias-v1.yaml) añade dos operaciones compatibles con 1.0.0.
