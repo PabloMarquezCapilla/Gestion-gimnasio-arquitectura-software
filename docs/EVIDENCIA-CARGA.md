@@ -59,3 +59,5 @@ npm run test:carga -- estres    # saturación
 ```
 
 Durante el ensayo, el tablero de Grafana (http://localhost:3001) muestra el reparto de solicitudes entre las dos réplicas, la tasa de errores y la latencia.
+
+**Reproducción corregida, 10/11/2026.** `npm run test:carga` utiliza `scripts/ejecutar-carga.mjs`. El cambio de nombre evita que el descubrimiento automático de Node ejecute k6 durante `npm test` o `npm run test:cobertura`. La carga se inicia explícitamente contra el Compose elegido y escribe su resumen en `docs/evidence/carga-k6/`. Las verificaciones de estas correcciones conservan los resultados de carga anteriores.

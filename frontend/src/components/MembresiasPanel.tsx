@@ -9,11 +9,23 @@ const texto = (e: unknown) => e instanceof Error ? e.message : 'No se pudo compl
 // Importes en unidad mínima (centavos) mostrados como moneda local.
 export const importe = (minor: number, moneda = 'ARS') => (minor / 100).toLocaleString('es-AR', { style: 'currency', currency: moneda });
 const duracionTexto = (meses: number) => meses === 1 ? '1 mes' : `${meses} meses`;
-// Vigencia de un plan: desde el inicio del día elegido hasta el último segundo antes del mismo día N meses después.
+// Si falta el día original en el mes de destino, se incluye todo su último día.
 export function vigencia(inicio: string, meses: number): { desde: Date; hasta: Date } | null {
- const m=/^(\d{4})-(\d{2})-(\d{2})$/.exec(inicio); if(!m) return null;
- const desde=new Date(Number(m[1]),Number(m[2])-1,Number(m[3]));
- const hasta=new Date(Number(m[1]),Number(m[2])-1+meses,Number(m[3])); hasta.setSeconds(hasta.getSeconds()-1);
+ const partes = /^(\d{4})-(\d{2})-(\d{2})$/.exec(inicio);
+ if (!partes || !Number.isInteger(meses) || meses < 1 || meses > 36) return null;
+ const anio = Number(partes[1]), mes = Number(partes[2]) - 1, dia = Number(partes[3]);
+ const desde = new Date(0);
+ desde.setFullYear(anio, mes, dia);
+ desde.setHours(0, 0, 0, 0);
+ if (desde.getFullYear() !== anio || desde.getMonth() !== mes || desde.getDate() !== dia) return null;
+ const hasta = new Date(desde);
+ hasta.setDate(1);
+ hasta.setMonth(mes + meses + 1, 0);
+ const ultimoDia = hasta.getDate();
+ hasta.setDate(Math.min(dia, ultimoDia));
+ if (dia > ultimoDia) hasta.setHours(23, 59, 59, 999);
+ else hasta.setMilliseconds(-1);
+ if (hasta.getFullYear() > 9999) return null;
  return { desde, hasta };
 }
 const hoy = () => { const d=new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`; };

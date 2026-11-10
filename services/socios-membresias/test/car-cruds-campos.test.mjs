@@ -26,7 +26,7 @@ const validarFotografia = ajv.compile({
 
 const noviembre = limitesMes('2026-11');
 const corte = new Date('2026-11-20T15:00:00.000Z');
-const contrato3Meses = { importeMinor: 9000000, moneda: 'ARS', fechaInicio: '2026-10-01T03:00:00.000Z',
+const contrato3Meses = { mesesContratados: 3, importeMinor: 9000000, moneda: 'ARS', fechaInicio: '2026-10-01T03:00:00.000Z',
   fechaFin: '2026-12-31T03:00:00.000Z', confirmadoEn: '2026-11-05T12:00:00.000Z' };
 
 test('el mes se interpreta en hora argentina', () => {
@@ -54,6 +54,30 @@ test('spendingMinor: pagos confirmados del mes hasta el corte; sin pagos es cero
   assert.equal(gastoDelMes([], noviembre.desde, noviembre.hasta, corte), 0);
   assert.equal(gastoDelMes(undefined, noviembre.desde, noviembre.hasta, corte), null);
   assert.equal(gastoDelMes([{ ...contrato3Meses, moneda: 'USD' }], noviembre.desde, noviembre.hasta, corte), null);
+});
+
+test('costMinor exige cubrir el último día completo, con precisión anterior de segundos compatible', () => {
+  for (const fechaFin of ['2026-11-29T23:59:59Z', '2026-11-30T03:00:00Z', '2026-12-01T02:59:58.999Z']) {
+    assert.equal(costoMensual([{ ...contrato3Meses, fechaFin }], noviembre.desde, noviembre.hasta, corte), null);
+  }
+  for (const fechaFin of ['2026-12-01T02:59:59Z', '2026-12-01T02:59:59.999Z']) {
+    assert.equal(costoMensual([{ ...contrato3Meses, fechaFin }], noviembre.desde, noviembre.hasta, corte), 3000000);
+  }
+});
+
+test('costMinor conserva desconocida una duración histórica y una fracción de centavo sin acuerdo', () => {
+  for (const mesesContratados of [undefined, null, 0, 1.5, 37]) {
+    assert.equal(costoMensual([{ ...contrato3Meses, mesesContratados }], noviembre.desde, noviembre.hasta, corte), null);
+  }
+  assert.equal(costoMensual([{ ...contrato3Meses, importeMinor: 9000001 }], noviembre.desde, noviembre.hasta, corte), null);
+  assert.equal(costoMensual([{ ...contrato3Meses, importeMinor: 0 }], noviembre.desde, noviembre.hasta, corte), 0);
+});
+
+test('costMinor trata como ambiguo un contrato completo solapado con otro parcial confirmado', () => {
+  const parcial = { ...contrato3Meses, fechaInicio: '2026-11-10T03:00:00Z', fechaFin: '2026-11-15T03:00:00Z' };
+  assert.equal(costoMensual([contrato3Meses, parcial], noviembre.desde, noviembre.hasta, corte), null);
+  assert.equal(costoMensual([contrato3Meses, { ...parcial, confirmadoEn: '2026-11-25T00:00:00Z' }],
+    noviembre.desde, noviembre.hasta, corte), 3000000);
 });
 
 function servicio(t, { accesos, sinContratos = false, cambiarVinculo = false } = {}) {

@@ -8,6 +8,8 @@
 
 272 tests, 0 fallas.
 
+**Reverificación del 10/11/2026.** Tras las correcciones de fin de mes, costo mensual y descubrimiento de pruebas, `npm run test:cobertura` aprobó 278 pruebas y sus tres umbrales. La cobertura global fue 73,47 % de líneas, 88,11 % de ramas y 86,73 % de funciones. El lanzador explícito de k6 queda fuera del descubrimiento automático. Los valores de las tablas siguientes corresponden al ensayo original del 09/11/2026.
+
 | Alcance | Líneas | Ramas | Funciones |
 |---|---:|---:|---:|
 | **Todos los archivos** | **73,4 %** | **88,0 %** | **86,5 %** |

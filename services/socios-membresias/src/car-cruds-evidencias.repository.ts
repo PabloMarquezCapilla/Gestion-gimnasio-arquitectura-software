@@ -33,6 +33,7 @@ export interface FuenteFotografia {
 }
 
 export interface ContratoConfirmado {
+  mesesContratados?: number | null;
   importeMinor: number;
   moneda: string;
   fechaInicio: string;

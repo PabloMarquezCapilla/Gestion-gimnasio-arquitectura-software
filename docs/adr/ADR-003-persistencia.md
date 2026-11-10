@@ -1,7 +1,7 @@
 # D3 - Persistencia
 
 **Estado:** PostgreSQL y MongoDB integrados; Redis implementado en ocupación. Tienda utiliza PostgreSQL 17, con base y usuario propios, para stock local y movimientos durables según [ADR-022](ADR-022-tienda-y-consignaciones-fav.md).
-**Fecha inicial:** 07/10/2026. **Revisión:** 08/11/2026.
+**Fecha inicial:** 07/10/2026. **Revisión:** 10/11/2026.
 **Enunciado:** §5 D3, página 6; §2.8, página 3; §6.2–6.3, página 8.
 
 ## Contexto
@@ -52,5 +52,7 @@ El bloqueo por clase serializa escrituras sobre esa clase; su costo depende de l
 `npm run test:postgres` usa PostgreSQL 17 efímero, HTTP real e instancias con pools independientes: unicidad concurrente, alta externa/replay tras recrear app, rollback, último cupo, cancelación y recuperación FIFO. Para Car Cruds verifica carreras de vínculo/preparación/reclamo, historial, versiones/referencia, prueba positiva del mismo socio/mes, cuerpo inmutable, recuperación por lease/UUID y rollback de cabecera/fotografía. Los adaptadores en memoria no acreditan durabilidad. Pagos manuales se verifican separadamente con PostgreSQL real mediante `npm run test:membresias`, incluyendo rollback de comprobante, concurrencia y actualización de esquema; ver ADR-021. Accesos utiliza MongoDB real; pruebas y límites en [EVIDENCIA-ACCESOS](../EVIDENCIA-ACCESOS.md).
 
 La etapa 3 agrega cinco tablas sin modificar las solicitudes externas históricas: [ADR-021](ADR-021-planes-pagos-membresias.md). No se eliminan ni reparan datos del usuario al migrar.
+
+El 10/11/2026 se agrega `solicitudes_planes.duracion_meses`, nullable y limitada a 1–36 cuando está informada. Las solicitudes nuevas copian la duración del plan en su transacción de creación. Las filas anteriores conservan `NULL`, sin reconstruir meses a partir de sus fechas. La fuente de fotografías de Car Cruds lee esa copia junto con los pagos confirmados. [Reglas y migración](ADR-021-planes-pagos-membresias.md).
 
 `npm run test:tienda` verifica la capacidad con PostgreSQL 17 efímero y dos instancias HTTP: contrato, permisos, replay por clave/referencia, concurrencia, reinicio, rollback del resultado, ventas sin negativos, enteros/identificadores y caída de la base. No llama a FAV ni utiliza el inventario local del equipo. Evidencia y alcance de las verificaciones en [EVIDENCIA-TIENDA](../EVIDENCIA-TIENDA.md).

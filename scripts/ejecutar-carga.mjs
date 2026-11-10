@@ -1,4 +1,4 @@
-// Ejecuta el test de carga k6 contra el gateway del compose en marcha (npm run iniciar).
+// Lanzador explícito de carga k6 contra el gateway del compose en marcha (npm run iniciar).
 // El resumen queda en docs/evidence/carga-k6/resumen.json para el análisis de D13.
 import { spawnSync } from 'node:child_process';
 import { dirname, resolve } from 'node:path';

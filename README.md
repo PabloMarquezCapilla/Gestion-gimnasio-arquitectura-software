@@ -273,7 +273,7 @@ npm --prefix frontend ci --ignore-scripts
 
 | Comando | Qué comprueba |
 |---|---|
-| `npm test` | Compilación de los cuatro servicios y reglas/contratos, incluyendo HTTP externo controlado y API del frontend. Verificación del 07/11/2026 con 216/216, sin fallos ni omitidas. Las evidencias de motores reales se conservan por capacidad. |
+| `npm test` | Compilación de los cuatro servicios y reglas/contratos, incluyendo HTTP externo controlado y frontend. Verificación del 10/11/2026 con 278/278. La carga se ejecuta explícitamente mediante `npm run test:carga`. Las evidencias de motores reales se conservan por capacidad. |
 | `npm run frontend:build` | TypeScript y bundle de producción del portal. |
 | `npm run test:contrato-empleados` | Contrato y mock separado de empleados (11 pruebas). |
 | `npm run test:car-cruds` | Contrato externo 0.3.0, lecturas, permisos, vinculación, vista previa/envío, resultado incierto y reenvío exacto sin duplicar con proveedor controlado. |

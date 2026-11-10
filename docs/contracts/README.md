@@ -147,7 +147,7 @@ El POST exige `employeeId`, `period`, `sourceReference`, `version` y `observedAt
 Cómo genera cada hecho el informe (desde el 09/11/2026):
 - **`member`:** `true` si se comprueba la habilitación al observar un instante del mes actual, o si hay una observación positiva anterior guardada del mismo empleado, socio y mes hasta el corte. En los demás casos, `null`; no se deduce un mes negativo de la situación actual.
 - **`used`:** se consulta a Accesos (`GET /internal/v1/accesos/uso`, solo red interna, `X-Service-Key`). Cuenta si hubo al menos un ingreso aceptado en el mes (hora argentina) hasta el corte. La consulta se hace antes de la transacción local y solo se aplica si el vínculo no cambió entretanto. Si Accesos no responde en 2 s (un reintento), queda `null` y el informe se genera igual.
-- **`costMinor`:** importe del único plan con pago confirmado que cubre el mes entero, dividido por los meses contratados (redondeo a centavo). Un mes parcial, dos planes superpuestos o una moneda distinta de ARS dan `null`.
+- **`costMinor`:** importe del único contrato con pago confirmado que cubre el mes entero, dividido por los meses copiados en la solicitud. Se comprueba el último día completo y se admite la precisión anterior del segundo final inclusivo. Mes parcial, contratos superpuestos, moneda distinta de ARS, duración histórica desconocida o división con fracción de centavo producen `null`. La corrección del 10/11/2026 conserva los payloads ya guardados y sus reintentos.
 - **`spendingMinor`:** suma de los pagos de membresía confirmados dentro del mes hasta el corte. Sin pagos es `0`. Las compras en la tienda no cuentan, porque se pagan en el mostrador fuera del sistema.
 - **`currency`:** `ARS` cuando hay algún importe conocido.
 

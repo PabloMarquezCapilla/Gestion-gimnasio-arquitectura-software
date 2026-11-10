@@ -19,7 +19,7 @@ const workspace = resolve(tempRoot, project);
 const services = ['socios-membresias', 'clases-reservas', 'accesos-ocupacion', 'tienda', 'gateway'];
 const keyNames = ['POSTGRES_ADMIN_PASSWORD', 'SOCIOS_DB_PASSWORD', 'CLASES_DB_PASSWORD', 'TIENDA_DB_PASSWORD', 'FAV_API_KEY',
   'MONGO_ROOT_PASSWORD', 'ACCESOS_DB_PASSWORD', 'MONGO_KEYFILE', 'RABBITMQ_PASSWORD',
-  'CAPACIDAD_API_KEY', 'AUTH_JWT_SECRET', 'SERVICIOS_API_KEY', 'EMPLEADOS_API_KEY'];
+  'CAPACIDAD_API_KEY', 'AUTH_JWT_SECRET', 'SERVICIOS_API_KEY', 'EMPLEADOS_API_KEY', 'GRAFANA_ADMIN_PASSWORD'];
 const keys = Object.fromEntries(keyNames.map(key => [key, randomBytes(32).toString('hex')]));
 const env = { ...process.env, ...keys, EMPLEADOS_ORIGEN_ID: 'grupo-ficticio-balanceo' };
 let started = false;
@@ -331,7 +331,8 @@ try {
   assert.ok(workspace.startsWith(tempRoot + sep) && basename(workspace) === project);
   if (started) {
     const volumes = (await run('docker', ['volume', 'ls', '--filter', 'label=com.docker.compose.project=' + project, '--format', '{{.Name}}'])).split(/\r?\n/).filter(Boolean);
-    assert.ok(volumes.every(name => ['postgres-data', 'mongodb-data', 'rabbitmq-data'].some(suffix => name === project + '_' + suffix)));
+    assert.ok(volumes.every(name => ['postgres-data', 'mongodb-data', 'rabbitmq-data', 'prometheus-data', 'grafana-data']
+      .some(suffix => name === project + '_' + suffix)));
     await compose('down', '--volumes');
     for (const service of services) {
       const name = project + '-' + service + ':latest';
