@@ -1,5 +1,15 @@
 # Tienda: implementación y verificación local
 
+## Revisión de conexión externa del 10/11/2026
+
+- API de FAV en `https://fav-ucc.chilecentral.cloudapp.azure.com`. La primera credencial recibió `401 NO_AUTENTICADO`. Con la credencial renovada, `GET /v1/productos` devolvió `200` con JSON y el cliente de Tienda validó 5 productos y 19 variantes.
+- En `development` `ff8ae75fb93cb31c0b597a36d18598890980fdf9`, el contrato 1.2.0 mantiene idénticos el esquema y las respuestas del catálogo respecto de la copia 1.1.0 de Tienda. Se conserva el cliente actual. Su adaptador de reposiciones ya exige `201`, `RECIBIDA` y UUID válido y distingue configuración, conflictos e incertidumbre.
+- `npm run build --workspace=@gimnasio/tienda` y las 27 pruebas de `services/tienda/test/*.test.mjs` aprobadas. Cubren contrato, autorización, compras, idempotencia, caché degradada y circuit breaker mediante servidores locales. Esta revisión no volvió a ejecutar las pruebas PostgreSQL descritas abajo.
+- Se configuró el catálogo en el `.env` local y se levantó Docker Compose. Con una cuenta de demostración, el gateway local respondió `200` en `GET /api/v1/tienda/productos` con `origen: FAV` y `total: 0`. La consulta de consignaciones también devolvió `200` con stock vacío. Las consultas verificaron el flujo sin registrar movimientos.
+- En Azure, el portal y `/health` respondieron `200` por HTTPS. La consulta de consignaciones sin credencial respondió `401`. Quedan pendientes configurar el catálogo externo en la VM y hacer la prueba conjunta con FAV. [Coordinación y contrato](contracts/fav-tienda.md).
+
+## Evidencia de la implementación inicial
+
 **Fecha:** 06/11/2026. **Base del trabajo:** `main` en `b6e34dd`; rama `feat/integracion-tienda-proveedor`.
 **Enunciado:** §2.1–2.2, página 2; §2.8/2.11, página 3; §3, página 4; §4.1, páginas 5–6; D3/D4/D8, páginas 6–7. Se verifica este paso, no la entrega final completa.
 
@@ -74,6 +84,6 @@ npm run test:balanceo
 
 Los ensayos reales requieren Docker y verifican la identidad de sus recursos antes de retirarlos. Para repetir la prueba visual, ejecutar `node scripts/tienda/web.mjs`: imprime una URL y cuenta exclusivas del fixture, prepara 5 unidades y pierde la primera respuesta exitosa de venta. Recargar/login/reintentar conserva la entrega; Ctrl+C cierra el fixture y su base temporal. Ese proceso no es un modo de despliegue del gimnasio.
 
-Faltan aceptación del contrato, credencial compartida por canal privado, URL pública y prueba conjunta con FAV. La consulta al catálogo externo continúa en 503. FAV es responsable de enviar un varianteId correcto: la recepción actual no consulta su catálogo. No se implementaron precios, cobros, devoluciones, ajustes ni ventas por sede.
+En esta etapa inicial se verificó el contrato de consignaciones localmente. FAV es responsable de enviar el `varianteId` correspondiente a la prenda recibida. Las compras y el consumo del catálogo se incorporaron después, según [ADR-023](adr/ADR-023-compra-de-socios-en-tienda.md).
 
 La instancia PostgreSQL compartida continúa siendo un punto de falla. JWT se valida localmente hasta vencer, sin revocación inmediata. No se purga automáticamente el historial/idempotencia. Las métricas de operaciones resueltas incluyen repeticiones y no representan ventas únicas; el tablero global y la prueba de carga final pertenecen a etapas posteriores.

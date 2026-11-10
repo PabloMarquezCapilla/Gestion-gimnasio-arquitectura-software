@@ -23,31 +23,34 @@ if ! command -v node >/dev/null 2>&1 || [ "$(node -p 'process.versions.node.spli
   curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
   sudo apt-get install -y nodejs
 fi
-# El grupo docker recién agregado no aplica a esta sesión: usar sudo si hace falta.
-DOCKER="docker"; docker info >/dev/null 2>&1 || DOCKER="sudo docker"
+# Activar el grupo docker en la sesión inicial sin crear .env como root.
+DOCKER_USUARIO=()
+if ! docker info >/dev/null 2>&1; then
+  DOCKER_USUARIO=(sudo -u "$(id -un)" -g docker)
+fi
 
 echo "== 2/5 Código actualizado"
 git pull --ff-only || echo "(sin cambios remotos o repositorio sin upstream)"
 
 echo "== 3/5 Dominio público"
 IP="$(curl -fsS https://api.ipify.org)"
-if [ ! -f .env ] || ! grep -q '^DOMINIO=.\+' .env; then
+DOMINIO=""
+if [ -f .env ]; then
+  DOMINIO="$(node -e 'const { readFileSync } = require("node:fs"); const { parseEnv } = require("node:util"); process.stdout.write(parseEnv(readFileSync(".env", "utf8")).DOMINIO?.trim() ?? "");')"
+fi
+if [ -z "$DOMINIO" ]; then
   # sslip.io resuelve <ip-con-guiones>.sslip.io a esa IP: DNS gratis, válido para Let's Encrypt.
   DOMINIO="gimnasio.${IP//./-}.sslip.io"
-  touch .env
-  sed -i '/^DOMINIO=/d' .env
-  echo "DOMINIO=${DOMINIO}" >> .env
+  if [ -f .env ]; then
+    sed -i -E '/^[[:space:]]*(export[[:space:]]+)?DOMINIO[[:space:]]*=/d' .env
+    printf '\nDOMINIO=%s\n' "$DOMINIO" >> .env
+  fi
 fi
-DOMINIO="$(grep '^DOMINIO=' .env | cut -d= -f2-)"
 echo "Dominio: ${DOMINIO} (IP ${IP})"
 
 echo "== 4/5 Secretos, construcción e inicio (npm run iniciar con el override de producción)"
 # iniciar genera las claves que falten en .env y levanta todo con --wait.
-if [ "$DOCKER" = "docker" ]; then
-  COMPOSE_FILE=compose.yaml:compose.prod.yaml node scripts/iniciar.mjs
-else
-  sudo env COMPOSE_FILE=compose.yaml:compose.prod.yaml PATH="$PATH" node scripts/iniciar.mjs
-fi
+"${DOCKER_USUARIO[@]}" env DOMINIO="$DOMINIO" COMPOSE_FILE=compose.yaml:compose.prod.yaml PATH="$PATH" node scripts/iniciar.mjs
 
 echo "== 5/5 Verificación pública"
 for _ in $(seq 1 30); do

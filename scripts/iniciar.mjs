@@ -57,6 +57,7 @@ if (!existsSync(envPath)) {
     '# Conservar junto a los volúmenes; no cambiar claves de bases ya inicializadas.',
     'GATEWAY_PORT=8080',
     'EMPLEADOS_ORIGEN_ID=grupo-ficticio-local',
+    ...(process.env.DOMINIO ? [`DOMINIO=${JSON.stringify(process.env.DOMINIO)}`] : []),
     ...keys.map(key => `${key}=${randomBytes(32).toString('hex')}`),
     '',
   ].join('\n');
