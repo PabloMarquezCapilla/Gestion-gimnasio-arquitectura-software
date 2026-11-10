@@ -26,7 +26,44 @@ const componente = (fuente, hermanos = {}) => {
 };
 const cajaUrl = moduleUrl(componente(await readFile(new URL('./CajaTienda.tsx', import.meta.url), 'utf8')));
 const code = componente(await readFile(new URL('./MembresiasPanel.tsx', import.meta.url), 'utf8'), { './CajaTienda': cajaUrl });
-const { MembresiasPanel } = await import(moduleUrl(code));
+const { MembresiasPanel, vigencia } = await import(moduleUrl(code));
+
+const fechaLocal = fecha => [fecha.getFullYear(), String(fecha.getMonth() + 1).padStart(2, '0'),
+  String(fecha.getDate()).padStart(2, '0')].join('-');
+
+test('Vigencia incluye el último día del mes de destino cuando falta el día original', () => {
+  for (const [inicio, meses, fin] of [
+    ['2026-01-31', 1, '2026-02-28'], ['2024-01-31', 1, '2024-02-29'],
+    ['2026-01-31', 3, '2026-04-30'], ['2026-12-31', 2, '2027-02-28'],
+    ['2024-02-29', 12, '2025-02-28'],
+  ]) {
+    const periodo = vigencia(inicio, meses);
+    assert.equal(fechaLocal(periodo.desde), inicio);
+    assert.equal(fechaLocal(periodo.hasta), fin);
+    assert.deepEqual([periodo.hasta.getHours(), periodo.hasta.getMinutes(), periodo.hasta.getSeconds(),
+      periodo.hasta.getMilliseconds()], [23, 59, 59, 999]);
+  }
+});
+
+test('Vigencia termina el día anterior cuando el día original existe en el mes de destino', () => {
+  for (const [inicio, meses, fin] of [
+    ['2026-01-15', 1, '2026-02-14'], ['2026-01-01', 1, '2026-01-31'],
+    ['2026-02-28', 1, '2026-03-27'], ['2026-12-01', 12, '2027-11-30'],
+  ]) {
+    const periodo = vigencia(inicio, meses);
+    assert.equal(fechaLocal(periodo.hasta), fin);
+    assert.equal(periodo.desde.getHours(), 0);
+    assert.equal(periodo.hasta.getMilliseconds(), 999);
+  }
+});
+
+test('Vigencia rechaza fechas inexistentes, duraciones inválidas y años fuera de RFC3339', () => {
+  for (const fecha of ['', '2026-02-30', '2026-13-01', '2026-00-10', '2026-01-00', '31/01/2026']) {
+    assert.equal(vigencia(fecha, 1), null);
+  }
+  for (const meses of [0, -1, 1.5, 37, NaN, Infinity]) assert.equal(vigencia('2026-01-01', meses), null);
+  assert.equal(vigencia('9999-12-31', 1), null);
+});
 
 test('Al recuperar una suspensión pendiente se muestran el reintento y las consultas disponibles', () => {
   const previousStorage = globalThis.sessionStorage;

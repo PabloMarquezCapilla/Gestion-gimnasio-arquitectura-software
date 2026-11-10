@@ -67,6 +67,10 @@ La fuente actual permite `member:true` cuando comprueba socio activo y membresí
 
 El reparto de fracciones de centavo, las devoluciones o ajustes negativos y los meses parciales siguen pendientes de acuerdo. No se inventan precios, historia ni una fórmula adicional: el dato afectado permanece desconocido o requiere revisión antes de enviarse. El contrato no admite importes negativos.
 
+**Corrección del costo mensual, 10/11/2026.** Se exige un único contrato confirmado que abarque el mes completo. Terminar al comienzo o durante el último día representa un mes parcial. Se admite el fin inclusivo en el segundo final para conservar la precisión del portal anterior, además del último milisegundo usado por el portal actualizado. Un contrato completo superpuesto con otro parcial confirmado también produce `null`.
+
+Los meses contratados proceden de la copia durable de duración en la solicitud. Se elimina la estimación por días promedio. Una solicitud histórica sin esa copia conserva `costMinor:null`. Si importe dividido por meses produce una fracción de centavo, también se informa `null`, conforme al pendiente económico. Las fotografías ya guardadas conservan su contenido y sus reintentos. [Persistencia y vigencias](ADR-021-planes-pagos-membresias.md).
+
 ### Versionado, fotografías y reintentos
 
 El POST de Car Cruds recibe `employeeId`, `period`, `sourceReference`, `version` y `observedAt`, más los hechos disponibles. El origen se obtiene de la credencial; no se elige en el cuerpo.

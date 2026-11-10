@@ -1,7 +1,9 @@
 # Plan de cierre de entrega 3
 
-**Estado.** 08/11/2026. PR #7 de Tienda integrada en `main`, commit `837df58`. Base del paso 4 consolidada en `6a7e6ca` y plan en `b4ab192`. Rama de trabajo `feat/membresias-eventos`, con apertura de PR pendiente por decisión del equipo. Paso 4 cerrado funcionalmente en local con corrección de recuperación, pruebas automáticas y resultados manuales del equipo. Paso 5 completo. Retiro voluntario y recorrido propio de clases del paso 6 verificados localmente. Restan políticas administrativas pendientes, fuentes/integraciones del paso 7 y cierre de observabilidad/despliegue.
+**Estado.** 10/11/2026. `main` en `cc30447` incorpora `feat/membresias-eventos` mediante el merge `3393951`, además de catálogo/compras FAV, fuentes Car Cruds, observabilidad y preparación de despliegue. Las correcciones de esta revisión se trabajan en `fix/correcciones-entrega-3`. El equipo confirmó compras de socios, tarifas precargadas y la regla de vigencia para meses sin el día original. Se corrigen descubrimiento de pruebas, configuración/limpieza del ensayo de balanceo, fin de mes y costo mensual de Car Cruds. Continúan pendientes las políticas administrativas abiertas, el despliegue público y las pruebas conjuntas con ambos grupos.
 **Referencia:** presentación grupal, páginas 8–9 del enunciado. La defensa individual de la página 9 tiene verificaciones adicionales, identificadas abajo.
+
+**Correcciones verificadas el 10/11/2026.** Fin de mes con regla confirmada, duración contractual durable para Car Cruds y costo desconocido ante datos históricos incompletos o fracciones. El descubrimiento de pruebas excluye el lanzador de carga. Balanceo genera su credencial de Grafana y reconoce sus volúmenes al limpiar. Aprobaron 278 pruebas de regresión/cobertura, 21 de PostgreSQL y el ensayo de balanceo con limpieza. La compilación frontend aprobó 41 módulos. Se mantienen los cuatro 504 transitorios durante detección de una réplica caída. [Detalle y límites](EVIDENCIA-MEMBRESIAS.md#correcciones-verificadas-el-10112026).
 
 ## Forma de trabajo
 

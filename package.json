@@ -27,7 +27,7 @@
     "test:eventos": "npm run build && node --test scripts/verificar-eventos-membresia.mjs",
     "test:cobertura": "npm run build && node --test --experimental-test-coverage --test-coverage-exclude=**/test/** --test-coverage-exclude=scripts/** --test-coverage-exclude=frontend/** --test-coverage-lines=70 --test-coverage-branches=80 --test-coverage-functions=80",
     "simulacro:fav": "node scripts/simulacro-fav.mjs",
-    "test:carga": "node scripts/test-carga.mjs",
+    "test:carga": "node scripts/ejecutar-carga.mjs",
     "test:busqueda": "npm run build && node --test scripts/verificar-busqueda.mjs",
     "test:gestion-clases": "npm run build && node --test scripts/verificar-gestion-clases.mjs",
     "frontend:dev": "npm --prefix frontend run dev",

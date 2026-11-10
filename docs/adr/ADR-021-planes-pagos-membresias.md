@@ -6,6 +6,10 @@
 
 **Estado:** implementado para el flujo administrativo definido, 30/10/2026. Amplía D3/D4 y la autenticación de ADR-016; no cambia contratos externos, FIFO, MongoDB ni Redis.
 
+**Corrección del 10/11/2026.** El equipo confirmó las compras de socios y las tarifas precargadas. Para las vigencias calculadas en el portal, si el mes de destino tiene el día original, el período incluye hasta el final del día anterior. Si falta ese día, incluye todo el último día del mes de destino. Un mes desde el 31/01/2026 termina el 28/02/2026; en 2024 termina el 29/02. Se validan fechas reales y duración entera de 1 a 36 meses. El fin nuevo incluye el último milisegundo del día. Las solicitudes existentes conservan sus fechas.
+
+Cada solicitud nueva copia también `duracion_meses` del plan en la transacción de alta, junto con nombre, importe y moneda. Car Cruds utiliza esa copia contractual al calcular costo mensual. La migración agrega la columna nullable a `solicitudes_planes`. Las solicitudes anteriores mantienen duración desconocida y su costo mensual se informa como `null`. El registro y la suma de pagos confirmados siguen usando sus importes y fechas. [D8](ADR-018-integracion-car-cruds.md), [verificación](../EVIDENCIA-MEMBRESIAS.md).
+
 ## Fuentes y reglas confirmadas
 
 ALCANCE_PRELIMINAR: ADMIN gestiona planes, registra y confirma pagos y genera comprobantes internos (RF-01–03, RN-G01–04, CA-G01–03). Alta de cuenta no habilita. El socio consulta sus propios datos; no paga ni contrata por autoservicio. No hay pasarela ni factura fiscal. Vigencia aplicable se registra explícitamente y Socios la evalúa tanto ahora como para la fecha de clase (RN-R01). ADR-003 ya conserva períodos históricos y evita que una renovación futura oculte la vigente.

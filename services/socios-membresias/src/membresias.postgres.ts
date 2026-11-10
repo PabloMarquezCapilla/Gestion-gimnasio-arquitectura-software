@@ -28,6 +28,8 @@ CREATE TABLE IF NOT EXISTS comprobantes_membresia (
 );
 -- Duración del plan: el portal calcula la vigencia de la solicitud y el informe a Car Cruds el costo mensual.
 ALTER TABLE planes_membresia ADD COLUMN IF NOT EXISTS duracion_meses INT NOT NULL DEFAULT 1 CHECK(duracion_meses BETWEEN 1 AND 36);
+-- Copia contractual para solicitudes nuevas. La duración histórica ausente queda desconocida.
+ALTER TABLE solicitudes_planes ADD COLUMN IF NOT EXISTS duracion_meses INT CHECK(duracion_meses BETWEEN 1 AND 36);
 -- Los planes predeterminados no los crea un administrador: creado_por NULL identifica al sistema.
 ALTER TABLE planes_membresia ALTER COLUMN creado_por DROP NOT NULL;
 -- Tarifas iniciales en centavos de ARS. No se pisan si administración ya los desactivó.
@@ -138,7 +140,9 @@ export class PostgresGestionMembresias implements GestionRepository {
   if (Date.parse(fin as string) < Date.now()) throw falloGestion('SOLICITUD_VENCIDA','La vigencia solicitada ya finalizó.',422);
   if (op === 'solicitar') {
    const id = nuevo('sol-');
-   await c.query("INSERT INTO solicitudes_planes(solicitud_id,socio_id,plan_id,nombre_plan,importe_minor,moneda,fecha_inicio,fecha_fin,estado,creado_por) VALUES($1,$2,$3,$4,$5,$6,$7,$8,'PENDIENTE',$9)",[id,socioId,planId,plan.nombre,plan.importeMinor,plan.moneda,d.fechaInicio,d.fechaFin,actor]);
+   await c.query(`INSERT INTO solicitudes_planes(solicitud_id,socio_id,plan_id,nombre_plan,importe_minor,moneda,
+    fecha_inicio,fecha_fin,estado,creado_por,duracion_meses) VALUES($1,$2,$3,$4,$5,$6,$7,$8,'PENDIENTE',$9,$10)`,
+    [id,socioId,planId,plan.nombre,plan.importeMinor,plan.moneda,d.fechaInicio,d.fechaFin,actor,plan.duracionMeses]);
    return this.solicitud(id,c);
   }
   if (op === 'registrarPago') {

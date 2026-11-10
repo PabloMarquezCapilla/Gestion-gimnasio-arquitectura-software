@@ -22,9 +22,6 @@ export function limitesMes(period: string): { desde: Date; hasta: Date } {
   return { desde: new Date(Date.UTC(anio, mes - 1, 1, 3)), hasta: new Date(Date.UTC(anio, mes, 1, 3)) };
 }
 
-const DIA_MS = 86_400_000;
-const MES_PROMEDIO_MS = 30.436875 * DIA_MS;
-
 // Perfil de Car Cruds 0.3.0: pagos efectivos confirmados dentro del mes hasta el corte.
 // Una moneda distinta de ARS no se suma ni se convierte: el importe queda desconocido.
 export function gastoDelMes(contratos: ContratoConfirmado[] | undefined, desde: Date, hasta: Date, corte: Date): number | null {
@@ -40,11 +37,16 @@ export function gastoDelMes(contratos: ContratoConfirmado[] | undefined, desde: 
 // Solo si un único plan confirmado cubre el mes entero; un mes parcial o ambiguo queda null.
 export function costoMensual(contratos: ContratoConfirmado[] | undefined, desde: Date, hasta: Date, corte: Date): number | null {
   if (!contratos) return null;
-  const cubren = contratos.filter(c => Date.parse(c.confirmadoEn) <= corte.getTime()
-    && Date.parse(c.fechaInicio) <= desde.getTime() && Date.parse(c.fechaFin) >= hasta.getTime() - DIA_MS);
-  if (cubren.length !== 1 || cubren[0].moneda !== 'ARS') return null;
-  const meses = Math.max(1, Math.round((Date.parse(cubren[0].fechaFin) - Date.parse(cubren[0].fechaInicio)) / MES_PROMEDIO_MS));
-  return Math.round(cubren[0].importeMinor / meses);
+  const delMes = contratos.filter(c => Date.parse(c.confirmadoEn) <= corte.getTime()
+    && Date.parse(c.fechaInicio) < hasta.getTime() && Date.parse(c.fechaFin) >= desde.getTime());
+  if (delMes.length !== 1) return null;
+  const contrato = delMes[0], meses = contrato.mesesContratados;
+  // El portal anterior guardaba el fin inclusivo con precisión de segundos.
+  if (contrato.moneda !== 'ARS' || Date.parse(contrato.fechaInicio) > desde.getTime()
+    || Date.parse(contrato.fechaFin) < hasta.getTime() - 1000
+    || typeof meses !== 'number' || !Number.isInteger(meses) || meses < 1 || meses > 36) return null;
+  const costo = contrato.importeMinor / meses;
+  return Number.isSafeInteger(costo) && costo >= 0 ? costo : null;
 }
 
 export interface DependenciasEvidencias {

@@ -169,6 +169,30 @@ test('Planes, pagos y membresías: PostgreSQL real y HTTP entre dos instancias',
    assert.ok(business.some(l=>l.codigo==='PERSISTENCIA_FALLIDA'));assert.ok(business.some(l=>l.estado==='RECHAZADA'));
    assert.ok(business.every(l=>!('importeMinor' in l)&&!('password' in l)&&!('clave' in l)));
   });
+  await t.test('La duración contratada llega a la fotografía y conserva el valor de la solicitud', async () => {
+   assert.equal((await pool.query('SELECT duracion_meses FROM solicitudes_planes WHERE solicitud_id=$1', [sol.solicitudId])).rows[0].duracion_meses, 1);
+   await pool.query('UPDATE planes_membresia SET duracion_meses=6 WHERE plan_id=$1', [plan.planId]);
+   try {
+    const employeeId = 'empleado-duracion-ficticio', fecha = new Date().toISOString();
+    const period = fecha.slice(0, 7);
+    await repo.cambiarVinculoCarCruds({ employeeId, socioId: socio.socioId, versionEsperada: 0,
+     administradorId: admin.socioId, fecha });
+    let contratos;
+    await repo.prepararFotografia({ employeeId, period, versionAnteriorEsperada: 0, versionVinculoEsperada: 1,
+     administradorId: admin.socioId, fecha, confirmarCambioVinculo: false,
+     generar: (fuente, sourceReference, version) => {
+      contratos = fuente.contratos;
+      return { employeeId, period, sourceReference, version, observedAt: fecha, member: null, costMinor: null };
+     },
+    });
+    const contrato = contratos.find(item => item.fechaInicio === sol.fechaInicio && item.fechaFin === sol.fechaFin);
+    assert.ok(contrato);
+    assert.equal(contrato.mesesContratados, 1);
+    assert.equal(contrato.importeMinor, sol.importeMinor);
+   } finally {
+    await pool.query('UPDATE planes_membresia SET duracion_meses=1 WHERE plan_id=$1', [plan.planId]);
+   }
+  });
   await t.test('Actualización desde DDL previo conserva socios, solicitudes externas y membresías',async()=>{
    const old=execFileSync('git',['show','db13cee:services/socios-membresias/src/repository.ts'],{encoding:'utf8'});
    const ddl=old.match(/await client.query\(`([\s\S]*?)`\);/)[1];const upgrade=e.pool('actualizacion');await upgrade.query(ddl);
@@ -176,10 +200,20 @@ test('Planes, pagos y membresías: PostgreSQL real y HTTP entre dos instancias',
    await upgrade.query("INSERT INTO solicitudes_membresia VALUES('anterior-sol','anterior','PENDIENTE',now())");
    await upgrade.query("INSERT INTO membresias(membresia_id,socio_id,tipo_plan,fecha_inicio,fecha_fin,estado) VALUES('anterior-mem','anterior','Plan histórico','2020-01-01','2020-02-01','VENCIDA')");
    const before=(await upgrade.query("SELECT row_to_json(s) datos FROM socios s WHERE socio_id='anterior'")).rows[0];
-   await new repos.PostgresSociosRepository(upgrade).inicializarEsquema();await new repos.PostgresSociosRepository(upgrade).inicializarEsquema();
+   await new repos.PostgresSociosRepository(upgrade).inicializarEsquema();
+   // Representa una solicitud de main anterior a la copia durable de duración.
+   await upgrade.query('ALTER TABLE solicitudes_planes DROP COLUMN duracion_meses');
+   await upgrade.query(`INSERT INTO solicitudes_planes(solicitud_id,socio_id,plan_id,nombre_plan,importe_minor,moneda,
+    fecha_inicio,fecha_fin,estado,creado_por) VALUES('sol-duracion-anterior','anterior','plan-mensual','Plan histórico',
+    12345,'ARS','2020-01-01','2020-02-01','RECHAZADA','anterior')`);
+   await new repos.PostgresSociosRepository(upgrade).inicializarEsquema();
+   await new repos.PostgresSociosRepository(upgrade).inicializarEsquema();
    assert.deepEqual((await upgrade.query("SELECT row_to_json(s) datos FROM socios s WHERE socio_id='anterior'")).rows[0],before);
    assert.equal((await upgrade.query("SELECT * FROM solicitudes_membresia WHERE solicitud_id='anterior-sol'")).rowCount,1);
    assert.equal((await upgrade.query("SELECT * FROM membresias WHERE membresia_id='anterior-mem'")).rowCount,1);
+   const historica = (await upgrade.query("SELECT importe_minor::text,duracion_meses FROM solicitudes_planes WHERE solicitud_id='sol-duracion-anterior'")).rows[0];
+   assert.equal(historica.importe_minor, '12345');
+   assert.equal(historica.duracion_meses, null);
   });
   if(process.env.MEMBRESIAS_PLAYWRIGHT_MODULE)await t.test('Navegador real: alta, plan, solicitud, cobro, confirmación, portal y reserva', {timeout:60000},async()=>{
    const { verificarMembresiasWeb }=await import('./membresias/web.mjs');await verificarMembresiasWeb({sociosUrl:a.url,clasesUrl,adminEmail:admin.email,adminPassword:'clave-sintetica',claseId:'socios-caido'});
