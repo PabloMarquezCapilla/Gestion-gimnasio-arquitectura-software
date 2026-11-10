@@ -52,15 +52,15 @@ Las reglas de negocio, exclusiones y criterios de aceptación están en [ALCANCE
 | Socios y Membresías | Login JWT, permisos, altas administrativas, planes, pagos/comprobantes, suspensión inmediata con Outbox, lecturas/vínculos y fotografías Car Cruds con uso, costo y pagos del mes, y POST anterior de empleados. | Conexión conjunta Car Cruds, políticas de reactivación y superposición/prorrateos. |
 | Clases y Reservas | Publicación/edición ADMIN, búsqueda FTS, reservas/FIFO, retiro voluntario de espera y suspensión mediante Inbox/RabbitMQ. Sedes de Accesos, versiones y reintentos durables. API/portal, PostgreSQL, dos réplicas y reconstrucción GIN verificados. | Verificación integrada en el despliegue final. |
 | Accesos y Ocupación | Recepción ADMIN: ingresos/egresos, historial y ocupación real; MongoDB transaccional, Redis medido e idempotencia durable. Uso mensual interno para el informe a Car Cruds. | Verificación integrada en el despliegue final. |
-| Tienda | Stock local en PostgreSQL, reposiciones de FAV con clave técnica, ventas ADMIN y panel. Catálogo de FAV 1.1.0 consumido con circuit breaker y caché degradada. Compra de socios desde el portal, idempotente y atómica (ADR-023/024). | URL y clave reales de FAV, aceptación del contrato, URL pública y prueba conjunta. |
-| Gateway y portal | NGINX: rutas, **validación JWT y rate limiting** (ADR-025), balanceo y logs de destinos. Portal React con todas las secciones de administración operativas: Panel principal, Socios, Planes y tarifas (4 planes predeterminados con precio), Cobros y caja (membresías y compras de la tienda), Reportes y Configuración. | URL pública: crear la VM y ejecutar el despliegue ([DEPLOY](docs/DEPLOY.md)). |
+| Tienda | Stock local en PostgreSQL, reposiciones de FAV con clave técnica, ventas ADMIN y panel. Catálogo de FAV compatible con el contrato fijado y probado contra la API pública del proveedor desde el gateway local. Compra de socios idempotente y atómica (ADR-023/024). | Configurar el catálogo de FAV en Azure y realizar la prueba conjunta de reposiciones. |
+| Gateway y portal | NGINX: rutas, **validación JWT y rate limiting** (ADR-025), balanceo y logs de destinos. Portal React con todas las secciones de administración operativas: Panel principal, Socios, Planes y tarifas (4 planes predeterminados con precio), Cobros y caja (membresías y compras de la tienda), Reportes y Configuración. | Portal y gateway operativos por HTTPS en Azure. [Despliegue](docs/DEPLOY.md). |
 | Observabilidad | Prometheus (todas las instancias y RabbitMQ), Grafana con tablero **Gimnasio · Estado general** y 5 alertas (D11). | Canal de notificación externo y exportador de spans. |
 
 La integración con **Car Cruds** cambia la dirección del intercambio por indicación del profesor: Socios consulta empleados/estado y el ADMIN los vincula manualmente con socios. Desde el panel elige el mes, guarda/revisa una fotografía y confirma su envío; los reintentos conservan contenido, referencia, versión y fecha. Corregir o quitar el vínculo conserva el historial y no modifica membresías. El recorrido se verificó localmente; faltan URL/token operativos y prueba conjunta. Contrato externo **0.3.0**, configuración y uso en [la guía](docs/contracts/README.md#integracion-con-car-cruds) y [ADR-018](docs/adr/ADR-018-integracion-car-cruds.md).
 
 El **POST anterior `/api/v1/integraciones/empleados`**, contrato propio **1.0.1**, sigue disponible localmente con su mock y pruebas. Su funcionamiento no acredita la nueva integración; se conserva durante la transición.
 
-**Acceso desplegado:** el despliegue está preparado para una VM con Docker y HTTPS automático. Un integrante crea la VM con su cuenta y ejecuta `bash scripts/desplegar-vm.sh`, que publica `https://gimnasio.<ip>.sslip.io` y el tablero en `https://grafana.gimnasio.<ip>.sslip.io` (ver [DEPLOY](docs/DEPLOY.md)). Una vez creada, la URL se agrega aquí. Faltan también los datos reales de FAV y Car Cruds y las pruebas conjuntas.
+**Acceso desplegado.** El portal y el tablero están disponibles por HTTPS en una VM de Azure. [Portal del gimnasio](https://gimnasio.68-211-88-90.sslip.io/) · [Grafana](https://grafana.gimnasio.68-211-88-90.sslip.io/) · [Guía de despliegue](docs/DEPLOY.md).
 
 ## Arquitectura y estructura
 
@@ -71,7 +71,7 @@ services/
   socios-membresias/     # Cuentas, habilitación e integración de empleados
   clases-reservas/       # Catálogo, reservas y espera
   accesos-ocupacion/     # Movimientos, ocupación MongoDB y caché Redis
-  tienda/               # Stock local, reposiciones y ventas; catálogo externo pendiente
+  tienda/               # Stock local, reposiciones, ventas y catálogo de FAV
 frontend/               # Portal React
 infra/                  # Imágenes, gateway e inicializadores de dependencias
 scripts/                # Inicio, bootstrap administrativo y verificaciones
@@ -146,7 +146,8 @@ Ingresar DNI, nombre, email, contraseña y confirmación. Para acceder después,
 | Suspender una membresía como ADMIN | Elegir socio, revisar historial y confirmar la suspensión. Ante respuesta incierta se conserva la operación y se ofrece reintentar con la misma clave. Las consultas siguen disponibles y cada solicitud de gestión tiene un plazo máximo de 15 segundos. [Uso y recuperación](docs/contracts/membresias-eventos.md#uso-desde-el-portal). |
 | Abrir «Tienda y stock» como ADMIN | Consultar disponibles/vendidos y registrar unidades de una venta con confirmación. Ante respuesta incierta se conserva y reintenta la misma operación. |
 | Abrir «Clases & Turnos» como ADMIN | Publicar con nombre, actividad, profesor, sede existente, inicio/fin y capacidad. Buscar la clase y editar antes del inicio únicamente sin reservas confirmadas ni espera pendiente. Ante respuesta perdida, volver a ingresar y reintentar la operación recuperada. [Contrato y uso](docs/contracts/README.md#administración-de-clases). |
-| Abrir catálogo de Tienda como socio o reactivar períodos superpuestos | Integración externa y política pendientes respectivamente; no se simulan sus resultados. |
+| Abrir el catálogo de Tienda como socio | Con FAV configurado, el catálogo muestra las variantes del proveedor con unidades disponibles en el gimnasio. |
+| Reactivar una membresía o gestionar períodos superpuestos | Las reglas administrativas siguen pendientes de definición. |
 
 El JWT se guarda en memoria: recargar la página o recibir un 401 requiere nuevo login. En una base nueva, Yoga del 12/11/2026 tiene tres cupos y Pilates del mismo día está llena; los movimientos cambian esos valores. Las fechas de demostración son fijas: las clases iniciadas rechazan nuevas reservas, espera y cancelaciones.
 
@@ -258,7 +259,7 @@ El ensayo verifica pertenencia antes de limpiar sus recursos temporales. No usar
 
 Iniciar con `npm run iniciar` y acceder como ADMIN a **Tienda y stock**. El inicio incorpora las credenciales nuevas ausentes y la base propia sin borrar datos. El stock empieza vacío: FAV registra las recepciones mediante el contrato compartido, con `X-API-Key` de `FAV_API_KEY` e `Idempotency-Key`. La clave se comparte por privado, nunca desde el portal.
 
-ADMIN selecciona la variante, indica las unidades vendidas y confirma. No se permite saldo negativo; si la respuesta es incierta, recargar y volver a ingresar permite reintentar la misma venta. No borrar la operación pendiente para crear otra. El catálogo externo del socio todavía informa integración pendiente; nombres y precios no se inventan.
+ADMIN selecciona la variante, indica las unidades vendidas y confirma. La venta exige stock suficiente. Si la respuesta es incierta, recargar y volver a ingresar permite reintentar la misma operación. En el catálogo del socio, Tienda cruza los productos y precios de FAV con el stock consignado. Si todavía no hay reposiciones, el catálogo responde correctamente con una lista vacía.
 
 Rutas, ejemplos de Postman y errores: [guía FAV/Tienda](docs/contracts/fav-tienda.md). Reproducción de pruebas y límites: [EVIDENCIA-TIENDA](docs/EVIDENCIA-TIENDA.md).
 
@@ -305,14 +306,14 @@ El trabajo de cierre parte de `main` actualizado y se prepara en ramas de funcio
 | [Arquitectura](docs/ARCHITECTURE.md) | Servicios, datos, comunicaciones, diagramas, decisiones y limitaciones (§3, §6.2–6.3). |
 | [ADR](docs/ARCHITECTURE.md#decisiones-arquitectónicas) | D1–D13 y decisiones adicionales; los reemplazados conservan su historia (§5). |
 | [Contrato e integración](docs/contracts/README.md) | Capacidad ofrecida, versión, ejemplos, errores, autenticación e idempotencia (§4.1). |
-| [FAV: contrato y guía](docs/contracts/fav-tienda.md) | Stock y reposiciones implementados y verificados localmente; aceptación, publicación y conexión conjunta pendientes (§4.1). |
+| [FAV: contrato y guía](docs/contracts/fav-tienda.md) | Stock y reposiciones publicados en Azure. El consumo del catálogo está verificado desde el entorno local y quedan pendientes la configuración en Azure y la prueba conjunta (§4.1). |
 | [Plan de cierre](docs/PLAN-ENTREGA-3.md) | Etapas, verificaciones y decisiones pendientes para la presentación y defensa; se completa una etapa por vez. |
 | [Postmortem](docs/POSTMORTEM.md) | Caída de una réplica y caída/lentitud del proveedor FAV: impacto, línea temporal, detección, respuesta, causa y mejoras (§2.8 y §3). |
 | [Despliegue](docs/DEPLOY.md) | VM con Docker Compose, Caddy y HTTPS; URLs a publicar e integraciones (§4.1, §6.4). |
 | [Contrato de eventos](docs/contracts/asyncapi-membresias-v1.yaml) | AsyncAPI 3.0 del evento `MembresiaActualizada`, con cola y DLQ (§2.4). |
 | Evidencias | [Carga](docs/EVIDENCIA-CARGA.md), [cobertura](docs/EVIDENCIA-COBERTURA.md), [caché](docs/EVIDENCIA-CACHE.md), [búsqueda](docs/EVIDENCIA-BUSQUEDA.md), [eventos](docs/EVIDENCIA-EVENTOS-MEMBRESIA.md), [Tienda](docs/EVIDENCIA-TIENDA.md). |
 
-E1 (§6.2) conserva alcance, arquitectura/diagramas, límites, estructura y contratos/mocks. E2 (§6.3) conserva flujo propio, PostgreSQL, logs/traza y ADR. Para la presentación final (§6, páginas 8–9), suspensión/mensajería, búsqueda en API/portal, publicación/edición, reconstrucción del índice y retiro de espera están verificados localmente. Desde el 09/11/2026 también están implementados las fuentes mensuales de Car Cruds, el consumo de FAV con compra de socios, la autenticación y el rate limiting en el gateway, el tablero y las alertas, el test de carga, la cobertura y el AsyncAPI. Siguen pendientes la creación de la VM (el despliegue está listo), las pruebas conjuntas con FAV y Car Cruds y las políticas de reactivación. El [plan de entrega 3](docs/PLAN-ENTREGA-3.md) detalla el orden y sus dependencias.
+E1 (§6.2) conserva alcance, arquitectura/diagramas, límites, estructura y contratos/mocks. E2 (§6.3) conserva flujo propio, PostgreSQL, logs/traza y ADR. Para la presentación final (§6, páginas 8–9), suspensión/mensajería, búsqueda en API/portal, publicación/edición, reconstrucción del índice y retiro de espera están verificados localmente. Desde el 09/11/2026 también están implementados las fuentes mensuales de Car Cruds, el consumo de FAV con compra de socios, la autenticación y el rate limiting en el gateway, el tablero y las alertas, el test de carga, la cobertura y el AsyncAPI. El gimnasio está desplegado en Azure. Quedan pendientes la configuración de proveedores en la VM, las pruebas conjuntas y las políticas de reactivación. El [plan de entrega 3](docs/PLAN-ENTREGA-3.md) detalla el orden y sus dependencias.
 
 ## Caché Redis de ocupación (etapa 2)
 

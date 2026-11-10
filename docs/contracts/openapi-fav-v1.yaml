@@ -5,7 +5,7 @@ info:
   description: >-
     Contrato inicial definido con el equipo del gimnasio el 06/11/2026.
     Endpoints implementados y verificados localmente con PostgreSQL real.
-    URL pública, aceptación de FAV y prueba conjunta pendientes. Ver
+    API publicada en Azure. Aceptación de FAV y prueba conjunta pendientes. Ver
     fav-tienda.md. Tienda administra el stock físico de una única tienda del gimnasio.
     FAV conserva su catálogo y stock de distribuidora. productoCodigo es el
     identificador opaco varianteId de FAV, no un nombre ni un producto genérico.
@@ -15,7 +15,9 @@ info:
     adicional no reemplaza la integración con Car Cruds.
 servers:
   - url: http://localhost:8080
-    description: Entorno local al ejecutar npm run iniciar; puerto configurable mediante GATEWAY_PORT. URL pública pendiente.
+    description: Entorno local. El puerto se configura mediante GATEWAY_PORT.
+  - url: https://gimnasio.68-211-88-90.sslip.io
+    description: Entorno publicado en Azure.
 security:
   - ClaveFav: []
 paths:

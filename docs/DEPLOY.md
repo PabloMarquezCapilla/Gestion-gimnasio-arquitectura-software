@@ -40,8 +40,8 @@ cd Gestion-gimnasio-arquitectura-software && bash scripts/desplegar-vm.sh
 
 El script ([`scripts/desplegar-vm.sh`](../scripts/desplegar-vm.sh)):
 1. instala Docker y Node 22 si faltan;
-2. calcula `DOMINIO=gimnasio.<ip>.sslip.io` y lo guarda en `.env`;
-3. ejecuta `npm run iniciar` con `COMPOSE_FILE=compose.yaml:compose.prod.yaml`, que genera los secretos que falten en `.env` y levanta todo con reinicio automático;
+2. usa el dominio guardado o calcula `DOMINIO=gimnasio.<ip>.sslip.io`;
+3. pasa el dominio al inicializador con `COMPOSE_FILE=compose.yaml:compose.prod.yaml`. En una instalación nueva, el inicializador escribe el dominio y las credenciales juntos en `.env` antes de levantar los servicios;
 4. verifica `https://<dominio>/health`.
 
 Es idempotente: para actualizar después de un push a `main`, volver a ejecutarlo. `.env` y los volúmenes se conservan.
@@ -64,14 +64,16 @@ Editar `.env` en la VM y volver a ejecutar el script:
 
 ## 4. URLs a publicar
 
+**Despliegue activo al 10/11/2026.** VM en Azure Chile Central con Ubuntu 24.04, 2 vCPU y 8 GiB de RAM. El NSG `vm-gimnasio-nsg` permite TCP 80 y 443 para Caddy. Desde fuera de la VM se verificaron `200` en el portal, `/health` y el estado de Grafana. La consulta de consignaciones sin credencial respondió `401`.
+
 | Para quién | URL |
 |---|---|
-| Socios y la cátedra | `https://<dominio>` (portal) |
-| FAV, capacidad publicada (contrato [openapi-fav-v1.yaml](contracts/openapi-fav-v1.yaml)) | `https://<dominio>/api/v1/consignaciones/stock?proveedorId=fav` y `POST https://<dominio>/api/v1/consignaciones/reposiciones` |
-| Tablero de la presentación | `https://grafana.<dominio>` |
+| Socios y la cátedra | [Portal del gimnasio](https://gimnasio.68-211-88-90.sslip.io/) |
+| FAV, capacidad publicada | [URL base del gimnasio](https://gimnasio.68-211-88-90.sslip.io/) y [contrato de consignaciones](contracts/openapi-fav-v1.yaml) |
+| Tablero de la presentación | [Grafana](https://grafana.gimnasio.68-211-88-90.sslip.io/) |
 | Alertas (Prometheus) | Túnel SSH: `ssh -L 9090:localhost:9090 usuario@<ip>`, luego `http://localhost:9090/alerts` |
 
-Al tener la URL definitiva, reemplazarla en el campo `servers` de los contratos de `docs/contracts/` y en el README.
+Si cambia el dominio, actualizar la URL pública en el README y los contratos que la publican.
 
 ## 5. Operación
 

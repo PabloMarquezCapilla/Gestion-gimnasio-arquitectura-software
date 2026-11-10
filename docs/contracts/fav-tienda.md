@@ -2,17 +2,17 @@
 
 **Contrato:** [OpenAPI FAV 1.0.0](openapi-fav-v1.yaml). **Responsable:** microservicio Tienda del gimnasio.
 
-**Estado:** endpoints implementados y verificados localmente con PostgreSQL real. URL pública, aceptación de FAV y prueba conjunta pendientes. Los ejemplos no acreditan una conexión con el grupo. La consulta del catálogo externo `GET /api/v1/tienda/productos` sigue respondiendo `503 INTEGRACION_PENDIENTE`; el stock local funciona independientemente.
+**Estado al 10/11/2026.** Tienda consulta el catálogo público de FAV desde el entorno local. El gateway devolvió `200` con `origen: FAV` y una lista vacía porque aún no hay reposiciones en el stock local. La API de consignaciones está publicada por HTTPS en Azure. Faltan configurar el catálogo en la VM y realizar la prueba conjunta de reposiciones.
 
 **Enunciado:** §3, página 4 (documentación); §4.1, páginas 5–6 (contrato formal, integración y pruebas); §5 D8/D9, página 7 (capacidad ofrecida y consumo del proveedor). Decisión: [ADR-022](../adr/ADR-022-tienda-y-consignaciones-fav.md).
 
 ## Responsabilidades y reglas
 
-### Revisión de la rama externa del 07/11/2026
+### Revisión de la rama externa del 10/11/2026
 
-Se volvió a revisar `development` en `adb9838023ddd5d4340f8bc7a95b38fdbc695845`, sin cambios desde la inspección anterior. Su contrato 1.0.0 publica `GET /v1/productos` con variantes y precios, sin stock. El código también implementa disponibilidad por variante en `GET /inventario/v1/disponibilidad?variantes=...`, pero esa operación todavía debe incorporarse al contrato compartido y confirmarse con FAV. El cliente de reposiciones conserva las rutas y campos compatibles con esta guía y sigue tratando todos los 4xx salvo 429 como rechazos definitivos. La coordinación de errores indicada abajo sigue pendiente. [Contrato de FAV](https://github.com/JuanHernandez-99/Fav-del-universo/blob/adb9838023ddd5d4340f8bc7a95b38fdbc695845/docs/contracts/catalogo-pedidos-v1.openapi.yaml), [cliente de FAV](https://github.com/JuanHernandez-99/Fav-del-universo/blob/adb9838023ddd5d4340f8bc7a95b38fdbc695845/services/inventario/internal/adaptadores/gimnasio/cliente.go).
+Se revisó `development` en `ff8ae75fb93cb31c0b597a36d18598890980fdf9`. FAV publica el contrato 1.2.0 con su URL de Azure. El esquema y las respuestas de `GET /v1/productos`, incluidos `Catalogo`, `Producto` y `Variante`, coinciden con la copia 1.1.0 fijada por Tienda. Se conserva esa copia y el cliente existente. La disponibilidad online de FAV continúa separada del stock consignado del gimnasio. [Contrato de FAV](https://github.com/JuanHernandez-99/Fav-del-universo/blob/ff8ae75fb93cb31c0b597a36d18598890980fdf9/docs/contracts/catalogo-pedidos-v1.openapi.yaml).
 
-Antes de conectar el consumo faltan su confirmación de rama/versión, URL accesible y autenticación por canal privado. Las direcciones `localhost` de sus ejemplos corresponden al equipo que ejecuta FAV. La prueba conjunta verificará catálogo, disponibilidad y recepción de entregas con datos ficticios.
+La URL comunicada por FAV es `https://fav-ucc.chilecentral.cloudapp.azure.com`. Con la credencial renovada, `GET /v1/productos` respondió `200` y el cliente de Tienda validó 5 productos y 19 variantes. [Resultados de la verificación](../EVIDENCIA-TIENDA.md#revisión-de-conexión-externa-del-10112026).
 
 FAV conserva su catálogo, variantes y existencias de la distribuidora. Tienda administra el stock físico recibido en el gimnasio: **una única tienda, sin separación por sede**, en su base PostgreSQL `tienda` con usuario propio. Los servicios se comunican por API; ninguno consulta bases de datos ajenas.
 
@@ -27,7 +27,7 @@ FAV conserva su catálogo, variantes y existencias de la distribuidora. Tienda a
 
 FAV envía una credencial de aplicación en `X-API-Key`, configurada en el gimnasio como `FAV_API_KEY`. El receptor comprueba esa credencial y `proveedorId=fav`. **El JWT de los usuarios del gimnasio no autoriza estas operaciones.** La clave se intercambia por canal privado y no se publica en el repositorio ni en el navegador del gimnasio.
 
-Las respuestas llevan `Cache-Control: no-store`. La URL base debe coordinarse: `{{gimnasioBaseUrl}}` es una variable de Postman, no una dirección desplegada.
+Las respuestas llevan `Cache-Control: no-store`. Para probar contra Azure, configurá `{{gimnasioBaseUrl}}` con la [URL pública del gimnasio](https://gimnasio.68-211-88-90.sslip.io/).
 
 Para probar en el equipo que inicia el gimnasio con `npm run iniciar`, usar `http://localhost:8080` como variable base (o el `GATEWAY_PORT` configurado). El inicio incorpora `TIENDA_DB_PASSWORD` y `FAV_API_KEY` ausentes sin cambiar claves existentes, y crea base/usuario faltantes sin borrar volúmenes. `localhost` no es una dirección compartida entre equipos. Esta API no necesita que el catálogo de FAV esté disponible para recibir sus entregas.
 
@@ -99,13 +99,11 @@ Los errores usan JSON con `codigo` estable y `mensaje` explicativo. Las decision
 | 500 | `ERROR_INTERNO` | Resultado potencialmente incierto: recuperar con los mismos datos. |
 | 503 | `SERVICIO_NO_DISPONIBLE` | Reintentar conservando los mismos datos. |
 
-**Cambio necesario en el cliente de FAV:** su adaptador revisado trata todos los `4xx`, salvo `429`, como rechazo definitivo y compensa el stock. Debe distinguir errores de autenticación/configuración, conflictos e incertidumbre; `401`, `403`, un `404` de ruta o `408` no prueban que la entrega haya sido rechazada. Un `409` requiere revisión y tampoco debe disparar una compensación automática.
-
-El éxito del POST acordado es `201` con el cuerpo `ReposicionRecibida`; aceptar cualquier respuesta menor a `400`, como hace actualmente el cliente revisado, también aceptaría una redirección o una respuesta ajena al contrato. FAV debe comprobar el estado y esquema antes de dar una entrega por recibida.
+**Correcciones verificadas en el cliente de FAV.** Su adaptador ahora distingue errores de configuración, conflictos, rechazos contractuales e incertidumbre. Para confirmar una reposición exige `201`, estado `RECIBIDA` y un UUID válido. Las redirecciones se evalúan sin seguirlas. Esto resuelve las observaciones de la revisión anterior del cliente. Queda verificar el comportamiento desplegado en la prueba conjunta. [Cliente de FAV](https://github.com/JuanHernandez-99/Fav-del-universo/blob/ff8ae75fb93cb31c0b597a36d18598890980fdf9/services/inventario/internal/adaptadores/gimnasio/cliente.go).
 
 ## Coordinación pendiente
 
-Confirmar con FAV la aceptación de este contrato, la rama que usarán, URL accesible y credenciales; probar juntos alta, consulta, repeticiones con ambas claves, conflictos y caída/recuperación. El backend ya se verifica con `npm run test:tienda`, contra HTTP y PostgreSQL reales; [EVIDENCIA-TIENDA](../EVIDENCIA-TIENDA.md) distingue esos ensayos de una conexión real con FAV. No se publican claves reales en estos ejemplos.
+Configurar el catálogo de FAV en Azure y compartir con FAV la URL pública y su clave de consignaciones por canal privado. Probar juntos una reposición ficticia, la consulta de stock y su aparición en el catálogo del socio. Verificar repeticiones por clave y referencia, conflictos y recuperación ante fallos. [EVIDENCIA-TIENDA](../EVIDENCIA-TIENDA.md).
 
 ## Operaciones internas del administrador
 
@@ -121,8 +119,6 @@ La venta descuenta disponibles y suma vendidos, conserva actor/fecha y resultado
 La variante sin recepción produce `404 PRODUCTO_NO_ENCONTRADO`; unidades mayores a las disponibles producen `409 STOCK_INSUFICIENTE`, sin efectos. Cantidades inválidas dan `400 SOLICITUD_INVALIDA`; credencial ausente, `401`; rol SOCIO, `403 ACCESO_DENEGADO`. Se aplican también los errores técnicos y de transporte anteriores. Los rechazos no guardan un movimiento exitoso.
 
 En **Tienda y stock**, ADMIN selecciona variante/unidades y confirma la venta realizada. El portal guarda la operación pendiente por administrador antes de enviarla, sin JWT; una respuesta incierta se recupera con la misma clave y cuerpo, incluso tras recarga y nuevo login. No borrar ese registro para iniciar otra venta. Una respuesta de una vista anterior no puede borrar una venta nueva. El panel solo informa unidades: no procesa cobros, devoluciones ni ajustes.
-
-Se revisaron [main `f8680fb`](https://github.com/JuanHernandez-99/Fav-del-universo/tree/f8680fb281ac6072471cc239b4b88c1ab82f6c13) y [development `adb9838`](https://github.com/JuanHernandez-99/Fav-del-universo/tree/adb9838023ddd5d4340f8bc7a95b38fdbc695845); la antigua rama `feature-inventario` ya no existe. Su [ADR de consumo](https://github.com/JuanHernandez-99/Fav-del-universo/blob/adb9838023ddd5d4340f8bc7a95b38fdbc695845/docs/adr/ADR-009-consumo-del-gimnasio.md) usa un contrato supuesto: los límites y ejemplos de ese mock no se convierten en reglas del gimnasio.
 
 ## Consumo del catálogo de FAV (gimnasio → FAV)
 
