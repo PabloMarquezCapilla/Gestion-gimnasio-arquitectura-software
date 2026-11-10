@@ -1,13 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useId, useRef } from 'react';
 import { AuthResponse } from '../types/auth';
-import { apiLogin, apiRegistro } from '../services/api';
+import { ApiError, apiLogin, apiRegistro } from '../services/api';
 
 interface AuthModalProps {
   isOpen: boolean;
   initialMode?: 'login' | 'register';
-  onClose: () => void;
+  onClose?: () => void;
   onSuccess: (session: AuthResponse) => void;
   allowRegistration?: boolean;
+  presentation?: 'dialog' | 'page';
   showToast: (msg: string, icon?: string) => void;
 }
 
@@ -18,11 +19,16 @@ export const AuthModal: React.FC<AuthModalProps> = ({
   onSuccess,
   showToast,
   allowRegistration = false,
+  presentation = 'dialog',
 }) => {
-  const [mode, setMode] = useState<'login' | 'register'>(initialMode);
+  const [mode, setMode] = useState<'login' | 'register'>(allowRegistration ? initialMode : 'login');
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const formId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const closeRef = useRef(onClose);
+  closeRef.current = onClose;
 
   // Login Form State
   const [loginIdentificador, setLoginIdentificador] = useState('');
@@ -44,6 +50,31 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   }, [isOpen, initialMode, allowRegistration]);
 
+  useEffect(() => {
+    if (!isOpen || presentation !== 'dialog') return;
+    const previousFocus = document.activeElement;
+    const dialog = dialogRef.current;
+    dialog?.querySelector<HTMLInputElement>('input')?.focus();
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') closeRef.current?.();
+      if (event.key !== 'Tab' || !dialog) return;
+      const controls = Array.from(dialog.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled)'));
+      const first = controls[0], last = controls[controls.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+      if (previousFocus instanceof HTMLElement && previousFocus.isConnected) previousFocus.focus();
+    };
+  }, [isOpen, presentation]);
+
   if (!isOpen) return null;
 
   const handleLoginSubmit = async (e: React.FormEvent) => {
@@ -60,9 +91,11 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       const res = await apiLogin(loginIdentificador, loginPassword);
       showToast(`¡Bienvenido, ${res.socio.nombre}!`, 'verified_user');
       onSuccess(res);
-      onClose();
-    } catch (err: any) {
-      setErrorMessage(err.message || 'Credenciales inválidas. Verifique sus datos.');
+      onClose?.();
+    } catch (err: unknown) {
+      setErrorMessage(err instanceof ApiError && err.status >= 500
+        ? `El servicio de acceso no pudo completar la solicitud (HTTP ${err.status}). Comprobá que el backend esté iniciado y volvé a intentar.`
+        : err instanceof Error ? err.message : 'No se pudo iniciar sesión.');
     } finally {
       setLoading(false);
     }
@@ -94,7 +127,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
       });
 
       showToast(`Socio ${res.socio.nombre} creado sin membresía. Plan y pago pendientes.`, 'person_add');
-      onClose();
+      onClose?.();
     } catch (err: any) {
       setErrorMessage(err.message || 'Error al registrar socio.');
     } finally {
@@ -102,259 +135,105 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     }
   };
 
+  const Heading = presentation === 'page' ? 'h1' : 'h2';
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-background/80 backdrop-blur-md animate-in fade-in duration-200">
-      <div
-        className="w-full max-w-md bg-surface-container border border-outline-variant/60 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh]"
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header Modal */}
-        <div className="relative px-5 pt-5 pb-3.5 border-b border-outline-variant/50 bg-surface-container-low">
-          <button
-            onClick={onClose}
-            className="absolute top-4 right-4 text-on-surface-variant hover:text-on-surface p-1 rounded-lg hover:bg-surface-container transition-colors"
-          >
-            <span className="material-symbols-outlined text-xl">close</span>
-          </button>
-
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-primary flex items-center justify-center text-on-primary font-black font-headline text-lg shadow-sm">
-              P
-            </div>
-            <div>
-              <h3 className="font-headline text-headline-sm font-bold tracking-tight text-on-surface flex items-center gap-2">
-                PULSE CLUB <span className="text-[10px] px-1.5 py-0.2 rounded bg-primary/15 text-primary border border-primary/30 font-label-code">AUTH</span>
-              </h3>
-              <p className="text-[11px] text-on-surface-variant">Acceso integral para Socios y Equipo Administrativo</p>
-            </div>
+    <div className={presentation === 'dialog' ? 'auth-modal' : 'auth-inline'}>
+      <div ref={dialogRef} className="auth-card" role={presentation === 'dialog' ? 'dialog' : undefined}
+        aria-modal={presentation === 'dialog' ? true : undefined} aria-labelledby={formId + '-heading'}>
+        <header className="auth-card-header">
+          <div className="auth-brand">
+            <span className="admin-brand-mark" aria-hidden="true"><i /><i /><i /></span>
+            <span>PULSE <b>CLUB</b></span>
           </div>
-
-          {/* Selector de Pestañas */}
-          {allowRegistration && <div className="mt-3.5 grid grid-cols-2 p-0.5 bg-surface-container-lowest rounded-lg border border-outline-variant/40">
-            <button
-              type="button"
-              onClick={() => { setMode('login'); setErrorMessage(''); }}
-              className={`py-1.5 text-xs font-semibold rounded-md transition-all ${
-                mode === 'login'
-                  ? 'bg-surface-container text-primary font-bold shadow-sm'
-                  : 'text-on-surface-variant hover:text-on-surface'
-              }`}
-            >
-              Iniciar Sesión
-            </button>
-            <button
-              type="button"
-              onClick={() => { setMode('register'); setErrorMessage(''); }}
-              className={`py-1.5 text-xs font-semibold rounded-md transition-all ${
-                mode === 'register'
-                  ? 'bg-surface-container text-primary font-bold shadow-sm'
-                  : 'text-on-surface-variant hover:text-on-surface'
-              }`}
-            >
-              Alta de Socio
-            </button>
-          </div>}
-        </div>
-
-        {/* Mensaje de Error si hay */}
-        {errorMessage && (
-          <div className="mx-5 mt-3 p-2.5 rounded-lg bg-error-container border border-error/30 flex items-center gap-2 text-error text-xs animate-shake">
-            <span className="material-symbols-outlined text-base">error</span>
-            <span>{errorMessage}</span>
-          </div>
-        )}
-
-        {/* Contenido Scrollable */}
-        <div className="p-5 overflow-y-auto space-y-3.5 text-on-surface">
-          {mode === 'login' ? (
-            <form onSubmit={handleLoginSubmit} className="space-y-3">
-              <div>
-                <label className="block text-label-code text-label-code text-on-surface-variant uppercase tracking-wider mb-1">
-                  Email o Documento (DNI)
-                </label>
-                <div className="relative">
-                  <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-on-surface-variant text-base">
-                    person
-                  </span>
-                  <input
-                    type="text"
-                    required
-                    value={loginIdentificador}
-                    onChange={(e) => setLoginIdentificador(e.target.value)}
-                    placeholder="Email o DNI registrado"
-                    className="w-full bg-surface-container-low border border-outline-variant focus:border-primary rounded-lg pl-8 pr-3 py-2 text-xs text-on-surface placeholder:text-on-surface-variant/60 focus:outline-none transition-colors"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-1">
-                  <label className="text-label-code text-label-code text-on-surface-variant uppercase tracking-wider">
-                    Contraseña
-                  </label>
-                  <span className="text-[10px] text-on-surface-variant/70 font-label-code">Sesión de acceso</span>
-                </div>
-                <div className="relative">
-                  <span className="material-symbols-outlined absolute left-2.5 top-1/2 -translate-y-1/2 text-on-surface-variant text-base">
-                    lock
-                  </span>
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    required
-                    value={loginPassword}
-                    onChange={(e) => setLoginPassword(e.target.value)}
-                    placeholder="••••••••••••"
-                    className="w-full bg-surface-container-low border border-outline-variant focus:border-primary rounded-lg pl-8 pr-8 py-2 text-xs text-on-surface placeholder:text-on-surface-variant/60 focus:outline-none transition-colors"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-on-surface"
-                  >
-                    <span className="material-symbols-outlined text-base">
-                      {showPassword ? 'visibility_off' : 'visibility'}
-                    </span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Botón de Submit */}
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full mt-1 py-2.5 px-3 bg-primary hover:bg-primary-hover text-on-primary font-headline font-bold rounded-lg text-xs transition-all flex items-center justify-center gap-2 shadow-sm disabled:opacity-50"
-              >
-                {loading ? (
-                  <>
-                    <span className="inline-block w-3.5 h-3.5 border-2 border-on-primary border-t-transparent rounded-full animate-spin"></span>
-                    <span>Verificando...</span>
-                  </>
-                ) : (
-                  <>
-                    <span className="material-symbols-outlined text-base">login</span>
-                    <span>Ingresar al Club</span>
-                  </>
-                )}
+          {presentation === 'dialog' && <button type="button" className="auth-close"
+            aria-label="Cerrar formulario de acceso" onClick={onClose}>
+            <span className="material-symbols-outlined" aria-hidden="true">close</span>
+          </button>}
+          <p className="auth-eyebrow">{mode === 'register' ? 'ADMINISTRACIÓN' : 'TU ESPACIO PULSE'}</p>
+          <Heading id={formId + '-heading'}>{mode === 'register' ? 'Nuevo socio' : 'Ingresá a tu cuenta'}</Heading>
+          <p>{mode === 'register'
+            ? 'Completá los datos para dar de alta al socio.'
+            : 'Usá tu email o DNI y la contraseña de tu cuenta.'}</p>
+        </header>
+        {allowRegistration && <div className="auth-tabs" aria-label="Opciones de acceso">
+          <button type="button" className={mode === 'login' ? 'is-active' : ''}
+            aria-pressed={mode === 'login'} disabled={loading}
+            onClick={() => { setMode('login'); setErrorMessage(''); }}>Iniciar sesión</button>
+          <button type="button" className={mode === 'register' ? 'is-active' : ''}
+            aria-pressed={mode === 'register'} disabled={loading}
+            onClick={() => { setMode('register'); setErrorMessage(''); }}>Alta de socio</button>
+        </div>}
+        {errorMessage && <div id={formId + '-error'} role="alert" className="auth-error">
+          <span className="material-symbols-outlined" aria-hidden="true">error</span>
+          <p>{errorMessage}</p>
+        </div>}
+        <div className="auth-card-content">
+          {mode === 'login' ? <form onSubmit={handleLoginSubmit} aria-describedby={errorMessage ? formId + '-error' : undefined}>
+            <label htmlFor={formId + '-identifier'}>Email o DNI</label>
+            <div className="auth-input-wrap">
+              <span className="material-symbols-outlined" aria-hidden="true">person</span>
+              <input id={formId + '-identifier'} name="username" type="text" autoComplete="username"
+                required disabled={loading} value={loginIdentificador}
+                onChange={event => setLoginIdentificador(event.target.value)} placeholder="Email o DNI registrado" />
+            </div>
+            <label htmlFor={formId + '-password'}>Contraseña</label>
+            <div className="auth-input-wrap">
+              <span className="material-symbols-outlined" aria-hidden="true">lock</span>
+              <input id={formId + '-password'} name="password" type={showPassword ? 'text' : 'password'}
+                autoComplete="current-password" required disabled={loading} value={loginPassword}
+                onChange={event => setLoginPassword(event.target.value)} placeholder="Ingresá tu contraseña" />
+              <button type="button" className="auth-password-toggle" aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                onClick={() => setShowPassword(!showPassword)}>
+                <span className="material-symbols-outlined" aria-hidden="true">{showPassword ? 'visibility_off' : 'visibility'}</span>
               </button>
-
-              <p className="text-[11px] text-on-surface-variant">Las altas de socios las realiza el administrador.</p>
-            </form>
-          ) : (
-            <form onSubmit={handleRegisterSubmit} className="space-y-2.5">
-              <div className="grid grid-cols-2 gap-2.5">
-                <div>
-                  <label className="block text-label-code text-[10.5px] uppercase tracking-wider text-on-surface-variant mb-1">
-                    Nombre Completo
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={regNombre}
-                    onChange={(e) => setRegNombre(e.target.value)}
-                    placeholder="Martín Rossi"
-                    className="w-full bg-surface-container-low border border-outline-variant focus:border-primary rounded-lg px-2.5 py-1.5 text-xs text-on-surface placeholder:text-on-surface-variant/60 focus:outline-none transition-colors"
-                  />
-                </div>
-                <div>
-                  <label className="block text-label-code text-[10.5px] uppercase tracking-wider text-on-surface-variant mb-1">
-                    DNI / Documento
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    value={regDni}
-                    onChange={(e) => setRegDni(e.target.value)}
-                    placeholder="39.812.900"
-                    className="w-full bg-surface-container-low border border-outline-variant focus:border-primary rounded-lg px-2.5 py-1.5 text-xs text-on-surface placeholder:text-on-surface-variant/60 focus:outline-none transition-colors"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 gap-2.5">
-                <div>
-                  <label className="block text-label-code text-[10.5px] uppercase tracking-wider text-on-surface-variant mb-1">
-                    Email
-                  </label>
-                  <input
-                    type="email"
-                    required
-                    value={regEmail}
-                    onChange={(e) => setRegEmail(e.target.value)}
-                    placeholder="martin@correo.com"
-                    className="w-full bg-surface-container-low border border-outline-variant focus:border-primary rounded-lg px-2.5 py-1.5 text-xs text-on-surface placeholder:text-on-surface-variant/60 focus:outline-none transition-colors"
-                  />
-                </div>
-                <div>
-                  <label className="block text-label-code text-[10.5px] uppercase tracking-wider text-on-surface-variant mb-1">
-                    WhatsApp / Teléfono
-                  </label>
-                  <input
-                    type="text"
-                    value={regTelefono}
-                    onChange={(e) => setRegTelefono(e.target.value)}
-                    placeholder="+54 9 11 2345-6789"
-                    className="w-full bg-surface-container-low border border-outline-variant focus:border-primary rounded-lg px-2.5 py-1.5 text-xs text-on-surface placeholder:text-on-surface-variant/60 focus:outline-none transition-colors"
-                  />
-                </div>
-              </div>
-
+            </div>
+            <button type="submit" className="auth-submit" disabled={loading}>
+              {loading ? 'Verificando…' : 'Ingresar al club'}
+              <span className="material-symbols-outlined" aria-hidden="true">{loading ? 'hourglass_top' : 'arrow_forward'}</span>
+            </button>
+            <p className="auth-help">Las altas de socios las realiza el administrador.</p>
+          </form> : <form onSubmit={handleRegisterSubmit} aria-describedby={errorMessage ? formId + '-error' : undefined}>
+            <div className="auth-form-grid">
               <div>
-                <label className="block text-label-code text-[10.5px] uppercase tracking-wider text-on-surface-variant mb-1">
-                  Contraseña (mínimo 6 caracteres)
-                </label>
-                <div className="relative">
-                  <input
-                    type={showPassword ? 'text' : 'password'}
-                    required
-                    value={regPassword}
-                    onChange={(e) => setRegPassword(e.target.value)}
-                    placeholder="••••••••••••"
-                    className="w-full bg-surface-container-low border border-outline-variant focus:border-primary rounded-lg pl-2.5 pr-8 py-1.5 text-xs text-on-surface placeholder:text-on-surface-variant/60 focus:outline-none transition-colors"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-2.5 top-1/2 -translate-y-1/2 text-on-surface-variant hover:text-on-surface"
-                  >
-                    <span className="material-symbols-outlined text-base">
-                      {showPassword ? 'visibility_off' : 'visibility'}
-                    </span>
-                  </button>
-                </div>
+                <label htmlFor={formId + '-name'}>Nombre completo</label>
+                <input id={formId + '-name'} name="name" autoComplete="name" required disabled={loading}
+                  value={regNombre} onChange={event => setRegNombre(event.target.value)} placeholder="Nombre y apellido" />
               </div>
-
-              <p className="text-[11px] text-on-surface-variant">Se creará un socio sin membresía. La elección del plan y su habilitación requieren confirmar el pago; ese flujo está pendiente.</p>
-
-              {/* Botón de Submit Registro */}
-              <button
-                type="submit"
-                disabled={loading}
-                className="w-full mt-2 py-2.5 px-3 bg-secondary hover:bg-secondary-hover text-on-secondary font-headline font-bold rounded-lg text-xs transition-all flex items-center justify-center gap-2 shadow-sm disabled:opacity-50"
-              >
-                {loading ? (
-                  <>
-                    <span className="inline-block w-3.5 h-3.5 border-2 border-on-secondary border-t-transparent rounded-full animate-spin"></span>
-                    <span>Registrando socio...</span>
-                  </>
-                ) : (
-                  <>
-                    <span className="material-symbols-outlined text-base">person_add</span>
-                    <span>Crear Socio sin Membresía</span>
-                  </>
-                )}
+              <div>
+                <label htmlFor={formId + '-dni'}>DNI</label>
+                <input id={formId + '-dni'} name="dni" required disabled={loading}
+                  value={regDni} onChange={event => setRegDni(event.target.value)} placeholder="Número de documento" />
+              </div>
+              <div>
+                <label htmlFor={formId + '-email'}>Email</label>
+                <input id={formId + '-email'} name="email" type="email" autoComplete="email" required disabled={loading}
+                  value={regEmail} onChange={event => setRegEmail(event.target.value)} placeholder="nombre@correo.com" />
+              </div>
+              <div>
+                <label htmlFor={formId + '-phone'}>Teléfono</label>
+                <input id={formId + '-phone'} name="tel" type="tel" autoComplete="tel" disabled={loading}
+                  value={regTelefono} onChange={event => setRegTelefono(event.target.value)} placeholder="Teléfono de contacto" />
+              </div>
+            </div>
+            <label htmlFor={formId + '-new-password'}>Contraseña inicial</label>
+            <div className="auth-input-wrap">
+              <span className="material-symbols-outlined" aria-hidden="true">lock</span>
+              <input id={formId + '-new-password'} name="new-password" type={showPassword ? 'text' : 'password'}
+                autoComplete="new-password" minLength={6} required disabled={loading} value={regPassword}
+                onChange={event => setRegPassword(event.target.value)} placeholder="Mínimo 6 caracteres" />
+              <button type="button" className="auth-password-toggle" aria-label={showPassword ? 'Ocultar contraseña' : 'Mostrar contraseña'}
+                onClick={() => setShowPassword(!showPassword)}>
+                <span className="material-symbols-outlined" aria-hidden="true">{showPassword ? 'visibility_off' : 'visibility'}</span>
               </button>
-            </form>
-          )}
+            </div>
+            <p className="auth-help">Se creará un socio sin membresía. Elegí el plan desde Socios y membresías y confirmá el pago desde Cobros y caja para habilitarla.</p>
+            <button type="submit" className="auth-submit" disabled={loading}>{loading ? 'Registrando socio…' : 'Crear socio sin membresía'}</button>
+          </form>}
         </div>
-
-        {/* Footer info de seguridad */}
-        <div className="px-5 py-2.5 border-t border-outline-variant/50 bg-surface-container-lowest flex items-center justify-between text-[10px] text-on-surface-variant">
-          <span className="flex items-center gap-1">
-            <span className="material-symbols-outlined text-primary text-xs">lock</span>
-            La sesión se cierra al salir o vencer.
-          </span>
-          <span className="font-label-code text-on-surface-variant/70">PULSE CLUB</span>
-        </div>
+        <footer className="auth-card-footer">
+          <span className="material-symbols-outlined" aria-hidden="true">lock</span>
+          La sesión se cierra al salir o vencer.
+        </footer>
       </div>
     </div>
   );

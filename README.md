@@ -273,7 +273,7 @@ npm --prefix frontend ci --ignore-scripts
 
 | Comando | Qué comprueba |
 |---|---|
-| `npm test` | Compilación de los cuatro servicios y reglas/contratos, incluyendo HTTP externo controlado y frontend. Verificación del 10/11/2026 con 278/278. La carga se ejecuta explícitamente mediante `npm run test:carga`. Las evidencias de motores reales se conservan por capacidad. |
+| `npm test` | Compilación de los cuatro servicios y reglas/contratos, incluyendo HTTP externo controlado y frontend. Verificación del 10/11/2026 con 283/283. La carga se ejecuta explícitamente mediante `npm run test:carga`. Las evidencias de motores reales se conservan por capacidad. |
 | `npm run frontend:build` | TypeScript y bundle de producción del portal. |
 | `npm run test:contrato-empleados` | Contrato y mock separado de empleados (11 pruebas). |
 | `npm run test:car-cruds` | Contrato externo 0.3.0, lecturas, permisos, vinculación, vista previa/envío, resultado incierto y reenvío exacto sin duplicar con proveedor controlado. |
@@ -287,7 +287,9 @@ npm --prefix frontend ci --ignore-scripts
 | `npm run simulacro:fav` | Caída y lentitud provocadas de FAV con el mock: caché degradada, circuit breaker, compra idempotente y alertas. [Postmortem](docs/POSTMORTEM.md). |
 | `npm run test:gestion-clases` | 17 pruebas con dos instancias, PostgreSQL, Accesos/MongoDB y Socios HTTP reales. Publicación/edición, reconstrucción GIN, retiro, permisos, reintentos, rollback, carreras y caída de dependencias. [Búsqueda](docs/EVIDENCIA-BUSQUEDA.md), [retiro y FIFO](docs/adr/ADR-017-consistencia-y-recuperacion-de-espera.md). |
 
-Las pruebas de PostgreSQL, balanceo y Tienda requieren Docker, usan recursos temporales propios, no cargan `.env` y los retiran al terminar. Los tests en memoria no acreditan durabilidad. Para desarrollar solo el portal: `npm run frontend:dev`, manteniendo el backend iniciado.
+Las pruebas de PostgreSQL, balanceo y Tienda requieren Docker, usan recursos temporales propios, no cargan `.env` y los retiran al terminar. Los tests en memoria no acreditan durabilidad.
+
+Para desarrollar el portal, iniciar primero el entorno con `npm run iniciar` y después ejecutar `npm run frontend:dev` en otra terminal. Vite sirve la interfaz en `http://localhost:3000` y delega las llamadas `/api` al gateway de `http://localhost:8080`. El inicio de sesión requiere ese backend en ejecución. El inicio habitual incorpora las variables locales nuevas que falten y conserva los datos y las credenciales existentes. Para verificar la disponibilidad, abrir `http://localhost:8080/health`.
 
 Los resultados de carga y sus límites están en [D13](docs/adr/ADR-013-capacidad-y-costos.md); la primera traza, en [D11](docs/adr/ADR-011-observabilidad.md); la caída controlada y sus cuatro 504 transitorios durante detección, en [POSTMORTEM](docs/POSTMORTEM.md). La operación estable posterior y la recuperación se verificaron; no se promete una transición sin errores ni capacidad máxima.
 

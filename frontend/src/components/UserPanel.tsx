@@ -212,31 +212,26 @@ export const UserPanel: React.FC<UserPanelProps> = ({ user, onLogout, showToast,
   const planTitle = profile.membresia?.tipoPlan ?? 'SIN MEMBRESÍA';
   const membershipStatus = profileError ? 'ESTADO SIN ACTUALIZAR'
     : profile.membresia?.estado ?? 'SIN MEMBRESÍA';
+  const membershipTone = profileError || !profile.membresia
+    ? 'bg-warning-container text-warning border-warning/30'
+    : profile.membresia.estado === 'HABILITADA'
+      ? 'bg-secondary-container text-secondary border-secondary/30'
+      : 'bg-error-container text-error border-error/30';
   return (
-    <div className="min-h-screen bg-background text-on-surface font-body flex flex-col antialiased">
+    <div className="member-portal min-h-screen bg-background text-on-surface font-body flex flex-col antialiased">
       {/* Top Banner Navigation */}
-      <header className="border-b border-outline-variant/60 bg-surface-container-lowest/95 backdrop-blur-md sticky top-0 z-40 px-4 sm:px-6 h-14 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-7 h-7 rounded-lg bg-primary flex items-center justify-center text-on-primary font-black font-headline text-sm shadow-sm">
-            P
-          </div>
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="font-headline font-bold text-on-surface tracking-wide text-sm">PULSE CLUB</span>
-              <span className="text-[9.5px] uppercase font-label-code px-1.5 py-0.2 rounded bg-secondary-container text-secondary border border-secondary/30">
-                PORTAL DEL SOCIO
-              </span>
-            </div>
-            <p className="text-[10px] text-on-surface-variant leading-none mt-0.5">Clases, reservas, membresía y tienda</p>
-          </div>
+      <header className="member-topbar">
+        <div className="member-brand">
+          <span className="admin-brand-mark" aria-hidden="true"><i /><i /><i /></span>
+          <div><strong>PULSE <b>CLUB</b></strong><span>Portal del socio</span></div>
         </div>
 
         {/* Actions & User Profile */}
-        <div className="flex items-center gap-2.5">
+        <div className="member-account flex items-center gap-2.5">
           {user.rol === 'ADMIN' && onSwitchToAdmin && (
             <button
               onClick={onSwitchToAdmin}
-              className="hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-surface-container hover:bg-surface-container-high border border-outline-variant text-xs font-semibold text-on-surface transition-colors"
+              className="member-admin-link flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs font-semibold transition-colors"
               title="Volver al panel administrativo"
             >
               <span className="material-symbols-outlined text-sm text-primary">admin_panel_settings</span>
@@ -254,7 +249,7 @@ export const UserPanel: React.FC<UserPanelProps> = ({ user, onLogout, showToast,
               <span>Mi credencial</span>
             </button>
             {verCredencial && (
-              <div role="dialog" aria-label="Mi credencial" className="absolute right-0 mt-2 w-64 z-50 rounded-xl border border-outline-variant bg-surface-container-high p-4 shadow-xl text-xs space-y-1">
+              <div role="dialog" aria-label="Mi credencial" className="member-credential absolute right-0 mt-2 w-64 z-50 rounded-xl border border-outline-variant bg-surface-container-low p-4 shadow-xl text-xs space-y-1">
                 <p className="font-bold text-sm">{user.nombre}</p>
                 <p>DNI: <strong>{user.dni}</strong></p>
                 <p>Socio: <strong className="font-label-code">{user.socioId}</strong></p>
@@ -266,7 +261,7 @@ export const UserPanel: React.FC<UserPanelProps> = ({ user, onLogout, showToast,
           <div className="h-5 w-px bg-outline-variant/60"></div>
 
           <div className="flex items-center gap-2">
-            <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-secondary to-primary flex items-center justify-center text-on-primary font-bold text-xs ring-1 ring-primary/40">
+            <div className="admin-avatar">
               {user.nombre.slice(0, 2).toUpperCase()}
             </div>
             <div className="hidden md:block text-left">
@@ -274,6 +269,7 @@ export const UserPanel: React.FC<UserPanelProps> = ({ user, onLogout, showToast,
               <span className="text-[10px] text-on-surface-variant font-label-code">DNI {user.dni}</span>
             </div>
             <button
+              aria-label="Cerrar sesión"
               onClick={onLogout}
               className="p-1 rounded-md text-on-surface-variant hover:text-error hover:bg-surface-container transition-colors"
               title="Cerrar Sesión"
@@ -285,22 +281,22 @@ export const UserPanel: React.FC<UserPanelProps> = ({ user, onLogout, showToast,
       </header>
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-6xl w-full mx-auto px-4 sm:px-6 py-4 space-y-4">
+      <main className="member-main app-page flex-1 w-full mx-auto">
         {/* Hero Card: Member Status & Identity */}
-        <section className="relative overflow-hidden rounded-xl bg-surface-container-low border border-outline-variant/60 p-4 sm:p-5 shadow-lg">
+        <section className="member-welcome relative overflow-hidden rounded-xl bg-surface-container-low border border-outline-variant/60 p-4 sm:p-5">
           <div className="relative flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div className="space-y-1.5">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="px-2 py-0.5 rounded bg-primary/15 text-primary text-[10.5px] font-label-code font-bold border border-primary/30">
                   {planTitle}
                 </span>
-                <span className="flex items-center gap-1.5 px-2 py-0.5 rounded bg-secondary-container text-secondary text-[10.5px] font-semibold border border-secondary/30">
-                  <span className="w-1.5 h-1.5 rounded-full bg-secondary animate-pulse"></span>
+                <span className={'flex items-center gap-1.5 px-2 py-0.5 rounded text-[10.5px] font-semibold border ' + membershipTone}>
+                  <span className="w-1.5 h-1.5 rounded-full bg-current"></span>
                   {membershipStatus}
                 </span>
               </div>
 
-              <h1 className="text-xl sm:text-2xl font-bold font-headline text-on-surface">
+              <h1 className="member-greeting text-on-surface">
                 ¡A entrenar hoy, {user.nombre}!
               </h1>
               <p className="text-xs text-on-surface-variant max-w-xl">
@@ -321,8 +317,9 @@ export const UserPanel: React.FC<UserPanelProps> = ({ user, onLogout, showToast,
         </div>
 
         {/* Tab Switcher */}
-        <div className="flex flex-wrap border-b border-outline-variant/50 gap-4">
+        <nav className="member-tabs" aria-label="Secciones del socio">
           <button
+            aria-current={activeTab === 'clases' ? 'page' : undefined}
             onClick={() => setActiveTab('clases')}
             className={`pb-2 text-xs font-semibold flex items-center gap-1.5 transition-all relative ${
               activeTab === 'clases'
@@ -338,6 +335,7 @@ export const UserPanel: React.FC<UserPanelProps> = ({ user, onLogout, showToast,
           </button>
 
           <button
+            aria-current={activeTab === 'mis-reservas' ? 'page' : undefined}
             onClick={() => setActiveTab('mis-reservas')}
             className={`pb-2 text-xs font-semibold flex items-center gap-1.5 transition-all relative ${
               activeTab === 'mis-reservas'
@@ -356,6 +354,7 @@ export const UserPanel: React.FC<UserPanelProps> = ({ user, onLogout, showToast,
           </button>
 
           <button
+            aria-current={activeTab === 'membresia' ? 'page' : undefined}
             onClick={() => setActiveTab('membresia')}
             className={`pb-2 text-xs font-semibold flex items-center gap-1.5 transition-all relative ${
               activeTab === 'membresia'
@@ -369,14 +368,14 @@ export const UserPanel: React.FC<UserPanelProps> = ({ user, onLogout, showToast,
               <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary shadow-sm"></span>
             )}
           </button>
-          <button type="button" onClick={() => setActiveTab('tienda')}
+          <button type="button" aria-current={activeTab === 'tienda' ? 'page' : undefined} onClick={() => setActiveTab('tienda')}
             className={`pb-2 text-xs font-semibold flex items-center gap-1.5 transition-all relative ${activeTab === 'tienda'
               ? 'text-primary' : 'text-on-surface-variant hover:text-on-surface'}`}>
             <span className="material-symbols-outlined text-base">storefront</span>
             <span>Tienda</span>
             {activeTab === 'tienda' && <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-primary shadow-sm"></span>}
           </button>
-        </div>
+        </nav>
 
         {activeTab === 'tienda' && <TiendaPanel />}
 
@@ -448,7 +447,7 @@ export const UserPanel: React.FC<UserPanelProps> = ({ user, onLogout, showToast,
                 return (
                   <div
                     key={clase.id}
-                    className={`rounded-xl border bg-surface-container-low p-3.5 flex flex-col justify-between transition-all duration-200 hover:border-outline shadow-md ${
+                    className={`member-class-card rounded-xl border bg-surface-container-low p-3.5 flex flex-col justify-between transition-all duration-200 hover:border-outline ${
                       booked ? 'border-primary/60 ring-1 ring-primary/30' : 'border-outline-variant/60'
                     }`}
                   >
@@ -496,7 +495,7 @@ export const UserPanel: React.FC<UserPanelProps> = ({ user, onLogout, showToast,
                                 ? 'bg-error'
                                 : percent > 80
                                 ? 'bg-warning'
-                                : 'bg-gradient-to-r from-secondary to-primary'
+                                : 'bg-secondary'
                             }`}
                             style={{ width: `${percent}%` }}
                           ></div>

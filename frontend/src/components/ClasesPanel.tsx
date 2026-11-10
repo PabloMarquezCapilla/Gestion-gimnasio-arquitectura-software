@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { PageHeader } from './PageHeader';
 import { ApiError, apiAccesosSedes, apiBuscarClases, apiGuardarClase, apiObtenerClaseAdmin, validarOperacionClase } from '../services/api';
 import type { ClaseAdministrada, ClaseCatalogo, DatosPublicacionClase, OperacionClasePendiente } from '../services/api';
 
@@ -136,9 +137,9 @@ export function ClasesPanel({ actorId }: { actorId: string }) {
   };
   const disabled = saving || detailLoading || !!pendiente || !!storageError;
   const nueva = () => { details.current++; setSeleccionada(null); setForm(inicial); setSaveError(''); setResultado(''); };
-  return <section className="py-6 space-y-5" aria-labelledby="clases-admin-heading">
-    <h1 id="clases-admin-heading" className="font-headline text-2xl font-bold">Clases y turnos</h1>
-    <p className="text-sm text-on-surface-variant">Publicá clases futuras y editá sus datos antes del inicio, siempre que no tengan reservas confirmadas ni personas en espera.</p>
+  return <section className="app-page" aria-labelledby="clases-admin-heading">
+    <PageHeader id="clases-admin-heading" eyebrow="AGENDA" title="Clases y turnos"
+      description="Publicá clases futuras y editá sus datos antes del inicio, siempre que no tengan reservas confirmadas ni personas en espera." />
     <form onSubmit={event => { event.preventDefault(); void guardar(); }} className="rounded-xl border border-outline-variant bg-surface-container-low p-4 space-y-3">
       <div className="flex flex-wrap items-center gap-3">
         <h2 className="text-lg font-bold">{pendiente ? 'Operación pendiente de confirmar' : seleccionada ? 'Editar clase' : 'Publicar clase'}</h2>
@@ -183,7 +184,7 @@ export function ClasesPanel({ actorId }: { actorId: string }) {
     {error && <p role="alert" className="text-error">{error}</p>}
     {!loading && !error && <>
       <p role="status" className="text-sm">{total} clases futuras · Página {consulta.pagina} de {Math.max(1, Math.ceil(total / 20))}</p>
-      <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr>
+      <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Clases publicadas"><table className="w-full text-sm"><thead><tr>
         {['Clase', 'Profesor', 'Sede', 'Inicio', 'Capacidad', 'Acción'].map(label => <th className="text-left p-2" key={label}>{label}</th>)}
       </tr></thead><tbody>{items.map(clase => <tr key={clase.claseId} className="border-t border-outline-variant">
         <td className="p-2">{clase.nombre}<span className="block text-xs text-on-surface-variant">{clase.actividad ?? 'Actividad sin informar'}</span></td>

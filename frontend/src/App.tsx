@@ -43,6 +43,8 @@ export default function App() {
 
   // --- Navigation & Filter States ---
   const [activeNav, setActiveNav] = useState('panel-principal');
+  const [menuOpen, setMenuOpen] = useState(false);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
   // Aforo total de las sedes para el pie de la barra lateral (solo ADMIN puede consultarlo).
   const [aforo, setAforo] = useState<number | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -67,9 +69,11 @@ export default function App() {
     setAuth({ user: null, token: null, isAuthenticated: false });
     setViewMode('socio');
     setIsAuthModalOpen(false);
+    setMenuOpen(false);
   };
 
   const handleAuthSuccess = (session: AuthResponse) => {
+    setIsAuthModalOpen(false);
     setApiSession(session.token, () => {
       clearSession();
       showToast('La sesión venció o no es válida. Iniciá sesión nuevamente.', 'lock');
@@ -127,6 +131,10 @@ export default function App() {
   // Keyboard shortcut Ctrl+K or Cmd+K
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && menuOpen) {
+        setMenuOpen(false);
+        menuButtonRef.current?.focus();
+      }
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         searchInputRef.current?.focus();
@@ -134,7 +142,7 @@ export default function App() {
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, []);
+  }, [menuOpen]);
 
   const toastView = toast.show ? (
     <div role="status" className="fixed bottom-6 right-6 z-[100] max-w-md bg-surface-container-high border border-outline-variant rounded-xl p-4 shadow-xl text-on-surface flex items-center gap-2">
@@ -156,251 +164,96 @@ export default function App() {
             onSwitchToAdmin={currentUser.rol === 'ADMIN' ? () => setViewMode('admin') : undefined}
           />
         ) : (
-          <div className="min-h-screen bg-[#070D1D] text-white flex flex-col items-center justify-center p-6 text-center">
-            <div className="max-w-md w-full p-8 rounded-3xl bg-[#0F172A] border border-[#222A3D] shadow-2xl space-y-6">
-              <div className="w-16 h-16 rounded-2xl bg-[#CCFF00] text-black font-black font-['Space_Grotesk'] text-3xl flex items-center justify-center mx-auto shadow-[0_0_30px_rgba(204,255,0,0.4)]">
-                P
+          <div className="auth-page">
+            <aside className="auth-intro">
+              <div className="auth-brand">
+                <span className="admin-brand-mark" aria-hidden="true"><i /><i /><i /></span>
+                <span>PULSE <b>CLUB</b></span>
               </div>
-              <div className="space-y-2">
-                <h1 className="font-['Space_Grotesk'] text-2xl font-bold text-white">PORTAL DEL SOCIO PULSE</h1>
-                <p className="text-xs text-gray-400">
-                  Iniciá sesión para consultar tu membresía y gestionar tus reservas.
-                </p>
+              <div className="auth-intro-copy">
+                <p className="auth-eyebrow">BIENVENIDO A TU CLUB</p>
+                <h2>Tu gimnasio,<br />en un solo lugar.</h2>
+                <p>Consultá tu membresía, encontrá tu próxima clase y gestioná tus reservas.</p>
               </div>
-              <div className="space-y-3 pt-2">
-                <button
-                  onClick={handleOpenLogin}
-                  className="w-full py-3 px-4 rounded-xl bg-[#CCFF00] hover:bg-[#b5e600] text-black font-['Space_Grotesk'] font-bold text-sm shadow-[0_0_20px_rgba(204,255,0,0.3)] transition-all flex items-center justify-center gap-2"
-                >
-                  <span className="material-symbols-outlined text-lg">login</span>
-                  <span>Iniciar Sesión</span>
-                </button>
-                <p className="text-xs text-gray-400">El administrador realiza las altas de socios.</p>
-              </div>
-
-            </div>
+              <p className="auth-intro-footer">Espacio de socios y administración</p>
+            </aside>
+            <main className="auth-page-main">
+              <AuthModal isOpen presentation="page" onSuccess={handleAuthSuccess} showToast={showToast} />
+            </main>
           </div>
         )}
         {toastView}
-        <AuthModal
+        {currentUser && <AuthModal
           isOpen={isAuthModalOpen}
           initialMode={authModalInitialMode}
           onClose={() => setIsAuthModalOpen(false)}
           onSuccess={handleAuthSuccess}
           showToast={showToast}
-        />
+        />}
       </>
     );
   }
 
+
+  const sociosView = activeNav === 'socios-y-membresias';
+  const initials = currentUser.nombre.trim().split(/\s+/).slice(0, 2).map(part => part[0]).join('').toUpperCase();
+  const navigation = [
+    { path: 'panel-principal', label: 'Panel principal', icon: 'dashboard' },
+    { path: 'socios-y-membresias', label: 'Socios y membresías', icon: 'group' },
+    { path: 'planes-y-tarifas', label: 'Planes y tarifas', icon: 'card_membership' },
+    { path: 'cobros-y-caja', label: 'Cobros y caja', icon: 'account_balance_wallet' },
+    { path: 'clases-y-turnos', label: 'Clases y turnos', icon: 'calendar_month' },
+    { path: 'accesos', label: 'Recepción y ocupación', icon: 'meeting_room' },
+    { path: 'tienda-stock', label: 'Tienda y stock', icon: 'inventory_2' },
+    { path: 'empleados-car-cruds', label: 'Empleados Car Cruds', icon: 'work' },
+    { path: 'reportes', label: 'Reportes', icon: 'analytics' },
+    { path: 'configuracion', label: 'Configuración', icon: 'settings' },
+  ];
   return (
-    <div className="bg-background font-body text-on-surface antialiased min-h-screen">
-      {/* --- ASIDE: NAVIGATION SIDEBAR --- */}
-      <aside className="fixed left-0 top-0 h-full w-56 bg-surface-container-low z-50 flex flex-col justify-between py-3 border-r border-outline-variant/60 shadow-lg">
-        <div className="flex flex-col">
-          {/* Brand Logo Header */}
-          <div className="flex items-center gap-2.5 px-3.5 h-14 border-b border-outline-variant/40">
-            <span className="material-symbols-outlined text-primary text-[26px]">bolt</span>
-            <div className="flex flex-col">
-              <span className="font-headline text-headline-sm uppercase tracking-wider text-on-surface font-bold leading-none">
-                PULSE
-              </span>
-              <span className="font-label-code text-[10px] text-primary tracking-widest leading-none mt-1 font-semibold">
-                FITNESS CLUB
-              </span>
-            </div>
-          </div>
-
-          {/* Turn status indicator */}
-          <div className="px-3 mt-3 mb-2">
-            <div className="bg-surface-container-lowest px-2.5 py-1.5 rounded-lg flex items-center justify-between border border-outline-variant/40">
-              <div className="flex items-center gap-1.5">
-                <span className="w-2 h-2 rounded-full bg-secondary animate-pulse"></span>
-                <span className="font-label-code text-[10.5px] text-on-surface-variant uppercase">
-                  Sesión
-                </span>
-              </div>
-              <span className="font-label-code text-[11px] text-secondary font-bold">INICIADA</span>
-            </div>
-          </div>
-
-          {/* Navigation Links */}
-          <nav className="flex flex-col gap-1 px-2 mt-1">
-            {[
-              { path: 'panel-principal', label: 'Panel Principal', icon: 'dashboard' },
-              { path: 'socios-y-membresias', label: 'Socios & Membresías', icon: 'badge' },
-              { path: 'empleados-car-cruds', label: 'Empleados Car Cruds', icon: 'link' },
-              { path: 'accesos', label: 'Recepción y Ocupación', icon: 'meeting_room' },
-              { path: 'cobros-y-caja', label: 'Cobros & Caja', icon: 'point_of_sale' },
-              { path: 'planes-y-tarifas', label: 'Planes y Tarifas', icon: 'card_membership' },
-              { path: 'tienda-stock', label: 'Tienda y stock', icon: 'storefront' },
-              { path: 'clases-y-turnos', label: 'Clases & Turnos', icon: 'event_available' },
-              { path: 'reportes', label: 'Reportes', icon: 'analytics' },
-              { path: 'configuracion', label: 'Configuración', icon: 'settings' },
-            ].map((item) => {
-              const isActive = activeNav === item.path;
-              return (
-                <button
-                  key={item.path}
-                  onClick={() => setActiveNav(item.path)}
-                  className={`flex items-center gap-2.5 px-3 py-1.5 rounded-lg transition-all text-xs font-semibold w-full text-left ${
-                    isActive
-                      ? 'bg-surface-container-high text-on-surface font-bold border-l-2 border-primary shadow-sm'
-                      : 'text-on-surface-variant hover:bg-surface-container hover:text-on-surface'
-                  }`}
-                >
-                  <span className={`material-symbols-outlined text-[18px] ${isActive ? 'text-primary' : ''}`}>
-                    {item.icon}
-                  </span>
-                  <span>{item.label}</span>
-                </button>
-              );
-            })}
-          </nav>
+    <div className="admin-shell">
+      <a className="admin-skip" href="#admin-content">Ir al contenido</a>
+      {menuOpen && <button className="admin-backdrop" aria-label="Cerrar menú de navegación" onClick={() => setMenuOpen(false)} />}
+      <aside id="admin-navigation" className={`admin-sidebar${menuOpen ? ' is-open' : ''}`}>
+        <div className="admin-brand">
+          <span className="admin-brand-mark" aria-hidden="true"><i /><i /><i /></span>
+          <span>PULSE <b>CLUB</b></span>
+          <button className="admin-mobile-close" aria-label="Cerrar menú" onClick={() => { setMenuOpen(false); menuButtonRef.current?.focus(); }}>
+            <span className="material-symbols-outlined" aria-hidden="true">close</span>
+          </button>
         </div>
-
-        {/* Sidebar Footer */}
-        <div className="px-3 flex flex-col gap-1.5">
-          <div className="bg-surface-container px-2.5 py-1.5 rounded-lg flex items-center justify-between border border-outline-variant/40">
-            <div className="flex items-center gap-1.5">
-              <span className="material-symbols-outlined text-on-surface-variant text-[16px]">fitness_center</span>
-              <span className="font-label-code text-[11px] text-on-surface-variant">Aforo Sala</span>
-            </div>
-            <span className="font-label-code text-xs text-on-surface font-bold">{aforo === null ? '—' : aforo + (aforo === 1 ? ' persona' : ' personas')}</span>
-          </div>
-          <div className="text-center">
-            <span className="font-label-code text-[10px] text-on-surface-variant/70">PULSE CLUB</span>
-          </div>
+        <div className="admin-workspace"><span className="admin-workspace-logo">PC</span><div><span>Espacio de trabajo</span><strong>PULSE CLUB</strong></div></div>
+        <nav aria-label="Administración">
+          {navigation.map((item, index) => <div key={item.path}>
+            {(index === 0 || index === 8) && <p className="admin-nav-group">{index === 0 ? 'GESTIÓN' : 'ANÁLISIS'}</p>}
+            <button type="button" aria-current={activeNav === item.path ? 'page' : undefined} className={activeNav === item.path ? 'is-active' : ''}
+              onClick={() => { setActiveNav(item.path); setMenuOpen(false); }}>
+              <span className="material-symbols-outlined" aria-hidden="true">{item.icon}</span><span>{item.label}</span>
+            </button>
+          </div>)}
+        </nav>
+        <div className="admin-occupancy"><span>Personas en sedes</span><strong>{aforo ?? '—'}</strong></div>
+        <div className="admin-account">
+          <span className="admin-avatar">{initials}</span><div><strong>{currentUser.nombre}</strong><span>Administración</span></div>
+          <button type="button" onClick={handleLogout} aria-label="Cerrar sesión" title="Cerrar sesión"><span className="material-symbols-outlined" aria-hidden="true">logout</span></button>
         </div>
       </aside>
-
-      {/* --- MAIN CONTENT WRAPPER --- */}
-      <div className="pl-56">
-        {/* Top Header */}
-        <header className="fixed top-0 left-56 right-0 h-14 bg-surface-container-lowest/95 backdrop-blur-md z-40 flex items-center justify-between px-5 border-b border-outline-variant/50 shadow-sm">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1.5 bg-surface-container-low px-2.5 py-1 rounded-lg text-on-surface cursor-pointer hover:bg-surface-container transition-colors border border-outline-variant/40 text-xs">
-              <span className="material-symbols-outlined text-primary text-[18px]">location_on</span>
-              <span className="font-semibold text-on-surface">Administración</span>
-              <span className="material-symbols-outlined text-on-surface-variant text-[16px]">expand_more</span>
-            </div>
-            <div className="relative flex items-center w-64">
-              <span className="material-symbols-outlined absolute left-2.5 text-on-surface-variant text-[18px]">
-                search
-              </span>
-              <input
-                ref={searchInputRef}
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full bg-surface-container pl-8 pr-3 py-1.5 rounded-lg text-xs text-on-surface placeholder:text-on-surface-variant focus:outline-none focus:ring-1 focus:ring-primary border border-outline-variant/40"
-                placeholder="Buscar socio (Ctrl+K)..."
-                type="text"
-              />
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2.5">
-            {/* View Switcher Pill */}
-            <div className="flex items-center bg-surface-container rounded-lg p-0.5 border border-outline-variant/40">
-              <button
-                type="button"
-                onClick={() => setViewMode('admin')}
-                className="px-2.5 py-0.5 rounded-md text-xs font-bold bg-primary text-on-primary shadow-sm"
-              >
-                Admin
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewMode('socio')}
-                className="px-2.5 py-0.5 rounded-md text-xs font-medium text-on-surface-variant hover:text-on-surface transition-colors"
-                title="Ver mis clases, reservas y membresía"
-              >
-                Ver como Socio
-              </button>
-            </div>
-
-            {/* Primary Action Button (Volt Lime + Dark Text) */}
-            <button
-              onClick={() => setActiveNav('cobros-y-caja')} title="Ir a Cobros & Caja"
-              className="flex items-center gap-1 bg-primary text-on-primary px-3 py-1 rounded-lg text-xs font-bold hover:bg-primary-hover shadow-sm transition-all active:scale-95"
-              type="button"
-            >
-              <span className="material-symbols-outlined text-[18px]">add</span>
-              <span>Registrar Pago</span>
-            </button>
-
-            <button
-              aria-label="Ir a cobros pendientes"
-              onClick={() => setActiveNav('cobros-y-caja')} title="Cobros pendientes"
-              className="relative p-1 rounded-lg text-on-surface-variant hover:bg-surface-container hover:text-on-surface transition-colors"
-              type="button"
-            >
-              <span className="material-symbols-outlined text-[20px]">notifications</span>
-              <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-error"></span>
-            </button>
-
-            <div className="h-5 w-px bg-outline-variant/50"></div>
-
-            {currentUser ? (
-              <div className="flex items-center gap-2">
-                <div className="flex flex-col text-right">
-                  <span className="text-xs font-semibold text-on-surface leading-tight">
-                    {currentUser.nombre}
-                  </span>
-                  <span className="text-[10px] font-label-code text-primary font-bold">
-                    {currentUser.rol}
-                  </span>
-                </div>
-                <div className="w-7 h-7 rounded-full bg-gradient-to-tr from-secondary to-primary flex items-center justify-center text-on-primary font-bold text-xs ring-1 ring-primary/40">
-                  {currentUser.nombre.slice(0, 2).toUpperCase()}
-                </div>
-                <button
-                  type="button"
-                  onClick={handleLogout}
-                  className="p-1 rounded-lg text-on-surface-variant hover:text-error hover:bg-surface-container transition-colors"
-                  title="Cerrar sesión"
-                >
-                  <span className="material-symbols-outlined text-base">logout</span>
-                </button>
-              </div>
-            ) : (
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={handleOpenLogin}
-                  className="px-2.5 py-1 rounded-lg bg-surface-container hover:bg-surface-container-high text-xs font-semibold text-on-surface border border-outline-variant/40"
-                >
-                  Iniciar Sesión
-                </button>
-                <button
-                  type="button"
-                  onClick={handleOpenRegister}
-                  className="px-2.5 py-1 rounded-lg bg-secondary text-on-secondary text-xs font-bold hover:bg-secondary-hover"
-                >
-                  Registrarse
-                </button>
-              </div>
-            )}
-          </div>
+      <div className="admin-main">
+        <header className="admin-topbar">
+          <button ref={menuButtonRef} type="button" className="admin-menu-button" aria-label="Abrir menú" aria-controls="admin-navigation" aria-expanded={menuOpen} onClick={() => setMenuOpen(!menuOpen)}><span className="material-symbols-outlined" aria-hidden="true">menu</span></button>
+          {sociosView ? <label className="admin-search">
+            <span className="material-symbols-outlined" aria-hidden="true">search</span>
+            <input ref={searchInputRef} value={searchQuery} onChange={e => setSearchQuery(e.target.value)} aria-label="Buscar socio en esta página" placeholder="Buscar socio, DNI o email…" type="search" /><kbd>Ctrl K</kbd>
+          </label> : <span className="admin-section-name">{navigation.find(item => item.path === activeNav)?.label}</span>}
+          <button type="button" className="admin-portal-link" onClick={() => setViewMode('socio')}>Vista socio <span className="material-symbols-outlined" aria-hidden="true">chevron_right</span></button>
+          <button type="button" className="admin-icon-button" aria-label="Ir a cobros pendientes" title="Ir a cobros pendientes" onClick={() => setActiveNav('cobros-y-caja')}><span className="material-symbols-outlined" aria-hidden="true">notifications</span></button>
+          <span className="admin-avatar" title={currentUser.nombre}>{initials}</span>
         </header>
-
-        {/* --- MAIN BODY VIEWPORT --- */}
-        <main className="w-full pt-14 bg-background px-4 sm:px-6 min-h-screen">
+        <main id="admin-content" tabIndex={-1} className="admin-content">
           {toastView}
           {activeNav === 'panel-principal' ? <PanelPrincipal onIr={setActiveNav} /> : activeNav === 'reportes' ? <ReportesPanel /> : activeNav === 'configuracion' ? <ConfiguracionPanel usuario={currentUser} /> : activeNav === 'planes-y-tarifas' ? <MembresiasPanel key={'planes-' + currentUser.socioId} actorId={currentUser.socioId} onNuevoSocio={handleOpenRegister} seccion="planes" /> : activeNav === 'cobros-y-caja' ? <MembresiasPanel key={'cobros-' + currentUser.socioId} actorId={currentUser.socioId} onNuevoSocio={handleOpenRegister} seccion="cobros" /> : activeNav === 'clases-y-turnos' ? <ClasesPanel key={currentUser.socioId} actorId={currentUser.socioId} /> : activeNav === 'tienda-stock' ? <TiendaStockPanel actorId={currentUser.socioId} /> : activeNav === 'accesos' ? <AccesosPanel actorId={currentUser.socioId} /> : activeNav === 'empleados-car-cruds' ? <CarCrudsPanel onNuevoSocio={handleOpenRegister} /> : <MembresiasPanel key={currentUser.socioId} actorId={currentUser.socioId} onNuevoSocio={handleOpenRegister} filtro={searchQuery} />}
-
         </main>
       </div>
-
-      {/* Auth Modal (Login / Register) */}
-      <AuthModal
-        isOpen={isAuthModalOpen}
-        initialMode={authModalInitialMode}
-        onClose={() => setIsAuthModalOpen(false)}
-        onSuccess={handleAuthSuccess}
-        showToast={showToast}
-        allowRegistration={currentUser?.rol === 'ADMIN'}
-      />
+      <AuthModal isOpen={isAuthModalOpen} initialMode={authModalInitialMode} onClose={() => setIsAuthModalOpen(false)} onSuccess={handleAuthSuccess} showToast={showToast} allowRegistration={currentUser.rol === 'ADMIN'} />
     </div>
   );
 }

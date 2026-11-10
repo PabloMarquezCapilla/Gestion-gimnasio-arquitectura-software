@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { PageHeader } from './PageHeader';
 import { apiComprasCaja, apiSolicitudesMembresia } from '../services/api';
 import type { CompraCaja, SolicitudMembresia } from '../services/api';
 
@@ -63,11 +64,10 @@ export function ReportesPanel() {
   const grafana = `${window.location.protocol}//${window.location.hostname === 'localhost' ? 'localhost:3001' : 'grafana.' + window.location.host}`;
 
   return (
-    <section className="py-6 space-y-5">
-      <div className="flex items-center justify-between">
-        <h1 className="font-headline text-2xl font-bold">Reportes</h1>
-        <button type="button" className="rounded-lg border border-outline-variant px-4 py-2 text-sm font-semibold hover:bg-surface-container-high" onClick={() => void cargar()}>Actualizar</button>
-      </div>
+    <section className="app-page">
+      <PageHeader eyebrow="ANÁLISIS" title="Reportes"
+        description="Revisá los ingresos por membresías y las ventas registradas en la tienda."
+        action={<button type="button" className="app-button" onClick={() => void cargar()}>Actualizar</button>} />
       <p className="text-sm">Ingresos y ventas de los últimos 6 meses. El estado técnico del sistema (errores, latencia, réplicas) está en el <a className="text-primary underline" href={grafana} target="_blank" rel="noreferrer">tablero de Grafana</a>.</p>
       {error && <p role="alert" className="text-error">{error}</p>}
       {!datos && !error && <p role="status">Calculando reportes…</p>}

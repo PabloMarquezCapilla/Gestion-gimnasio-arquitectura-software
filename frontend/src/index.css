@@ -10,8 +10,21 @@
   body {
     overscroll-behavior: none;
   }
+  :is(button, input, select, textarea, a):focus-visible {
+    outline: 3px solid #bc5b37;
+    outline-offset: 3px;
+  }
+  :is(input, select, textarea) {
+    accent-color: #b65330;
+    color-scheme: light;
+  }
 }
 
 ::-webkit-scrollbar {
-  display: none;
+  width: 7px;
+  height: 7px;
+}
+::-webkit-scrollbar-thumb {
+  background: #b8b3ad;
+  border-radius: 8px;
 }

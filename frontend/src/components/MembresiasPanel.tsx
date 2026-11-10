@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { ApiError, apiHistorialMembresias, apiOperacionMembresia, apiPlanesMembresia, apiSociosAdministracion, apiSolicitudesMembresia } from '../services/api';
 import type { MembresiaAdministrativa, PlanMembresia, SolicitudMembresia, SocioAdministrativo } from '../services/api';
 import { CajaTienda } from './CajaTienda';
+import { PageHeader } from './PageHeader';
 const button = 'rounded-lg border border-outline-variant px-4 py-2 text-sm font-semibold disabled:opacity-50 hover:bg-surface-container-high';
 const input = 'block bg-surface-container border border-outline-variant rounded-lg p-2 w-full';
 const box = 'rounded-xl border border-outline-variant bg-surface-container-low p-4 space-y-3';
@@ -74,6 +75,7 @@ export function MembresiasPanel({ actorId,onNuevoSocio,filtro='',seccion='socios
  const [socioId,setSocioId]=useState(''),[planId,setPlanId]=useState(''),[inicio,setInicio]=useState(hoy);
  const [membresias,setMembresias]=useState<MembresiaAdministrativa[]>([]),[errorMembresias,setErrorMembresias]=useState('');
  const [revisionMembresias,setRevisionMembresias]=useState(0);
+ const [estadoCuenta,setEstadoCuenta]=useState('');
  const [nombre,setNombre]=useState(''),[precio,setPrecio]=useState(''),[duracion,setDuracion]=useState('1');
  const [referencias,setReferencias]=useState<Record<string,string>>({}),[verificados,setVerificados]=useState<Record<string,boolean>>({});
  const mutation=useRef(false);
@@ -110,11 +112,40 @@ export function MembresiasPanel({ actorId,onNuevoSocio,filtro='',seccion='socios
  const planElegido=planes.find(p=>p.planId===planId);
  const periodo=planElegido?vigencia(inicio,planElegido.duracionMeses):null;
  const [titulo,descripcion]=titulos[seccion];
- return <section className="py-6 space-y-5"><h1 className="font-headline text-2xl font-bold">{titulo}</h1>
-  <p>{descripcion}</p>
-  <div className="flex gap-3"><button className={button} disabled={saving} onClick={()=>void refresh()}>Actualizar</button>{seccion==='socios'&&<button className={button} onClick={onNuevoSocio}>Alta de Socio</button>}</div>
+ const sociosVisibles = socios.filter(socio =>
+  (!estadoCuenta || socio.estado === estadoCuenta) &&
+  [socio.nombre, socio.dni, socio.email, socio.socioId].some(valor =>
+   valor.toLowerCase().includes(filtro.toLowerCase())
+  )
+ );
+ const socioElegido = socios.find(socio => socio.socioId === socioId);
+ return <section className={seccion==='socios'?'app-page members-panel':'app-page'}>
+  {seccion==='socios'?<>
+   <PageHeader eyebrow="GESTIÓN DE SOCIOS" title={titulo}
+    description="Administrá perfiles, planes y el historial de cada socio."
+    action={<button className="members-primary" onClick={onNuevoSocio}>
+     <span className="material-symbols-outlined" aria-hidden="true">add</span>
+     Nuevo socio
+    </button>} />
+   <div className="members-stats">
+    {[
+     {label:'Socios consultados',value:socios.length,note:'Página '+pagina,icon:'group'},
+     {label:'Planes activos',value:planes.filter(p=>p.estado==='ACTIVO').length,note:'Disponibles para nuevas solicitudes',icon:'card_membership'},
+     {label:'Solicitudes pendientes',value:items.filter(s=>s.estado==='PENDIENTE').length,note:'Página '+pagina+' de solicitudes',icon:'schedule'},
+     {label:'Solicitudes confirmadas',value:items.filter(s=>s.estado==='CONFIRMADA').length,note:'Página '+pagina+' de solicitudes',icon:'task_alt'},
+    ].map(stat => <article key={stat.label} className="members-stat">
+     <span className="members-stat-icon material-symbols-outlined" aria-hidden="true">{stat.icon}</span>
+     <div>
+      <p>{stat.label}</p>
+      <strong>{loading ? '…' : error ? '—' : stat.value}</strong>
+      <small>{stat.note}</small>
+     </div>
+    </article>)}
+   </div>
+  </>:<PageHeader eyebrow={seccion==='planes'?'CONFIGURACIÓN COMERCIAL':'FINANZAS'} title={titulo}
+   description={descripcion} action={<button className={button} disabled={saving} onClick={()=>void refresh()}>Actualizar</button>} />}
   {loading&&<p role="status">Consultando gestión…</p>}{error&&<p role="alert" className="text-error">{error}</p>}{status&&<p role="status">{status}</p>}
-  {pendiente&&<div ref={recuperacionRef} tabIndex={-1} role="alert" className={box}>
+  {pendiente&&<div ref={recuperacionRef} tabIndex={-1} role="alert" className={seccion==='socios'?'members-recovery':box}>
    <p className="font-bold">{saving?'Esperando confirmación del servidor…':'Hay una operación pendiente de confirmación.'}</p>
    <p>Podés consultar socios y su historial. Para habilitar nuevas operaciones, recuperá el resultado con el botón siguiente. Conservamos los datos de la operación para evitar duplicaciones.</p>
    <button className={button} disabled={saving} onClick={()=>void ejecutar(pendiente)}>Reintentar la misma operación de membresía</button>
@@ -130,30 +161,99 @@ export function MembresiasPanel({ actorId,onNuevoSocio,filtro='',seccion='socios
     <label>Duración<select aria-label="Duración del plan" className={input} value={duracion} onChange={e=>setDuracion(e.target.value)} disabled={disabled}>{[1,2,3,6,12].map(m=><option key={m} value={m}>{duracionTexto(m)}</option>)}</select></label>
     <button className={button} disabled={disabled}>Crear plan</button></form>
   </section></div>}
-  {seccion==='socios'&&<><div className="grid lg:grid-cols-2 gap-4">
-  <section className={box}><h2 className="font-bold">Socios registrados — página {pagina}</h2><p className="text-xs">La búsqueda superior filtra esta página.</p>
-   {socios.filter(s=>[s.nombre,s.dni,s.email,s.socioId].some(v=>v.toLowerCase().includes(filtro.toLowerCase()))).map(s=><p key={s.socioId}>{s.nombre} · {s.dni} · {s.email} · {s.estado} <button className={button} disabled={saving||loading} onClick={()=>setSocioId(s.socioId)}>Seleccionar {s.nombre}</button></p>)}
-   <button className={button} disabled={loading||saving||pagina===1} onClick={()=>setPagina(p=>p-1)}>Anterior</button> Página {pagina} <button className={button} disabled={loading||saving||socios.length<20} onClick={()=>setPagina(p=>p+1)}>Siguiente</button>
+  {seccion==='socios'&&<div className="members-workspace">
+  <section className="members-list">
+   <div className="members-list-heading">
+    <div>
+     <h2>Listado de socios</h2>
+     <p>{sociosVisibles.length} resultados visibles · página {pagina}</p>
+    </div>
+    <button className={button} disabled={saving || loading} onClick={() => void refresh()}>Actualizar</button>
+   </div>
+   <div className="members-filters">
+    <p>La búsqueda superior y el estado filtran esta página.</p>
+    <label>Estado de cuenta
+     <select aria-label="Filtrar por estado de cuenta" value={estadoCuenta} onChange={e => setEstadoCuenta(e.target.value)}>
+      <option value="">Todos</option>
+      <option value="ACTIVO">ACTIVO</option>
+      <option value="INACTIVO">INACTIVO</option>
+     </select>
+    </label>
+   </div>
+   <div className="members-table-scroll" tabIndex={0} role="region" aria-label="Listado de socios, desplazable horizontalmente">
+    <table className="members-table">
+     <caption className="sr-only">Socios de la página {pagina}. Seleccioná uno para consultar sus membresías.</caption>
+     <thead>
+      <tr>
+       <th scope="col">Socio</th>
+       <th scope="col">DNI</th>
+       <th scope="col">Cuenta</th>
+       <th scope="col"><span className="sr-only">Acciones</span></th>
+      </tr>
+     </thead>
+     <tbody>
+      {sociosVisibles.map(socio => <tr key={socio.socioId} className={socioId === socio.socioId ? 'is-selected' : ''}>
+       <td>
+        <div className="members-person">
+         <span className="members-person-avatar" aria-hidden="true">
+          {socio.nombre.trim().split(/\s+/).slice(0, 2).map(parte => parte[0]).join('').toUpperCase()}
+         </span>
+         <div><strong>{socio.nombre}</strong><span>{socio.email}</span></div>
+        </div>
+       </td>
+       <td>{socio.dni}</td>
+       <td><span className={'members-badge ' + (socio.estado === 'ACTIVO' ? 'is-enabled' : 'is-muted')}>{socio.estado}</span></td>
+       <td>
+        <button className="members-select" aria-label={'Seleccionar ' + socio.nombre}
+         aria-pressed={socioId === socio.socioId} disabled={saving || loading}
+         onClick={() => setSocioId(socio.socioId)}>
+         {socioId === socio.socioId ? 'Seleccionado' : 'Ver detalle'}
+        </button>
+       </td>
+      </tr>)}
+     </tbody>
+    </table>
+   </div>
+   {!loading && !error && sociosVisibles.length === 0 && <div className="members-empty">
+    <span className="material-symbols-outlined" aria-hidden="true">search_off</span>
+    <h3>{socios.length ? 'No encontramos resultados' : 'Sin socios en esta página'}</h3>
+    <p>{socios.length ? 'Probá otra búsqueda o cambiá el estado de cuenta.' : 'Podés volver a la página anterior o dar de alta un socio.'}</p>
+   </div>}
+   <div className="members-pagination">
+    <span>Página {pagina} · hasta 20 socios</span>
+    <div>
+     <button className={button} disabled={loading || saving || pagina === 1} onClick={() => { setSocioId(''); setPagina(p => p - 1); }}>Anterior</button>
+     <button className={button} disabled={loading || saving || socios.length < 20} onClick={() => { setSocioId(''); setPagina(p => p + 1); }}>Siguiente</button>
+    </div>
+   </div>
   </section>
-  <section className={box}><form className="space-y-3" onSubmit={e=>{e.preventDefault();if(periodo)void enviar('/api/v1/socios/'+encodeURIComponent(socioId)+'/solicitudes',{planId,fechaInicio:periodo.desde.toISOString(),fechaFin:periodo.hasta.toISOString()});}}><h2 className="font-bold">Solicitar alta o nuevo período</h2>
+  <div className="members-detail">
+  <section className={box}>
+   <div className="members-detail-heading">
+    <span className="members-eyebrow">DETALLE DEL SOCIO</span>
+    <h2>{socioElegido?.nombre ?? 'Seleccioná un socio'}</h2>
+    <p>{socioElegido?.email ?? 'Elegí una persona del listado para consultar su historial y solicitar una membresía.'}</p>
+   </div>
+   <form className="space-y-3" onSubmit={e=>{e.preventDefault();if(periodo)void enviar('/api/v1/socios/'+encodeURIComponent(socioId)+'/solicitudes',{planId,fechaInicio:periodo.desde.toISOString(),fechaFin:periodo.hasta.toISOString()});}}><h3 className="font-bold">Alta o nuevo período</h3>
     <label>Socio<select aria-label="Socio de la solicitud" className={input} required value={socioId} onChange={e=>setSocioId(e.target.value)} disabled={saving||loading}><option value="">Seleccioná un socio</option>{socios.map(s=><option key={s.socioId} value={s.socioId}>{s.nombre} · {s.dni}</option>)}</select></label>
     <label>Plan<select aria-label="Plan de la solicitud" className={input} required value={planId} onChange={e=>setPlanId(e.target.value)} disabled={disabled}><option value="">Seleccioná un plan</option>{planes.filter(p=>p.estado==='ACTIVO').map(p=><option key={p.planId} value={p.planId}>{p.nombre} · {importe(p.importeMinor,p.moneda)} · {duracionTexto(p.duracionMeses)}</option>)}</select></label>
     <label>Inicio de vigencia<input aria-label="Inicio de vigencia" className={input} type="date" required value={inicio} onChange={e=>setInicio(e.target.value)} disabled={disabled}/></label>
     {periodo&&planElegido&&<p className="text-sm">Vigencia: <strong>{periodo.desde.toLocaleDateString('es-AR')} al {periodo.hasta.toLocaleDateString('es-AR')}</strong> · A cobrar: <strong>{importe(planElegido.importeMinor,planElegido.moneda)}</strong></p>}
-    <button className={button} disabled={disabled||!planId||!socioId||!periodo}>Crear solicitud</button>
+    <p className="members-help">La vigencia se calcula según el plan. La membresía se habilita al confirmar el pago en Cobros y caja.</p>
+    <button className="members-primary" disabled={disabled||!planId||!socioId||!periodo}>Crear solicitud</button>
    </form>
-  </section></div>
+  </section>
   {socioId&&<section className={box}><h2 className="font-bold">Membresías del socio seleccionado</h2>
    <button className={button} disabled={saving||loading} onClick={()=>setRevisionMembresias(r=>r+1)}>Actualizar membresías</button>
    {errorMembresias&&<p role="alert">{errorMembresias}</p>}
    {membresias.length===0&&!errorMembresias&&<p>Sin membresías registradas.</p>}
-   {membresias.map(m=><article key={m.membresiaId} className={box}><p>{m.tipoPlan} · {m.estado} · {m.membresiaId}</p>
+   {membresias.map(m=><article key={m.membresiaId} className="members-membership"><h3>{m.tipoPlan}</h3><span className={'members-badge '+(m.estado==='HABILITADA'?'is-enabled':'is-muted')}>{m.estado}</span><p className="members-help">{m.membresiaId}</p>
     <p>{new Date(m.fechaInicio).toLocaleDateString('es-AR')} — {new Date(m.fechaFin).toLocaleDateString('es-AR')}</p>
-    {m.estado==='HABILITADA'&&<button className={button} disabled={disabled} onClick={()=>{
+    {m.estado==='HABILITADA'&&<button className="members-danger" disabled={disabled} onClick={()=>{
      if(window.confirm('¿Suspender esta membresía inmediatamente? Se mantienen sus fechas y se cancelarán las reservas futuras afectadas.'))void enviar('/api/v1/membresias/'+encodeURIComponent(m.membresiaId)+'/suspender',{});
     }}>Suspender membresía</button>}
    </article>)}
-  </section>}</>}
+  </section>}</div></div>}
   {seccion==='cobros'&&<><section className={box}><h2 className="font-bold">Cobros de membresías — página {pagina}</h2>
    <p className="text-sm">Pendientes de cobro: <strong>{items.filter(s=>s.estado==='PENDIENTE').length}</strong> · A cobrar: <strong>{importe(items.filter(s=>s.estado==='PENDIENTE').reduce((t,s)=>t+s.importeMinor,0))}</strong></p>
    {items.filter(s=>s.estado==='PENDIENTE').map(s=><div key={s.solicitudId} className={box}><h3 className="font-bold">{s.nombrePlan} · socio {s.socioId} · {importe(s.importeMinor,s.moneda)}</h3>

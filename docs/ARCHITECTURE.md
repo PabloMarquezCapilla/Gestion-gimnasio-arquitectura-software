@@ -24,6 +24,22 @@ NGINX sirve el portal React y enruta las solicitudes por un único puerto local 
 - **Tienda, Capas:** `app.ts` adapta HTTP y permisos → `stock.ts` valida comandos y define el puerto → `stock.postgres.ts` implementa persistencia; `server.ts` compone pool/aplicación. El servicio de catálogo conserva su respuesta pendiente y todavía no tiene adaptador externo. Accesos concreta Capas con lectura derivada de presencias abiertas; ADR-019 revisa su propuesta previa por eventos, sin introducir broker.
 - **Identidad:** JWT HS256 firmado con vencimiento configurable (una hora por defecto), rol y controles de propietario. Alta interna solo ADMIN; bootstrap local sin contraseña administrativa predeterminada nueva. El portal mantiene la sesión en memoria. [D2](adr/ADR-002-arquitectura-interna-de-servicios.md), [autenticación](adr/ADR-016-autenticacion-y-altas.md).
 
+## Interfaz de usuario
+
+El rediseño solicitado por el grupo el 10/11/2026 extiende la presentación de Socios y membresías a todas las secciones del portal React. La administración comparte menú lateral oscuro, fondo cálido, tarjetas blancas, acentos terracota y encabezados reutilizables. Abarca Panel principal, Socios, Planes, Cobros, Clases, Recepción, Tienda, Car Cruds, Reportes y Configuración. El portal del socio utiliza la misma paleta para clases, reservas, membresía, pagos y tienda, con navegación horizontal adaptable. [Diseño de referencia](https://www.figma.com/make/WDI1IPCS0oCGkxsEDbnJhs/).
+
+El acceso público y los formularios de inicio de sesión y alta administrativa utilizan la misma paleta. El acceso público presenta directamente el formulario y el alta continúa disponible únicamente para ADMIN. Se conservan el JWT y las llamadas existentes. Los campos tienen etiquetas asociadas y el diálogo admite cierre con Escape y navegación por teclado. Los errores de servidor se muestran sin habilitar una sesión.
+
+La verificación local del acceso confirmó HTTP 200 con la cuenta de demostración y HTTP 401 con contraseña incorrecta, tanto desde Vite como desde el gateway reconstruido. El ingreso y cierre de sesión se probaron también en navegador, junto con la presentación a 390 px de ancho.
+
+Los indicadores muestran socios y solicitudes de la página consultada y planes activos obtenidos de las API existentes. El estado de cuenta del listado y el estado de cada membresía se presentan por separado. El alta, JWT, permisos, cálculo de vigencia, suspensión y recuperación con la misma clave de idempotencia reutilizan el flujo existente. La confirmación pendiente se muestra únicamente si existe una operación guardada para ese administrador. Esta adaptación visual corresponde a una solicitud del grupo y conserva el alcance funcional documentado.
+
+Los colores y las tipografías se definen en el tema de Tailwind. `PageHeader` unifica la jerarquía visual y la hoja compartida adapta tarjetas, controles y tablas. En móvil se pliega el menú administrativo y las tablas mantienen su desplazamiento horizontal con foco por teclado. La credencial y los estados de membresía conservan los datos del servidor. Los indicadores distinguen habilitación, suspensión, vencimiento y falta de información.
+
+Se verificaron compilación y pruebas de frontend, incluidos encabezados y controles de todas las secciones administrativas, navegación del socio, colores semánticos de membresía y recuperación de operaciones pendientes. El recorrido inicial en navegador usó datos ficticios y PostgreSQL aislado para consultar socios, filtrar por DNI, abrir el alta, consultar historial y crear una solicitud con vigencia de fin de mes. El menú plegable y el acceso se comprobaron a 390 px. La adaptación visual corresponde a una solicitud del grupo y conserva el alcance funcional documentado.
+
+La revisión final en navegador recorrió las diez secciones administrativas y las cuatro pestañas del socio, en escritorio y a 390 px. Se comprobaron la carga de formularios de edición, la búsqueda de clases, el cambio de vistas y la apertura y cierre de la credencial. Las tablas se desplazan dentro de su contenedor y las páginas verificadas caben en el ancho móvil. Las pantallas de FAV y Car Cruds muestran su configuración pendiente en el entorno local. El gateway de Docker se reconstruyó con la misma interfaz.
+
 ## Comunicaciones y operaciones consistentes
 
 ### Recepción y ocupación (30/10/2026)

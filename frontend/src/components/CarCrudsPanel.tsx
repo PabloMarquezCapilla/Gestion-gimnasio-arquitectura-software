@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { PageHeader } from './PageHeader';
 import type { FormEvent } from 'react';
 import {
   ApiError, apiCarCrudsBuscarSocios, apiCarCrudsEmpleados, apiCarCrudsEstado, apiCarCrudsGuardarVinculo,
@@ -154,14 +155,10 @@ export function CarCrudsPanel({ onNuevoSocio }: { onNuevoSocio: () => void }) {
     setDetailReload(value => value + 1);
   };
 
-  return <section className="py-6 space-y-5" aria-labelledby="car-cruds-heading">
-    <div className="flex flex-wrap items-start justify-between gap-4">
-      <div className="max-w-3xl space-y-2">
-        <h1 id="car-cruds-heading" className="font-headline text-2xl font-bold">Empleados Car Cruds</h1>
-        <p className="text-sm text-on-surface-variant">Asociá cada empleado con un único socio del gimnasio. La vinculación es manual y no habilita ni cancela membresías.</p>
-      </div>
-      <button type="button" className={primaryButton} disabled={busy} onClick={onNuevoSocio}>Alta de socio</button>
-    </div>
+  return <section className="app-page" aria-labelledby="car-cruds-heading">
+    <PageHeader id="car-cruds-heading" eyebrow="INTEGRACIONES" title="Empleados Car Cruds"
+      description="Asociá cada empleado con un único socio del gimnasio. La vinculación es manual y conserva las reglas de habilitación de la membresía."
+      action={<button type="button" className={primaryButton} disabled={busy} onClick={onNuevoSocio}>Alta de socio</button>} />
     <p className="text-xs text-on-surface-variant">Para una persona nueva, primero completá el alta; después buscala por DNI o email y confirmá el vínculo. El plan y el pago se gestionan por separado.</p>
 
     <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]">
