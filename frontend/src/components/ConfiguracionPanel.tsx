@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { PageHeader } from './PageHeader';
 import { apiSaludServicio } from '../services/api';
 import type { ServicioSalud } from '../services/api';
 
@@ -34,8 +35,9 @@ export function ConfiguracionPanel({ usuario }: { usuario: { nombre: string; rol
   const tienda = salud?.tienda?.detalle ?? {};
 
   return (
-    <section className="py-6 space-y-5">
-      <h1 className="font-headline text-2xl font-bold">Configuración y estado del sistema</h1>
+    <section className="app-page">
+      <PageHeader eyebrow="OPERACIÓN" title="Configuración y estado del sistema"
+        description="Verificá los servicios, las integraciones y los datos de tu sesión." />
       <div className="grid gap-4 lg:grid-cols-2">
         <section className={card}>
           <div className="flex items-center justify-between"><h2 className="font-bold">Servicios</h2>

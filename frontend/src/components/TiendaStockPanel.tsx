@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { PageHeader } from './PageHeader';
 import { ApiError, apiConsultarStockTienda, apiRegistrarVentaTienda, retirarVentaTiendaPendiente } from '../services/api';
 import type { StockItemTienda, VentaPendienteTienda, VentaTienda } from '../services/api';
 
@@ -134,9 +135,9 @@ function StockPorAdministrador({ actorId }: { actorId: string }) {
     }
   };
 
-  return <section className="py-6 space-y-5" aria-labelledby="tienda-stock-heading">
-    <h1 id="tienda-stock-heading" className="font-headline text-2xl font-bold">Tienda y stock</h1>
-    <p className="text-sm text-on-surface-variant">Existencias de la tienda del gimnasio abastecida por FAV. Registrá las unidades de ventas realizadas; no se efectúan cobros desde esta pantalla.</p>
+  return <section className="app-page" aria-labelledby="tienda-stock-heading">
+    <PageHeader id="tienda-stock-heading" eyebrow="INVENTARIO" title="Tienda y stock"
+      description="Consultá las existencias abastecidas por FAV y registrá las unidades vendidas en el gimnasio. Los cobros se realizan en el mostrador." />
     <div className="flex flex-wrap items-center gap-3">
       <h2 className="font-bold text-lg">Stock del gimnasio</h2>
       <button type="button" className={button} disabled={loading || saving} onClick={() => void refresh()}>Actualizar stock</button>
@@ -144,7 +145,7 @@ function StockPorAdministrador({ actorId }: { actorId: string }) {
     {loading && <p role="status">Consultando existencias…</p>}
     {stockError && <p role="alert" className="text-error">No se pudo consultar el stock: {stockError}</p>}
     {items !== null && <>
-      <div className="overflow-x-auto"><table className="w-full text-sm">
+      <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Stock de la tienda"><table className="w-full text-sm">
         <thead><tr>{['Código de variante FAV', 'Disponibles', 'Vendidas acumuladas'].map(label => <th className="text-left p-2" key={label}>{label}</th>)}</tr></thead>
         <tbody>{items.map(item => <tr key={item.productoCodigo} className="border-t border-outline-variant">
           <td className="p-2 break-all">{item.productoCodigo}</td><td className="p-2">{item.unidadesDisponibles}</td><td className="p-2">{item.unidadesVendidas}</td>

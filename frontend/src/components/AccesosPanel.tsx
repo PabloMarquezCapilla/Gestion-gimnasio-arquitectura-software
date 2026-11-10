@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { PageHeader } from './PageHeader';
 import { ApiError, apiAccesosHistorial, apiAccesosOcupacion, apiAccesosRegistrar, apiAccesosSedes, apiSociosAdministracion } from '../services/api';
 import type { SocioAdministrativo } from '../services/api';
 import type { AccesosMovimiento, AccesosOrden } from '../services/api';
@@ -82,9 +83,9 @@ export function AccesosPanel({ actorId }: { actorId: string }) {
       if (mounted.current) setError(message(cause));
     } finally { mutation.current = false; if (mounted.current) setSaving(false); }
   };
-  return <section className="py-6 space-y-5" aria-labelledby="accesos-heading">
-    <h1 id="accesos-heading" className="font-headline text-2xl font-bold">Recepción y Ocupación</h1>
-    <p className="text-sm text-on-surface-variant">Registrá ingresos y egresos por socio y sede. El ingreso requiere una membresía habilitada; el egreso cierra una presencia abierta.</p>
+  return <section className="app-page" aria-labelledby="accesos-heading">
+    <PageHeader id="accesos-heading" eyebrow="RECEPCIÓN" title="Recepción y Ocupación"
+      description="Registrá ingresos y egresos por socio y sede. El ingreso requiere una membresía habilitada. El egreso cierra una presencia abierta." />
     <div className="flex flex-wrap items-end gap-3">
       <label>Sede<select aria-label="Sede" value={sedeId} disabled={saving || !!pendiente} onChange={e => { setSedeId(e.target.value); setPagina(1); }} className="block bg-surface-container border border-outline-variant rounded-lg p-2">
         {sedes.map(s => <option key={s.sedeId} value={s.sedeId}>{s.nombre}</option>)}
@@ -103,7 +104,7 @@ export function AccesosPanel({ actorId }: { actorId: string }) {
     <div className="flex flex-wrap items-end gap-3"><h2 className="font-bold text-lg">Historial de movimientos</h2>
       <label>Filtrar por ID de socio<input aria-label="Filtrar por ID de socio" value={filtro} disabled={saving} onChange={e => { setFiltro(e.target.value); setPagina(1); }} className="block bg-surface-container rounded-lg border border-outline-variant p-2" /></label>
     </div>
-    <div className="overflow-x-auto"><table className="w-full text-sm"><thead><tr>{['Fecha', 'Socio', 'Tipo', 'Resultado'].map(label => <th key={label} className="text-left p-2">{label}</th>)}</tr></thead>
+    <div className="overflow-x-auto" tabIndex={0} role="region" aria-label="Historial de accesos"><table className="w-full text-sm"><thead><tr>{['Fecha', 'Socio', 'Tipo', 'Resultado'].map(label => <th key={label} className="text-left p-2">{label}</th>)}</tr></thead>
       <tbody>{historial.map(m => <tr key={m.movimientoId} className="border-t border-outline-variant"><td className="p-2">{new Date(m.fecha).toLocaleString('es-AR')}</td><td>{m.socioId}</td><td>{m.tipo === 'INGRESO' ? 'Ingreso' : 'Egreso'}</td><td>{m.aceptado ? 'Aceptado' : 'Rechazado'} · {resultLabels[m.codigo] ?? 'Resultado desconocido'}</td></tr>)}</tbody></table></div>
     {!loading && !error && !historial.length && <p>No hay movimientos para esta consulta.</p>}
     <div className="flex items-center gap-3"><button className={button} disabled={loading || saving || pagina === 1} onClick={() => setPagina(p => p - 1)}>Anterior</button><span>Página {pagina}</span><button className={button} disabled={loading || saving || historial.length < 20} onClick={() => setPagina(p => p + 1)}>Siguiente</button></div>

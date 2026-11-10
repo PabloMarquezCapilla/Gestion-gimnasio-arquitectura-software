@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
+import { PageHeader } from './PageHeader';
 import {
   apiAccesosOcupacion, apiAccesosSedes, apiBuscarClases, apiComprasCaja, apiConsultarStockTienda,
   apiPlanesMembresia, apiSolicitudesMembresia,
@@ -51,11 +52,10 @@ export function PanelPrincipal({ onIr }: { onIr: (seccion: string) => void }) {
   }, []), revision);
 
   return (
-    <section className="py-6 space-y-5">
-      <div className="flex items-center justify-between">
-        <h1 className="font-headline text-2xl font-bold">Panel principal</h1>
-        <button type="button" className="rounded-lg border border-outline-variant px-4 py-2 text-sm font-semibold hover:bg-surface-container-high" onClick={() => setRevision(r => r + 1)}>Actualizar</button>
-      </div>
+    <section className="app-page dashboard-page">
+      <PageHeader eyebrow="VISTA GENERAL" title="Panel principal"
+        description="Consultá la ocupación, los cobros y las próximas actividades del gimnasio."
+        action={<button type="button" className="app-button" onClick={() => setRevision(r => r + 1)}>Actualizar</button>} />
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         <Bloque titulo="Ocupación actual" estado={ocupacion} ir={() => onIr('accesos')}>
           {sedes => <>
