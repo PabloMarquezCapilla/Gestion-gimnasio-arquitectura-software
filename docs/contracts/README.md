@@ -66,10 +66,22 @@ El contrato 1.1.0 se verificó en el cierre del paso 5 antes y después de recon
 
 ### Contrato de referencia y procedencia
 
-- [Copia local del OpenAPI 0.3.0](car-cruds-employees-0.3.0.openapi.json), importada sin cambios del proveedor. Es un contrato de **Car Cruds**, no una API nueva del gimnasio.
+- [Copia histórica del OpenAPI 0.3.0](car-cruds-employees-0.3.0.openapi.json), importada sin cambios del proveedor. Es un contrato de **Car Cruds**, no una API nueva del gimnasio.
 - [Fuente fijada al commit 9eec2773ec58357836ec90bad631b1e345805f4e](https://github.com/Gerpeirone/Car-Cruds/blob/9eec2773ec58357836ec90bad631b1e345805f4e/docs/contracts/employees-openapi.json), rama `entrega-2/cierre`.
 - [Acuerdo de integración del mismo commit](https://github.com/Gerpeirone/Car-Cruds/blob/9eec2773ec58357836ec90bad631b1e345805f4e/docs/ACUERDO-GIMNASIO.md). Las reglas económicas abiertas permanecen como pendientes.
-- La versión 0.3.0 agrega la consulta de estado; las estructuras de la lista y el POST 0.2.0 se mantienen compatibles. La copia local permite fijar la versión y preparar el test de contrato sin depender de cambios en la rama remota.
+- El cliente y las pruebas usan la [copia oficial 0.4.0](car-cruds-employees-0.4.0.openapi.json), fijada al [commit 443db7b del proveedor](https://github.com/Gerpeirone/Car-Cruds/blob/443db7b140406291081757c440316ccd286bd01f/docs/contracts/employees-openapi.json). Esta versión documenta la consulta de estado. La copia 0.3.0 anterior también incluía esa ruta, mientras que otras revisiones publicadas con etiqueta 0.3.0 carecen de ella. Confirmar el commit desplegado y las rutas habilitadas antes de la prueba conjunta.
+
+### Diferencias respecto de la copia 0.3.0
+
+| Área | Cambio en 0.4.0 |
+| --- | --- |
+| Lista activa | Conserva paginación, esquema y códigos HTTP. |
+| Estado laboral | La ruta ya existía en la copia local. El parámetro `id` ahora declara `minLength: 1`. La respuesta conserva `employeeId` y `active`. |
+| Evidencia mensual | Conserva cuerpo, recibo y reglas de repetición por referencia y versión. Las fotografías persistidas siguen siendo compatibles. |
+| Administración del proveedor | Retira las rutas `/v1/candidates` y `/v1/candidates/{id}` y sus tres esquemas. Documenta HTTP 400 para GET y DELETE de `/v1/employees/{id}`. |
+| Documentación OpenAPI | Mantiene OpenAPI 3.0.3 y agrega servidor local de referencia, ejemplos, etiquetas y metadatos de roles. |
+
+El cliente ya rechaza IDs vacíos antes de hacer la consulta.
 
 | Operación externa | Resultado y condiciones |
 |---|---|

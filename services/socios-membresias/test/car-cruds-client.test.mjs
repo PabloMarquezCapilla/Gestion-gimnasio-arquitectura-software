@@ -12,7 +12,7 @@ const { HttpCarCrudsClient, carCrudsConfigDesdeEntorno } = clientModule;
 const { SociosError } = errorsModule;
 const token = 'token-ficticio-car-cruds-solo-pruebas';
 const contract = JSON.parse(readFileSync(new URL(
-  '../../../docs/contracts/car-cruds-employees-0.3.0.openapi.json', import.meta.url,
+  '../../../docs/contracts/car-cruds-employees-0.4.0.openapi.json', import.meta.url,
 ), 'utf8'));
 const ajv = new Ajv({ strict: false, validateFormats: false });
 function responseValidator(path) {
@@ -285,7 +285,7 @@ test('Car Cruds rechaza configuración incompleta o insegura sin publicar valore
   for (const env of [
     { CAR_CRUDS_TOKEN: token },
     { CAR_CRUDS_BASE_URL: complete.CAR_CRUDS_BASE_URL },
-    ...['file:///privado', 'ftp://car-cruds.example.invalid', 'https://usuario:clave@car-cruds.example.invalid', 'https://car-cruds.example.invalid?privado=1', 'https://car-cruds.example.invalid#privado', 'no-es-una-url'].map((url) => ({ ...complete, CAR_CRUDS_BASE_URL: url })),
+    ...['http://car-cruds.example.invalid', 'file:///privado', 'ftp://car-cruds.example.invalid', 'https://usuario:clave@car-cruds.example.invalid', 'https://car-cruds.example.invalid?privado=1', 'https://car-cruds.example.invalid#privado', 'no-es-una-url'].map((url) => ({ ...complete, CAR_CRUDS_BASE_URL: url })),
     ...[token + ' otro', token + '\n', token + '\r'].map((value) => ({ ...complete, CAR_CRUDS_TOKEN: value })),
     ...['0', '-1', '1.5', 'no-numero'].map((value) => ({ ...complete, CAR_CRUDS_TIMEOUT_MS: value })),
   ]) {
@@ -296,4 +296,24 @@ test('Car Cruds rechaza configuración incompleta o insegura sin publicar valore
       return true;
     });
   }
+});
+
+test('el contrato 0.4.0 y el cliente rechazan un ID de estado vacío', async (t) => {
+  assert.equal(contract.info.version, '0.4.0');
+  const status = contract.paths['/v1/employees/{id}/status'];
+  const id = status.parameters.find(parameter => parameter.in === 'path' && parameter.name === 'id');
+  const validateId = ajv.compile(id.schema);
+  assert.equal(validateId(''), false);
+  assert.equal(validateId(employee.employeeId), true);
+
+  const { client, requests } = await fixture(t, (_request, response) => {
+    json(response, { employeeId: employee.employeeId, active: false });
+  });
+  await assert.rejects(client.consultarEstado(''));
+  assert.equal(requests.length, 0);
+  assert.deepEqual(await client.consultarEstado(employee.employeeId), {
+    employeeId: employee.employeeId,
+    active: false,
+  });
+  assert.equal(requests.length, 1);
 });
