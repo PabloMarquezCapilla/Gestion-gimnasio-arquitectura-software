@@ -1,6 +1,6 @@
 # Arquitectura del sistema
 
-**Estado documental al 10/11/2026.** El gimnasio está desplegado en Azure y el recorrido principal con FAV está verificado en ambos sentidos. El gateway valida JWT y limita tráfico (ADR-025), y la observabilidad usa Prometheus, Grafana y alertas (D11). La búsqueda, la administración de clases y la suspensión mediante eventos se verificaron localmente. Car Cruds dispone de lecturas, vinculación y envío mensual manual con persistencia e historial, con conexión operativa y prueba conjunta pendientes.
+**Estado documental al 10/11/2026.** El gimnasio está desplegado en Azure y el recorrido principal con FAV está verificado en ambos sentidos. El gateway valida JWT y limita tráfico (ADR-025), y la observabilidad usa Prometheus, Grafana y alertas (D11). La búsqueda, la administración de clases y la suspensión mediante eventos se verificaron localmente. Car Cruds dispone de lecturas, vinculación y envío mensual manual con persistencia e historial. El equipo confirmó la conexión con Car Cruds desde Azure.
 
 **Enunciado:** §3, página 4; §4.1, páginas 5–6; §5, páginas 6–7; §6.2–6.3, página 8. Los patrones internos y el balanceo corresponden a §2.1 y §2.3, página 2.
 
@@ -8,10 +8,10 @@
 
 | Servicio | Responsabilidad y propiedad | Implementación actual |
 |---|---|---|
-| **Socios y Membresías** | Socios, planes, membresías, pagos, comprobantes, referencias externas, solicitudes, vínculos Car Cruds, auditoría y registro de fotografías/envíos. | Capas; JWT, altas, habilitación, lecturas/vinculación/envío manual Car Cruds para ADMIN y POST anterior. PostgreSQL: `socios`, `membresias`, `solicitudes_membresia`, `empleados_externos`, `altas_empleados_idempotencia`, `car_cruds_vinculos`, `car_cruds_vinculos_historial`, `car_cruds_evidencias_series` y `car_cruds_evidencias`. Planes, solicitudes y pagos manuales con comprobantes transaccionales (ADR-021); conexión externa conjunta pendiente. |
+| **Socios y Membresías** | Socios, planes, membresías, pagos, comprobantes, referencias externas, solicitudes, vínculos Car Cruds, auditoría y registro de fotografías/envíos. | Capas; JWT, altas, habilitación, lecturas/vinculación/envío manual Car Cruds para ADMIN y POST anterior. PostgreSQL: `socios`, `membresias`, `solicitudes_membresia`, `empleados_externos`, `altas_empleados_idempotencia`, `car_cruds_vinculos`, `car_cruds_vinculos_historial`, `car_cruds_evidencias_series` y `car_cruds_evidencias`. Planes, solicitudes y pagos manuales con comprobantes transaccionales (ADR-021); conexión con Car Cruds confirmada por el equipo en Azure. |
 | **Clases y Reservas** | Clases, capacidad, reservas, espera, operaciones administrativas e índice de búsqueda derivado. | Hexagonal. Publicación/edición ADMIN con sedes de Accesos, versiones y reintentos durables. Reservas/FIFO, retiro voluntario y suspensión mediante Inbox. Búsqueda FTS en API y portal. PostgreSQL con `clases`, `clases_operaciones`, `reservas`, `lista_espera` e índice GIN. Reconstrucción, recorrido propio y retiro verificados localmente. |
 | **Accesos y Ocupación** | Sedes, intentos y movimientos de acceso, presencias y ocupación/caché derivadas. | Capas; recepción ADMIN, ingresos/egresos, historial y ocupación con transacciones MongoDB. Cache-aside Redis sobre ocupación, invalidación y TTL; ver ADR-019 y ADR-020. |
-| **Tienda** | Consultar catálogo/disponibilidad de FAV y administrar el stock físico de una única tienda del gimnasio: reposiciones, ventas e idempotencia. FAV conserva su catálogo y stock de distribuidora. | Capas; API FAV con clave técnica, consulta/ventas ADMIN con JWT y panel. PostgreSQL 17, base `tienda`: `tienda_stock`, `tienda_reposiciones`, `tienda_ventas`, `tienda_operaciones`. Además consume el catálogo de FAV 1.2.0 (cliente con circuit breaker y caché) y registra compras de socios en `tienda_compras`/`tienda_compra_items` (ADR-023/024). Falta la conexión conjunta con FAV. |
+| **Tienda** | Consultar catálogo/disponibilidad de FAV y administrar el stock físico de una única tienda del gimnasio: reposiciones, ventas e idempotencia. FAV conserva su catálogo y stock de distribuidora. | Capas; API FAV con clave técnica, consulta/ventas ADMIN con JWT y panel. PostgreSQL 17, base `tienda`: `tienda_stock`, `tienda_reposiciones`, `tienda_ventas`, `tienda_operaciones`. Además consume el catálogo de FAV 1.2.0 (cliente con circuit breaker y caché) y registra compras de socios en `tienda_compras`/`tienda_compra_items` (ADR-023/024). Recorrido principal con FAV verificado en Azure. |
 
 Socios, Clases y Tienda usan bases y usuarios PostgreSQL separados en una instancia local compartida; no hay acceso de un servicio a tablas ajenas. MongoDB tiene un replica set de un solo nodo, sin redundancia. El diseño de motores y restricciones se justifica en [D3](adr/ADR-003-persistencia.md); los límites vigentes, en [D1](adr/ADR-022-tienda-y-consignaciones-fav.md). El inicializador incorpora base y usuario de Tienda sin recrear volúmenes ni rotar credenciales existentes.
 
@@ -72,7 +72,7 @@ Las llamadas parten directamente del backend con Bearer de aplicación `gym`. El
 
 Car Cruds es propietario de empleados, estado laboral e informe receptor. El gimnasio conserva socios/membresías, vínculos, auditoría y fotografías/envíos. Accesos registra ingresos efectivos. Socios no lee sus colecciones: consulta `GET /internal/v1/accesos/uso` con `X-Service-Key` (2 s, un reintento) para `used`. `costMinor` y `spendingMinor` salen de planes y pagos confirmados propios. Lo que no responde o no alcanza se informa como desconocido (`null`). La fuente actual comprueba afiliación positiva al observar el mes actual y conserva pruebas positivas anteriores del mismo socio/mes; no inventa negativos. Consultar/vincular no habilita una membresía, y una baja laboral no la cancela automáticamente.
 
-El [contrato externo 0.4.0 y el perfil mensual](contracts/README.md#integracion-con-car-cruds) y [D8 vigente](adr/ADR-018-integracion-car-cruds.md) documentan el diseño y las rutas propias. Se verificaron lecturas/envíos con HTTP controlado, persistencia/recuperación con PostgreSQL real y pantalla con datos ficticios; faltan URL/token y prueba conjunta. La referencia 0.4.0 proviene del repositorio oficial; la versión desplegada y los permisos efectivos del token siguen pendientes de confirmación. El POST receptor pertenece a Car Cruds: las verificaciones locales todavía no acreditan la conexión operativa entre grupos de §4.1.
+El [contrato externo 0.4.0 y el perfil mensual](contracts/README.md#integracion-con-car-cruds) y [D8 vigente](adr/ADR-018-integracion-car-cruds.md) documentan el diseño y las rutas propias. Se verificaron lecturas/envíos con HTTP controlado, persistencia/recuperación con PostgreSQL real y pantalla con datos ficticios. El equipo confirmó la conexión desde Azure con la URL de Car Cruds y su token de aplicación configurados en Socios. El [registro operativo](contracts/README.md#estado-de-la-conexión-en-azure) distingue esa confirmación de los ensayos automáticos de fallas y recuperación. El POST receptor pertenece a Car Cruds.
 
 **Implementación anterior conservada:** `POST /api/v1/integraciones/empleados`, contrato propio **1.0.1**, sigue disponible localmente con su mock. Usa `X-API-Key`, `Idempotency-Key` y una transacción para socio, solicitud pendiente, referencia y respuesta original. No realiza el nuevo flujo. [ADR-014 reemplazado en diseño](adr/ADR-014-contrato-empleados.md).
 
@@ -118,7 +118,7 @@ El equipo confirmó además stock local en una única tienda: FAV consulta dispo
 
 La API de FAV y los movimientos locales están implementados con PostgreSQL 17 propio. La transacción bloquea clave/referencia y stock, guarda movimiento y resultado juntos y permite recuperar el recibo original tras reintento o reinicio. Una venta ADMIN usa su propia clave por actor y no admite stock negativo. El panel conserva una venta incierta en sessionStorage sin JWT, protege el cambio de administrador y no elimina otra operación local al recibir una respuesta tardía. No hay llamadas externas dentro de bloqueos SQL.
 
-[ADR-022](adr/ADR-022-tienda-y-consignaciones-fav.md) conserva el cambio respecto del límite anterior y [EVIDENCIA-TIENDA](EVIDENCIA-TIENDA.md) documenta los ensayos locales. Publicación, aceptación de FAV y comunicación conjunta siguen pendientes; Car Cruds mantiene su capacidad independiente.
+[ADR-022](adr/ADR-022-tienda-y-consignaciones-fav.md) conserva el cambio respecto del límite anterior y [EVIDENCIA-TIENDA](EVIDENCIA-TIENDA.md#prueba-conjunta-en-azure-del-10112026) documenta los ensayos locales y el recorrido principal con FAV verificado en Azure. Car Cruds mantiene su capacidad independiente.
 
 ### Mensajería de suspensiones
 
@@ -142,16 +142,16 @@ flowchart LR
     admin["👤 Administrador<br/>Gestiona socios, membresías,<br/>pagos, comprobantes y clases"]
     recepcion["👤 Personal de Recepción<br/>Valida ingresos, registra<br/>egresos y consulta ocupación"]
     consumidor["Car Cruds<br/>Publica empleados y estado laboral<br/>Recibe información de membresías"]
-    proveedor["FAV: catálogo y disponibilidad de distribuidora<br/>Consume stock/reposiciones de la tienda<br/>API local implementada; conexión pendiente"]
+    proveedor["FAV: catálogo y disponibilidad de distribuidora<br/>Consume stock/reposiciones de la tienda<br/>Recorrido principal verificado en Azure"]
 
     sistema["🏋️ Sistema Integral de Gestión de Gimnasio<br/>(Plataforma de Microservicios)"]
 
     socio -->|Web UI| sistema
     admin -->|Web UI| sistema
     recepcion -->|Web UI| sistema
-    sistema -->|Socios: GET empleados/estado · cliente implementado<br/>Conexión conjunta pendiente · Bearer gym| consumidor
-    sistema -->|POST de fotografía mensual · Bearer gym<br/>Envío manual implementado; conexión pendiente| consumidor
-    sistema -.->|Tienda: catálogo y precios<br/>Lecturas autenticadas verificadas| proveedor
+    sistema -->|Socios: GET empleados/estado<br/>Bearer gym| consumidor
+    sistema -->|POST de fotografía mensual · Bearer gym<br/>Preparación y envío manual por ADMIN| consumidor
+    sistema -->|Tienda: catálogo y precios<br/>Lecturas autenticadas verificadas| proveedor
     proveedor -->|Consulta stock local y registra reposiciones<br/>API publicada en Azure| sistema
 ```
 
@@ -183,14 +183,14 @@ flowchart TB
         rabbitmq -->|Consumo · Inbox y cancelación atómicos| clases
     end
     carcruds["Car Cruds · Empleados<br/>OpenAPI 0.4.0 de referencia<br/>Empleados, estado e informe receptor"]
-    socios -->|GET empleados/estado · Bearer gym<br/>Cliente implementado; conexión por coordinar| carcruds
-    socios -->|POST evidencia mensual · Bearer gym<br/>Envío manual implementado; conexión pendiente| carcruds
+    socios -->|GET empleados/estado · Bearer gym| carcruds
+    socios -->|POST evidencia mensual · Bearer gym<br/>Preparación y envío manual por ADMIN| carcruds
     distribuidora["FAV · catálogo y disponibilidad de distribuidora<br/>Consumidor de stock/reposiciones del gimnasio"]
-    tienda -.->|Consulta externa prevista<br/>Contrato y conexión por acordar| distribuidora
+    tienda -->|GET catálogo y disponibilidad · X-API-Key<br/>OpenAPI 1.2.0| distribuidora
     distribuidora -->|GET stock · POST reposiciones · X-API-Key<br/>POST con Idempotency-Key| gateway
 ```
 
-Las líneas discontinuas indican partes previstas. El cliente de lectura de Car Cruds se verificó contra HTTP controlado y su prueba conjunta sigue pendiente. El entorno local utiliza HTTP y el despliegue de Azure ofrece HTTPS.
+Las comunicaciones externas están implementadas. El recorrido principal con FAV está verificado y el equipo confirmó la conexión con Car Cruds. El entorno local utiliza HTTP y el despliegue de Azure ofrece HTTPS.
 
 ## Diagrama de secuencia del flujo principal
 
@@ -231,11 +231,11 @@ sequenceDiagram
 
 ## Limitaciones conocidas y deuda técnica aceptada
 
-- **Dominio pendiente.** Políticas para reactivación, superposición, acumulación/prorrateo y credenciales de empleados. Publicación/edición de clases implementadas con las reglas confirmadas. Planes, solicitudes, pagos/comprobantes y nuevos períodos explícitos no superpuestos están implementados (ADR-021). Accesos ya implementa movimientos, ocupación y caché. El consumo desde Car Cruds queda pendiente.
+- **Dominio pendiente.** Políticas para reactivación, superposición, acumulación/prorrateo y credenciales de empleados. Publicación/edición de clases implementadas con las reglas confirmadas. Planes, solicitudes, pagos/comprobantes y nuevos períodos explícitos no superpuestos están implementados (ADR-021). Accesos ya implementa movimientos, ocupación y caché.
 - **Integración externa:**
-  - **Car Cruds:** contrato fijado; lecturas, vínculo y envío durable probados localmente. El informe ya completa `used` (vía Accesos), `costMinor` y `spendingMinor`. Falta la prueba conjunta con conexión operativa.
+  - **Car Cruds:** contrato 0.4.0 fijado y conexión desde Azure confirmada por el equipo. Lecturas, vínculo y envío durable cuentan con pruebas automáticas. El informe completa `used` (vía Accesos), `costMinor` y `spendingMinor` según los hechos disponibles. Meses parciales y fracciones de centavo conservan `null` hasta acordar su imputación.
   - **FAV:** Tienda consume su catálogo 1.2.0 con circuit breaker y caché degradada, y los socios compran desde el portal ([ADR-023](adr/ADR-023-compra-de-socios-en-tienda.md)). No hay pasarela de pago, cancelación ni devolución: la compra se paga y retira en el mostrador. La caché y el circuito son por instancia.
-  - La publicación accesible, la aceptación y las pruebas entre grupos siguen pendientes (§4.1).
+  - El gimnasio está publicado por HTTPS. La guía de contratos registra el alcance de las verificaciones entre grupos (§4.1).
 - **Búsqueda y caché.** Paso 5 verificado localmente con API, portal, publicación/edición, filtros, páginas y orden. Se compararon consultas durante una reconstrucción real de GIN con dos instancias y se verificó el recorrido por NGINX. El mantenimiento local está documentado en D6. Redis de ocupación conserva su implementación y mediciones. [Evidencia de búsqueda](EVIDENCIA-BUSQUEDA.md).
 - **Mensajería.** Suspensión, Outbox/RabbitMQ/Inbox, cancelación y DLQ implementados. Consistencia eventual hasta consumo, broker único y revisión manual de DLQ. Reactivación requiere ampliar evento y proyección.
 - **Disponibilidad:** un gateway, una instancia PostgreSQL y MongoDB de un nodo. Dos réplicas HTTP no eliminan esos puntos de falla ni los errores durante detección. No hay despliegue multizona. El circuit breaker cubre solo la dependencia externa de FAV ([ADR-024](adr/ADR-024-circuit-breaker-fav.md)); no hay límite de concurrencia.
@@ -252,7 +252,7 @@ Estas limitaciones mantienen visibles los requisitos generales y de la presentac
 |---|---|---|---|
 | **D1 anterior** | Límites de los tres servicios originales | Reemplazado por ADR-015; conservado como antecedente | [ADR-001](adr/ADR-001-limites-de-servicios.md) |
 | **D1 anterior** | Tienda de consulta sin stock local | Reemplazado por ADR-022; conservado como antecedente | [ADR-015](adr/ADR-015-limites-con-tienda.md) |
-| **D1 vigente** | Tienda con stock local y capacidad para FAV | Stock, reposiciones y ventas implementados con PostgreSQL propio; conexión externa pendiente | [ADR-022](adr/ADR-022-tienda-y-consignaciones-fav.md) |
+| **D1 vigente** | Tienda con stock local y capacidad para FAV | Stock, reposiciones y ventas con PostgreSQL propio; recorrido principal con FAV verificado en Azure | [ADR-022](adr/ADR-022-tienda-y-consignaciones-fav.md) |
 | **D2** | Arquitectura interna de los servicios | Hexagonal y Capas concretadas en Clases/Socios | [ADR-002](adr/ADR-002-arquitectura-interna-de-servicios.md) |
 | **D3** | Persistencia relacional y documental | PostgreSQL propio en Socios/Clases/Tienda; MongoDB en Accesos; movimientos de Tienda transaccionales | [ADR-003](adr/ADR-003-persistencia.md) |
 | **D4 anterior** | Consistencia y concurrencia | Reemplazada por ADR-017; antecedente | [ADR-004](adr/ADR-004-consistencia-y-concurrencia.md) |
@@ -262,8 +262,8 @@ Estas limitaciones mantienen visibles los requisitos generales y de la presentac
 | **D7** | Caché | Redis implementado y medido; ADR-020 concreta ADR-007 | [ADR-007](adr/ADR-007-cache.md) |
 | **D8 inicial** | Consulta de clases | Reemplazado; contrato y pruebas conservados | [ADR-008](adr/ADR-008-contrato-propio.md) |
 | **D8 anterior** | Recepción de empleados y solicitud pendiente | Reemplazado en diseño; contrato 1.0.1 y POST local conservados | [ADR-014](adr/ADR-014-contrato-empleados.md) |
-| **D8 vigente** | Información mensual para Car Cruds | Lecturas, vínculo y envío manual verificados localmente; conexión conjunta pendiente | [ADR-018](adr/ADR-018-integracion-car-cruds.md) |
-| **D8 adicional** | Stock y reposiciones para FAV | Contrato 1.0.0 y backend local verificados; publicación/conexión pendientes; no reemplaza Car Cruds | [ADR-022](adr/ADR-022-tienda-y-consignaciones-fav.md) |
+| **D8 vigente** | Información mensual para Car Cruds | Lecturas, vínculo y envío manual implementados; conexión desde Azure confirmada por el equipo | [ADR-018](adr/ADR-018-integracion-car-cruds.md) |
+| **D8 adicional** | Stock y reposiciones para FAV | Contrato propio 1.0.0 publicado por HTTPS; reposiciones de FAV confirmadas por el equipo en Azure | [ADR-022](adr/ADR-022-tienda-y-consignaciones-fav.md) |
 | **D9** | Consulta de catálogo y disponibilidad de FAV | Cliente 1.2.0 implementado; disponibilidad online en el verificador; lecturas autenticadas verificadas | [ADR-009](adr/ADR-009-consumo-del-proveedor.md) |
 | **D10** | Resiliencia | Implementación parcial y pendientes identificados | [ADR-010](adr/ADR-010-resiliencia.md) |
 | **D11** | Observabilidad (Logs, Trazas y Métricas) | 1ª versión en E2 | [ADR-011](adr/ADR-011-observabilidad.md) |

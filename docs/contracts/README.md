@@ -2,9 +2,9 @@
 
 **API interna de recepción, 30/10/2026:** [OpenAPI Accesos 1.0.0](openapi-accesos-v1.yaml), [ADR-019](../adr/ADR-019-accesos-mongodb-recepcion.md) y [evidencia](../EVIDENCIA-ACCESOS.md). Requiere JWT ADMIN, pasa por el gateway y no reemplaza ningún contrato externo. POST con Idempotency-Key; consultar/registrar ocupación e historial no concede permisos a SOCIO.
 
-**Estado de Car Cruds:** lecturas, vinculación administrativa y envío manual de fotografías implementados y verificados localmente. URL/token operativos y prueba conjunta pendientes. El POST anterior del gimnasio continúa disponible durante la transición. El contrato adicional de FAV se describe por separado más abajo.
+**Estado de Car Cruds:** lecturas, vinculación administrativa y envío manual de fotografías implementados. El equipo confirmó la conexión desde Azure, con URL y token configurados. El [registro operativo](#estado-de-la-conexión-en-azure) reúne el estado de verificación. El POST anterior del gimnasio conserva su contrato y documentación histórica.
 
-El inicio, los usuarios de prueba y la consulta de bases se mantienen en el [README principal](../../README.md). Esta guía reúne contratos, reglas de intercambio y estados verificables; no registra una conexión externa que todavía no se probó.
+El inicio, los usuarios de prueba y la consulta de bases se mantienen en el [README principal](../../README.md). Esta guía reúne contratos, reglas de intercambio y resultados de verificación de cada integración.
 
 **Enunciado:** §3, página 4 (documentación); §4.1, páginas 5–6 (contrato, integración y pruebas); §5 D8/D9 e historia de decisiones, página 7; §6.3, página 8 (actualizar D8 si cambia el contrato).
 
@@ -13,12 +13,12 @@ El inicio, los usuarios de prueba y la consulta de bases se mantienen en el [REA
 El acuerdo confirmado el 06/11/2026 incorpora ambos sentidos: Tienda consumirá el catálogo/disponibilidad de FAV y ofrece consulta del stock del gimnasio y recepción de reposiciones. El stock físico local pertenece a Tienda, para una única tienda; ADMIN registra ventas sin saldo negativo. Este contrato adicional no reemplaza Car Cruds.
 
 - [OpenAPI propio FAV 1.0.0](openapi-fav-v1.yaml): rutas, modelos, credenciales, idempotencia y códigos HTTP.
-- [Guía para FAV](fav-tienda.md): reglas, ejemplos de Postman, reintentos, errores y coordinación pendiente.
+- [Guía para FAV](fav-tienda.md): reglas, ejemplos de Postman, reintentos, errores y conexión en Azure.
 - [ADR-022](../adr/ADR-022-tienda-y-consignaciones-fav.md): responsabilidad de stock propio y persistencia PostgreSQL con usuario/base exclusivos.
 
-**Estado:** consulta de stock, reposiciones y ventas administrativas implementadas y verificadas localmente. La [guía](fav-tienda.md) incluye la API interna de ventas, uso y errores; [EVIDENCIA-TIENDA](../EVIDENCIA-TIENDA.md) registra pruebas con PostgreSQL, navegador y NGINX.
+**Estado:** consulta de stock, reposiciones y ventas administrativas implementadas. La [guía](fav-tienda.md) incluye la API interna de ventas, uso y errores; [EVIDENCIA-TIENDA](../EVIDENCIA-TIENDA.md) registra pruebas con PostgreSQL, navegador y NGINX, además del recorrido principal con FAV verificado en Azure.
 
-En sentido inverso, Tienda consume el catálogo de FAV (contrato 1.1.0 fijado) y lo usa en la compra de socios ([ADR-023](../adr/ADR-023-compra-de-socios-en-tienda.md)). Faltan aceptación de FAV, publicación accesible, entrega privada de credenciales y prueba conjunta.
+En sentido inverso, Tienda consume el catálogo de FAV y lo usa en la compra de socios ([ADR-023](../adr/ADR-023-compra-de-socios-en-tienda.md)). La revisión del contrato externo 1.2.0 confirmó compatibilidad con el cliente existente. El gimnasio está publicado por HTTPS y el recorrido de catálogo, reposición y compra está verificado. [Evidencia conjunta](../EVIDENCIA-TIENDA.md#prueba-conjunta-en-azure-del-10112026).
 
 ## Suspensiones y evento interno
 
@@ -69,7 +69,7 @@ El contrato 1.1.0 se verificó en el cierre del paso 5 antes y después de recon
 - [Copia histórica del OpenAPI 0.3.0](car-cruds-employees-0.3.0.openapi.json), importada sin cambios del proveedor. Es un contrato de **Car Cruds**, no una API nueva del gimnasio.
 - [Fuente fijada al commit 9eec2773ec58357836ec90bad631b1e345805f4e](https://github.com/Gerpeirone/Car-Cruds/blob/9eec2773ec58357836ec90bad631b1e345805f4e/docs/contracts/employees-openapi.json), rama `entrega-2/cierre`.
 - [Acuerdo de integración del mismo commit](https://github.com/Gerpeirone/Car-Cruds/blob/9eec2773ec58357836ec90bad631b1e345805f4e/docs/ACUERDO-GIMNASIO.md). Las reglas económicas abiertas permanecen como pendientes.
-- El cliente y las pruebas usan la [copia oficial 0.4.0](car-cruds-employees-0.4.0.openapi.json), fijada al [commit 443db7b del proveedor](https://github.com/Gerpeirone/Car-Cruds/blob/443db7b140406291081757c440316ccd286bd01f/docs/contracts/employees-openapi.json). Esta versión documenta la consulta de estado. La copia 0.3.0 anterior también incluía esa ruta, mientras que otras revisiones publicadas con etiqueta 0.3.0 carecen de ella. Confirmar el commit desplegado y las rutas habilitadas antes de la prueba conjunta.
+- El cliente y las pruebas usan la [copia oficial 0.4.0](car-cruds-employees-0.4.0.openapi.json), fijada al [commit 443db7b del proveedor](https://github.com/Gerpeirone/Car-Cruds/blob/443db7b140406291081757c440316ccd286bd01f/docs/contracts/employees-openapi.json). Esta versión documenta la consulta de estado. La copia 0.3.0 anterior también incluía esa ruta, mientras que otras revisiones publicadas con etiqueta 0.3.0 carecen de ella. Ante cambios del proveedor, comprobar la compatibilidad del contrato desplegado.
 
 ### Diferencias respecto de la copia 0.3.0
 
@@ -108,13 +108,21 @@ Configurar estas variables opcionales en el entorno de **Socios**; Compose las t
 | `CAR_CRUDS_TOKEN` | Token de aplicación otorgado por ellos para el rol gym; no incluir el prefijo Bearer ni espacios. El inicio no lo genera. |
 | `CAR_CRUDS_TIMEOUT_MS` | Presupuesto total por consulta, 3000 ms por defecto; entero entre 1 y 30000 ms. Es una política de nuestro cliente, no un SLA bilateral. |
 
-URL/token vacíos mantienen `503 CAR_CRUDS_NO_CONFIGURADO` sin impedir el portal. Configurar solo uno o proporcionar un valor inválido hace fallar el inicio de Socios antes de inicializar la base. No se completan credenciales ni URL ficticias. Con la URL/token reales se recreará Socios mediante el inicio habitual; no se modifica el origen del POST anterior.
+URL/token vacíos mantienen `503 CAR_CRUDS_NO_CONFIGURADO` sin impedir el portal. Configurar solo uno o proporcionar un valor inválido hace fallar el inicio de Socios antes de inicializar la base. Después de modificar estas variables en `.env`, recrear Socios según la [guía de despliegue](../DEPLOY.md#prueba-conjunta-con-car-cruds).
 
 Las lecturas permiten **un reintento máximo**, solo ante red o HTTP 502/503/504, con espera aleatoria de 75–124 ms dentro del presupuesto total. Este cubre conexión, cuerpo y espera; un primer intento que consume todo el tiempo no deja margen para repetir. Se rechazan redirecciones, JSON/Content-Type inválidos, cuerpos mayores a 1 MiB, esquemas incompatibles, IDs duplicados/diferentes, páginas incoherentes y enteros inseguros. Los nombres de hasta 150 caracteres y los IDs opacos de la lectura se conservan, sin recortarlos a las restricciones del alta antigua.
 
 Una credencial externa rechazada produce `502 CAR_CRUDS_CREDENCIAL_RECHAZADA`, no 401 del gimnasio. Otros códigos propios son `CAR_CRUDS_EMPLEADO_NO_ENCONTRADO` (404), `CAR_CRUDS_SOLICITUD_RECHAZADA` y `CAR_CRUDS_RESPUESTA_INVALIDA` (502), `CAR_CRUDS_NO_DISPONIBLE` (503) y `CAR_CRUDS_TIEMPO_AGOTADO` (504). No se devuelve el texto privado del proveedor ni se cambia una membresía por esos resultados.
 
-Para verificar: `npm run test:car-cruds` comprueba lecturas, permisos, vinculación, envío y respuesta perdida con dependencias controladas; `npm run test:postgres` verifica persistencia, concurrencia, recuperación y rollback con una base efímera. No requieren URL/token reales ni llaman al otro grupo. La conexión al servicio ejecutándose en Car Cruds continúa pendiente de prueba conjunta.
+Para verificar: `npm run test:car-cruds` comprueba lecturas, permisos, vinculación, envío y respuesta perdida con dependencias controladas; `npm run test:postgres` verifica persistencia, concurrencia, recuperación y rollback con una base efímera.
+
+### Estado de la conexión en Azure
+
+El equipo confirmó la conexión con Car Cruds desde el gimnasio desplegado en Azure. Socios utiliza `CAR_CRUDS_BASE_URL=https://57-156-56-201.sslip.io` y el token privado de aplicación con rol `gym`. La versión del gimnasio desplegada es `49d2992`, con contrato de referencia 0.4.0.
+
+El flujo disponible comprende consulta de empleados/estado, vínculo manual por ADMIN y preparación, revisión y envío de la fotografía mensual. La confirmación operativa fue comunicada por el equipo. Las pruebas automáticas cubren además repeticiones, conflictos y recuperación con dependencias controladas. Estos ensayos tienen su procedimiento reproducible en la [guía de despliegue](../DEPLOY.md#prueba-conjunta-con-car-cruds). Los meses parciales y las fracciones de centavo conservan la política de `null` hasta acordar su imputación.
+
+En la revisión documental se volvió a ejecutar `npm run test:car-cruds`. La compilación de Socios y las **102 pruebas** aprobaron, con cero fallos.
 
 ### Vinculación y membresía
 

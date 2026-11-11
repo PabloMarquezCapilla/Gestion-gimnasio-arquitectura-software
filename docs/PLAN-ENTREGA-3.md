@@ -1,6 +1,6 @@
 # Plan de cierre de entrega 3
 
-**Estado.** 10/11/2026. El gimnasio está desplegado por HTTPS en Azure. Se verificó el recorrido principal con FAV en ambos sentidos. Quedan pendientes las políticas administrativas abiertas y la conexión y prueba conjunta con Car Cruds.
+**Estado.** 10/11/2026. El gimnasio está desplegado por HTTPS en Azure. Se verificó el recorrido principal con FAV en ambos sentidos y el equipo confirmó la conexión con Car Cruds. Las políticas administrativas y económicas abiertas se detallan en los pasos 6 y 7.
 **Referencia:** presentación grupal, páginas 8–9 del enunciado. La defensa individual de la página 9 tiene verificaciones adicionales, identificadas abajo.
 
 **Correcciones verificadas el 10/11/2026.** Fin de mes con regla confirmada, duración contractual durable para Car Cruds y costo desconocido ante datos históricos incompletos o fracciones. El descubrimiento de pruebas excluye el lanzador de carga. Balanceo genera su credencial de Grafana y reconoce sus volúmenes al limpiar. Aprobaron 278 pruebas de regresión/cobertura, 21 de PostgreSQL y el ensayo de balanceo con limpieza. La compilación frontend aprobó 41 módulos. Se mantienen los cuatro 504 transitorios durante detección de una réplica caída. [Detalle y límites](EVIDENCIA-MEMBRESIAS.md#correcciones-verificadas-el-10112026).
@@ -71,7 +71,7 @@ Se reutilizan Clases y Reservas, su arquitectura Hexagonal, PostgreSQL FTS/GIN y
 
 ### Continuación después del paso 5
 
-El retiro de espera y el recorrido propio del paso 6 están verificados. Continúan las políticas administrativas pendientes y la conexión real con Car Cruds. Los pasos 8 y 9 registran la verificación de observabilidad y el despliegue.
+El retiro de espera y el recorrido propio del paso 6 están verificados. Continúan las políticas administrativas pendientes. La conexión real con Car Cruds fue confirmada por el equipo. Los pasos 8 y 9 registran la verificación de observabilidad y el despliegue.
 
 ## 6. Cierre del recorrido del socio — retiro verificado localmente; políticas administrativas pendientes
 
@@ -81,19 +81,19 @@ El retiro de espera y el recorrido propio del paso 6 están verificados. Contin�
 - **Cierre:** pruebas de propietario, repetición, límite temporal y carrera con promoción; recorrido web sin botones que simulen éxito.
 - **Documentación:** alcance, contrato y limitaciones. **Enunciado:** frontend completo, página 8; reglas acordadas del proyecto.
 
-## 7. Car Cruds y fuentes mensuales — fuentes conectadas; prueba conjunta pendiente
+## 7. Car Cruds y fuentes mensuales — implementado; conexión confirmada por el equipo
 
-**09/11/2026:** el informe mensual completa los tres hechos según el perfil 0.3.0 y ADR-018:
+**09/11/2026:** el informe mensual completa los tres hechos según ADR-018. El contrato vigente es 0.4.0 y conserva el cuerpo mensual del perfil anterior.
 - `used`: ingresos aceptados en Accesos, mediante el endpoint interno `GET /internal/v1/accesos/uso` con `X-Service-Key`.
 - `costMinor`: importe del único plan confirmado que cubre el mes completo, dividido por los meses contratados; un mes parcial o ambiguo queda `null`.
 - `spendingMinor`: pagos confirmados del mes hasta el corte.
 
-Si Accesos no responde, `used` queda en `null` y el informe se genera igual. El test de contrato `car-cruds-campos.test.mjs` valida el payload completo contra el OpenAPI fijado. Faltan URL y token y la prueba conjunta.
+Si Accesos no responde, `used` queda en `null` y el informe se genera igual. El test de contrato `car-cruds-campos.test.mjs` valida el payload completo contra el OpenAPI fijado. La URL y el token están configurados en el entorno de Azure y el equipo confirmó la conexión con Car Cruds. [Registro operativo](contracts/README.md#estado-de-la-conexión-en-azure).
 
-- Conservar su cliente, vínculo y envío durable independientes de FAV. Conectar los hechos comprobables de pagos e ingresos, respetando propietarios, período, corte y fotografía inmutable.
-- Acordar lo económico aún abierto antes de calcularlo; no inferir asistencia desde reservas ni convertir información desconocida en cero. Obtener URL/token por canal privado.
-- **Cierre:** prueba conjunta de lectura, vínculo, envío/repetición, conflicto, corte mensual y caída/recuperación, conservando referencia, versión y `observedAt` al reintentar.
-- **Documentación:** ADR-018 y guía de contratos; corregir textos viejos que confunden módulos implementados con hechos aún no integrados. **Enunciado:** §4.1.
+- **Implementado.** Cliente, vínculo y envío durable independientes de FAV, con fuentes de pagos e ingresos, período, corte y fotografía inmutable.
+- **Reglas económicas abiertas.** Meses parciales y fracciones de centavo conservan `null` hasta acordar su imputación.
+- **Verificación.** Conexión desde Azure confirmada por el equipo. Las pruebas automáticas cubren lectura, vínculo, envío/repetición, conflicto, corte mensual y recuperación, conservando referencia, versión y `observedAt`. El procedimiento para repetir ensayos coordinados con el proveedor está en [DEPLOY](DEPLOY.md#prueba-conjunta-con-car-cruds).
+- **Documentación.** ADR-018, guía de contratos y diagramas actualizados. Corresponde a §4.1 del enunciado.
 
 ## 8. Observabilidad y fallas — completo (09/11/2026)
 
@@ -117,7 +117,7 @@ Texto original del paso:
 - Cobertura con umbrales ([EVIDENCIA-COBERTURA](EVIDENCIA-COBERTURA.md)).
 - AsyncAPI del evento.
 
-**Pendiente.** Configurar el acceso a Car Cruds en la VM y realizar la prueba conjunta con ese grupo.
+**Car Cruds.** Acceso configurado en la VM y conexión confirmada por el equipo. El gimnasio desplegado utiliza el contrato de referencia 0.4.0. [Estado de verificación](contracts/README.md#estado-de-la-conexión-en-azure).
 
 **Hecho el 10/11/2026.** Se desplegó el gimnasio en Azure Chile Central. El portal, `/health` y el estado de Grafana devolvieron `200` por HTTPS. [URLs públicas](DEPLOY.md#4-urls-a-publicar).
 
@@ -133,4 +133,4 @@ Texto original del paso:
 
 ## Límites y dependencias
 
-No se agregan pasarela, factura fiscal, devoluciones, ajustes, stock por sede, consignaciones adicionales ni CRUD nuevos ajenos al alcance. Siguen pendientes la conexión con Car Cruds y las políticas comerciales abiertas. La persistencia de Tienda ya se acordó e implementó con PostgreSQL.
+El alcance conserva pagos manuales con comprobantes internos y una única tienda con PostgreSQL, reposiciones y ventas. Las políticas comerciales abiertas siguen identificadas en los pasos 6 y 7. Las conexiones con FAV y Car Cruds están documentadas junto con sus verificaciones.

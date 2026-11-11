@@ -27,7 +27,7 @@ Valida el acceso de los socios y registra sus ingresos y egresos desde la aplica
 Car Cruds publica empleados y su estado laboral. El gimnasio consulta esos datos y le envía información mensual de membresía, uso y pagos de los socios vinculados. Su sistema receptor construye el informe; el administrador del gimnasio conserva la gestión de socios, planes y pagos.
 
 ### Distribuidora FAV
-FAV administra su catálogo y existencias de distribuidora, provee productos a la tienda del gimnasio y consume nuestra API para consultar sus existencias locales y registrar reposiciones. La rama de integración y los datos de conexión de ambos sistemas siguen pendientes de coordinación.
+FAV administra su catálogo y existencias de distribuidora, provee productos a la tienda del gimnasio y consume nuestra API para consultar sus existencias locales y registrar reposiciones. El recorrido principal de la integración está verificado en Azure con el contrato externo 1.2.0. [Evidencia](EVIDENCIA-TIENDA.md#prueba-conjunta-en-azure-del-10112026).
 
 ## Capacidades principales
 
@@ -88,7 +88,7 @@ No se incluyen lectores, molinetes ni otros dispositivos físicos en esta versi�
 
 ### Integración: membresías para empleados
 
-El flujo indicado por el profesor para **Car Cruds** es: **consultar empleados → vincular manualmente con socios → enviar información mensual**. Pertenece a Socios y Membresías y utiliza el contrato externo `0.4.0`. Las lecturas, la vinculación administrativa y el envío manual con vista previa, historial y recuperación están implementados y verificados localmente. La conexión conjunta requiere el token del proveedor. [Guía y contrato](contracts/README.md#integracion-con-car-cruds), [D8 vigente](adr/ADR-018-integracion-car-cruds.md).
+El flujo indicado por el profesor para **Car Cruds** es: **consultar empleados → vincular manualmente con socios → enviar información mensual**. Pertenece a Socios y Membresías y utiliza el contrato externo `0.4.0`. Las lecturas, la vinculación administrativa y el envío manual con vista previa, historial y recuperación están implementados y cuentan con pruebas automáticas. El equipo confirmó la conexión con el proveedor desde Azure. [Guía y contrato](contracts/README.md#integracion-con-car-cruds), [D8 vigente](adr/ADR-018-integracion-car-cruds.md).
 
 - Car Cruds administra `employeeId`, nombre y estado laboral. Garantiza que el identificador no se reutiliza. DNI y email se completan en el gimnasio; no se vinculan personas por coincidencia de nombre ni se crea una cuenta automáticamente al consultar.
 - El administrador vincula al empleado con un socio existente o primero completa el alta administrativa y después confirma la asociación por separado. El vínculo es uno a uno dentro de Car Cruds. Puede corregirlo o quitarlo conservando socio anterior/nuevo, administrador, fecha e historial de revisiones, sin modificar la membresía. El plan y el pago siguen siendo necesarios para habilitarla.
@@ -112,7 +112,7 @@ La capacidad ofrecida se define en [OpenAPI FAV 1.0.0](contracts/openapi-fav-v1.
 
 **Estado:** stock, reposiciones y ventas administrativas implementados localmente. Las rutas compartidas de FAV usan su credencial técnica; el panel ADMIN consulta stock y registra ventas con JWT e idempotencia. Las transacciones conservan entrega, existencias y respuesta frente a repetición, concurrencia y reinicio. La evidencia y sus límites se mantienen en [EVIDENCIA-TIENDA](EVIDENCIA-TIENDA.md).
 
-El cliente externo y la prueba conjunta siguen pendientes. `GET /api/v1/tienda/productos` continúa devolviendo `503 INTEGRACION_PENDIENTE`, sin productos ficticios ni stock cero de respaldo; esto no impide consultar las existencias locales ya recibidas. La rama anterior `feature-inventario` ya no existe. En el código de `development` de FAV se encontró una consulta pública de disponibilidad; falta fijar la rama y el contrato externo que la incluya, además de URL y credenciales. [D9](adr/ADR-009-consumo-del-proveedor.md).
+El cliente externo consume catálogo y disponibilidad según el contrato de FAV 1.2.0. `GET /api/v1/tienda/productos` combina el catálogo con las existencias locales disponibles. La conexión pública y el recorrido de reposición y compra se verificaron en Azure. La configuración, el comportamiento ante fallas y las referencias del proveedor están en [D9](adr/ADR-009-consumo-del-proveedor.md) y [la evidencia de Tienda](EVIDENCIA-TIENDA.md#prueba-conjunta-en-azure-del-10112026).
 
 Los datos de prueba serán ficticios; está pendiente confirmar si esa condición continuará durante toda la evaluación.
 
@@ -175,7 +175,7 @@ La actualización transaccional del índice y la vigencia de caché se documenta
 
 ## Reglas y aceptación de la tienda FAV
 
-Estas reglas fueron confirmadas por el equipo el 06/11/2026 y están implementadas localmente en el flujo de stock, reposiciones y ventas. La prueba conjunta con FAV y el consumo de su catálogo siguen pendientes; las verificaciones y sus límites están en [EVIDENCIA-TIENDA](EVIDENCIA-TIENDA.md).
+Estas reglas fueron confirmadas por el equipo el 06/11/2026 y están implementadas en el flujo de stock, reposiciones y ventas. El consumo del catálogo y el recorrido principal con FAV están verificados en Azure. Las verificaciones y sus límites están en [EVIDENCIA-TIENDA](EVIDENCIA-TIENDA.md).
 
 | Regla | Definición |
 |---|---|

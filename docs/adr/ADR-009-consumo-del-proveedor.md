@@ -1,10 +1,10 @@
 # D9 - Consumo del proveedor
 
-**Estado:** actualizado el 09/11/2026. El consumo del catálogo de FAV (contrato 1.1.0 fijado) está implementado, integrado a la compra de socios ([ADR-023](ADR-023-compra-de-socios-en-tienda.md)) y protegido con circuit breaker y caché degradada ([ADR-024](ADR-024-circuit-breaker-fav.md)). La regla "no hay compras del socio" de abajo quedó reemplazada por ADR-023. Conexión conjunta pendiente.
+**Estado:** actualizado el 10/11/2026. El consumo del catálogo de FAV está implementado, integrado a la compra de socios ([ADR-023](ADR-023-compra-de-socios-en-tienda.md)) y protegido con circuit breaker y caché degradada ([ADR-024](ADR-024-circuit-breaker-fav.md)). La revisión del contrato 1.2.0 confirmó compatibilidad con el cliente existente. El recorrido principal con FAV está verificado en Azure. [Evidencia conjunta](../EVIDENCIA-TIENDA.md#prueba-conjunta-en-azure-del-10112026). La regla inicial que excluía compras del socio fue reemplazada por ADR-023.
 **Fecha inicial:** 12/10/2026. **Revisión:** 06/11/2026.
 **Enunciado:** §4.1, páginas 5–6; §5 D9, página 7; §6.3, página 8.
 
-## Contexto
+## Contexto inicial al 06/11/2026
 
 La integración con [FAV](https://github.com/JuanHernandez-99/Fav-del-universo) mantiene la consulta de su catálogo y disponibilidad desde Tienda. El 06/11/2026 el equipo confirmó además que FAV maneja una tienda dentro del gimnasio: Tienda guarda las existencias locales, FAV las consulta y registra reposiciones, y ADMIN registra las unidades vendidas. Es una única tienda; no hay compras del socio, devoluciones ni ajustes en esta versión. [ADR-022](ADR-022-tienda-y-consignaciones-fav.md) reemplaza el límite anterior que excluía stock local y reposición.
 
@@ -16,9 +16,9 @@ La rama `feature-inventario` revisada anteriormente ya no existe. Se inspecciona
 
 El catálogo y las existencias de la distribuidora pertenecen a FAV. Tienda es propietario del stock físico del gimnasio y de sus movimientos, guardados en su base PostgreSQL 17; no es una copia de las existencias de la distribuidora. Una consulta externa fallida representa información desconocida y no permite mostrar stock cero o un catálogo vacío como resultado válido. [D1 vigente](ADR-022-tienda-y-consignaciones-fav.md).
 
-La capacidad ofrecida en sentido contrario se documenta por separado en [OpenAPI FAV 1.0.0](../contracts/openapi-fav-v1.yaml) y [su guía](../contracts/fav-tienda.md): `GET /api/v1/consignaciones/stock` y `POST /api/v1/consignaciones/reposiciones`, con credencial del grupo e idempotencia de entregas. Esas rutas ya están implementadas y verificadas con HTTP/PostgreSQL locales; no se declara una conexión real con FAV. No sustituyen Car Cruds ni el contrato que necesitamos consumir de FAV.
+La capacidad ofrecida en sentido contrario se documenta en [OpenAPI FAV 1.0.0](../contracts/openapi-fav-v1.yaml) y [su guía](../contracts/fav-tienda.md). `GET /api/v1/consignaciones/stock` y `POST /api/v1/consignaciones/reposiciones` usan credencial del grupo e idempotencia de entregas. Están publicadas por HTTPS y el equipo confirmó reposiciones enviadas por FAV. Car Cruds conserva su integración independiente.
 
-### Parte propia implementada
+### Implementación inicial al 06/11/2026
 
 - Workspace `services/tienda`, imagen/Compose y Capas: HTTP/autenticación en `app.ts`, reglas y puerto en `stock.ts`, adaptador PostgreSQL en `stock.postgres.ts` y composición en `server.ts`.
 - API de FAV: consulta y reposición con `X-API-Key`; el POST exige `Idempotency-Key`, conserva entregas entre reinicios y rechaza reutilización incompatible de clave/referencia sin sumar stock.
@@ -27,7 +27,9 @@ La capacidad ofrecida en sentido contrario se documenta por separado en [OpenAPI
 - `/health/tienda` comprueba PostgreSQL en el inicio operativo; no comprueba al proveedor ni acredita la prueba conjunta. Hay métricas HTTP/movimientos en `/metrics/tienda` y logs correlacionados.
 - La pantalla distingue stock local, catálogo pendiente y error de comunicación; un 503 conserva la sesión y un 401 propio la invalida. [Evidencia local y límites](../EVIDENCIA-TIENDA.md).
 
-### Adaptación y resiliencia pendientes
+### Adaptación prevista al 06/11/2026
+
+Esta etapa se completó mediante el cliente de catálogo, la compra de socios y las protecciones documentadas en ADR-023/024. Los párrafos siguientes conservan la planificación inicial. El estado vigente y las verificaciones figuran al comienzo de esta decisión y en la guía para FAV.
 
 Al fijar el contrato externo que incluya disponibilidad se conectarán sus rutas, campos, filtros/paginación, validación de respuestas, traducción de errores, autenticación y test de contrato capaz de detectar incompatibilidades. Se conserva el diseño general de timeout, reintentos de lecturas seguras y degradación controlada; sus valores y mecanismos de protección deben verificarse al implementar. No se incorporan pedidos del contrato de FAV por el solo hecho de estar disponibles.
 

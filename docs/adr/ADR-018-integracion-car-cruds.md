@@ -1,6 +1,6 @@
 # D8 - Integración de membresías con Car Cruds
 
-**Estado:** lecturas, vinculación administrativa, auditoría y envío manual de fotografías implementados localmente. Desde el 09/11/2026 la fotografía completa `used` (ingresos aceptados en Accesos, por endpoint interno), `costMinor` y `spendingMinor` (planes y pagos confirmados), con las reglas de la tabla de abajo. Conexión operativa y prueba conjunta pendientes. El POST anterior sigue operativo localmente.
+**Estado:** implementado y desplegado en Azure, con conexión con Car Cruds confirmada por el equipo. Desde el 09/11/2026 la fotografía completa `used` (ingresos aceptados en Accesos, por endpoint interno), `costMinor` y `spendingMinor` (planes y pagos confirmados), con las reglas de la tabla de abajo. Lecturas, vinculación administrativa, auditoría y envío manual de fotografías disponibles. [Estado y verificación](../contracts/README.md#estado-de-la-conexión-en-azure).
 **Fecha:** 23/10/2026.
 **Reemplaza en el diseño de la integración:** [ADR-014 - Contrato de recepción de empleados](ADR-014-contrato-empleados.md). Su API, contrato y pruebas se conservan.
 **Enunciado:** §3, página 4; §4.1, páginas 5–6; §5, página 7; §6.3, página 8, actualización de D8.
@@ -11,7 +11,7 @@ El profesor confirmó el cambio de dirección de la integración: Gimnasio consu
 
 Las referencias iniciales fueron el [acuerdo con Gimnasio](https://github.com/Gerpeirone/Car-Cruds/blob/9eec2773ec58357836ec90bad631b1e345805f4e/docs/ACUERDO-GIMNASIO.md) y el [contrato de empleados 0.3.0](https://github.com/Gerpeirone/Car-Cruds/blob/9eec2773ec58357836ec90bad631b1e345805f4e/docs/contracts/employees-openapi.json), revisados en el commit `9eec2773ec58357836ec90bad631b1e345805f4e`, rama `entrega-2/cierre`, [PR #4](https://github.com/Gerpeirone/Car-Cruds/pull/4). Se conserva la [copia histórica 0.3.0](../contracts/car-cruds-employees-0.3.0.openapi.json). La [copia vigente 0.4.0](../contracts/car-cruds-employees-0.4.0.openapi.json) pertenece a Car Cruds. La [comparación de versiones](../contracts/README.md#diferencias-respecto-de-la-copia-030) documenta los cambios.
 
-§4.1 exige el acuerdo formal, la integración desde el servicio responsable y su verificación conjunta. El nuevo sentido de comunicación fue confirmado por el profesor; este registro no acredita todavía una capacidad compartida operativa ni una publicación accesible. §5 exige conservar las decisiones reemplazadas y §6.3 pide actualizar D8 cuando cambie el contrato.
+§4.1 exige el acuerdo formal, la integración desde el servicio responsable y su verificación conjunta. El nuevo sentido de comunicación fue confirmado por el profesor. El gimnasio está publicado por HTTPS en Azure y el equipo confirmó la conexión con Car Cruds. §5 exige conservar las decisiones reemplazadas y §6.3 pide actualizar D8 cuando cambie el contrato.
 
 ## Decisión
 
@@ -25,7 +25,7 @@ Las referencias iniciales fueron el [acuerdo con Gimnasio](https://github.com/Ge
 | `GET /v1/employees/{id}/status` | Lectura implementada del estado laboral. La ausencia en una página no acredita una baja. |
 | `POST /v1/employees/membership-evidence` | Implementado: entregar manualmente una fotografía guardada, completa y versionada de los datos conocidos del empleado para un período. |
 
-Las tres operaciones usan un **Bearer de aplicación con rol `gym`** otorgado por Car Cruds. Es una credencial distinta del JWT de los usuarios y de las claves existentes del gimnasio. URL y token operativos siguen pendientes; los secretos se intercambiarán fuera del repositorio.
+Las tres operaciones usan un **Bearer de aplicación con rol `gym`** otorgado por Car Cruds. Es una credencial distinta del JWT de los usuarios y de las claves existentes del gimnasio. URL y token están configurados en el entorno privado de Azure. Las credenciales se comparten por canal privado.
 
 Car Cruds es propietario de sus empleados y del reporte receptor. Gimnasio es propietario de socios, membresías y de los hechos de negocio que comunique. La información propia ofrecida se entrega al POST externo; este cambio no crea automáticamente otro endpoint público del gimnasio. Tienda mantiene su responsabilidad separada de productos y stock en [D9](ADR-009-consumo-del-proveedor.md).
 
@@ -94,7 +94,7 @@ El reintento manual lee el cuerpo original; no recalcula `observedAt` ni los hec
 
 Cambiar o quitar un vínculo conserva fotografías y recibos. Una nueva fotografía de la relación corregida requiere confirmación explícita. Una pendiente antigua puede pasar a revisión mediante esa confirmación cuando ya no haya un intento activo; su incertidumbre y cuerpo permanecen. No se reenvía con el nuevo socio ni se corrige o borra automáticamente información externa. Un lease activo debe terminar o vencer antes de esa corrección.
 
-## Estado y verificación pendientes
+## Estado y verificación
 
 El backend actual conserva `POST /api/v1/integraciones/empleados`, contrato propio **1.0.1**, su persistencia PostgreSQL, el mock separado y sus pruebas. Esa disponibilidad no acredita el nuevo flujo acordado con Car Cruds. No se eliminan ni migran datos por esta decisión documental.
 
@@ -102,13 +102,13 @@ Las rutas administrativas de lectura `GET /api/v1/integraciones/car-cruds/emplea
 
 El cliente valida contra OpenAPI 0.4.0 oficial, fijado al commit `443db7b140406291081757c440316ccd286bd01f`. HTTPS es obligatorio fuera de loopback. Si el despliegue carece de la ruta de estado, el listado puede verificarse por separado; el alta o la corrección de un vínculo se mantiene bloqueada hasta contar con verificación remota de identidad.
 
-La verificación reproducible es `npm run test:car-cruds`: HTTP efímero controlado, esquemas fijados, permisos, errores, timeout, lecturas, vinculación y envío. Incluye un receptor que almacena y pierde la respuesta: el reenvío conserva el mensaje y no duplica. `npm run test:postgres` comprueba con dos pools independientes unicidad, revisión concurrente, historial durable, cuerpo inmutable, lease/fencing y rollback de vínculo/fotografía. La pantalla utiliza cuentas y empleados ficticios para la verificación local. La URL/token reales y la prueba contra el servicio de Car Cruds siguen pendientes.
+La verificación reproducible es `npm run test:car-cruds`: HTTP efímero controlado, esquemas fijados, permisos, errores, timeout, lecturas, vinculación y envío. Incluye un receptor que almacena y pierde la respuesta: el reenvío conserva el mensaje y no duplica. `npm run test:postgres` comprueba con dos pools independientes unicidad, revisión concurrente, historial durable, cuerpo inmutable, lease/fencing y rollback de vínculo/fotografía. La pantalla utiliza cuentas y empleados ficticios para la verificación local. La conexión real fue confirmada por el equipo con URL/token configurados en Azure. [Registro operativo](../contracts/README.md#estado-de-la-conexión-en-azure).
 
 La pantalla y las rutas ADMIN permiten búsqueda de socios, consulta de vínculos/historial y confirmación/corrección/desvinculación. La consulta y el PUT de vínculo exigen los permisos actuales de la cuenta; los clientes no pueden elegir el actor. Las rutas y los cuerpos están en [la guía](../contracts/README.md#vinculación-y-membresía).
 
-La pantalla y las rutas ADMIN también permiten preparar, consultar y enviar fotografías mensuales; las rutas, estados y cuerpos están en [la guía](../contracts/README.md#preparar-y-enviar-desde-el-panel). No se agregan motores de almacenamiento ni un microservicio nuevo. Pagos e ingresos ya tienen módulos operativos; conectar sus hechos a la fotografía mensual sigue pendiente y no se simula como información conocida.
+La pantalla y las rutas ADMIN también permiten preparar, consultar y enviar fotografías mensuales; las rutas, estados y cuerpos están en [la guía](../contracts/README.md#preparar-y-enviar-desde-el-panel). Los pagos confirmados y los ingresos aceptados de Accesos alimentan la fotografía mensual. Los datos insuficientes o no disponibles producen `null`, conforme al perfil acordado.
 
-La prueba conjunta deberá cubrir consulta, vínculo, recepción de evidencia, repetición idéntica, corrección y fallas/recuperación. Car Cruds verificará su reporte con una credencial autorizada; el token `gym` no permite consultar ese reporte administrativo. También siguen pendientes URL accesible y credencial compartida.
+El procedimiento de prueba conjunta cubre consulta, vínculo y recepción de evidencia, y permite coordinar ensayos de repetición, corrección y fallas/recuperación. Car Cruds comprueba su reporte con una credencial autorizada, ya que el token `gym` permite las operaciones de integración. La confirmación de conexión del equipo se registra por separado de la cobertura automática de esos escenarios.
 
 ## Alternativas y consecuencias
 
