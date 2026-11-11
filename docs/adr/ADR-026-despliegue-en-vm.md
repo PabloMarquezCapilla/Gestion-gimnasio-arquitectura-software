@@ -1,9 +1,9 @@
 # Despliegue en la nube en una VM con Docker Compose y Caddy
 
-**Estado:** aceptada; configuración y script listos y verificados localmente. La creación de la VM la hace el equipo con su cuenta.
+**Estado:** implementada y desplegada en Azure. Portal y Grafana públicos por HTTPS; recorrido principal de FAV verificado y conexión con Car Cruds confirmada por el equipo. [URLs y procedimiento](../DEPLOY.md).
 **Fecha:** 09/11/2026.
-**Complementa:** [D13](ADR-013-capacidad-y-costos.md), con la estimación de costo de una VM de 2 vCPU y 8 GiB.
-**Enunciado:** §4.1 (capacidad en un entorno accesible) y §6.4 (capacidad propia desplegada en la nube con URL pública).
+**Complementa:** [D13](ADR-013-capacidad-y-costos.md), con la medición local de capacidad, la estimación histórica de infraestructura y el cómputo Azure confirmado por el equipo. La VM elegida es Standard B2s v2, 2 vCPU y 8 GiB, con una estimación de 84,68 USD/mes de cómputo. El total requiere disco, IP y consumo adicional.
+**Enunciado:** §4.1 (capacidad en un entorno accesible) y presentación grupal, páginas 8–9 (capacidad propia desplegada en la nube con URL pública).
 
 ## Decisión
 

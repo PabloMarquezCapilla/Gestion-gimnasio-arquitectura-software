@@ -8,7 +8,7 @@
 
 ## Contexto y decisión
 
-Una dependencia lenta o caída no debe producir reservas sin validar membresía, perder una cancelación ni alterar el orden de espera. Se conserva el diseño de tiempos acotados, reintentos de lecturas, aislamiento y degradación controlada. Circuit breaker y límites de concurrencia por dependencia siguen propuestos, sin implementación.
+Una dependencia lenta o caída no debe producir reservas sin validar membresía, perder una cancelación ni alterar el orden de espera. Se conserva el diseño de tiempos acotados, reintentos de lecturas, aislamiento y degradación controlada. FAV dispone de circuit breaker implementado. Los límites de concurrencia adicionales por dependencia siguen propuestos.
 
 ## Dependencias y comportamiento actual
 
@@ -30,7 +30,7 @@ El gateway usa conexión 3 s, lectura 10 s y presupuesto para pasar al siguiente
 
 Se evita rechazar una cancelación por indisponibilidad de Socios y se evita interpretar errores de red como pérdida de habilitación. El cupo puede quedar temporalmente sin asignar; se conserva la prioridad.
 
-La propuesta inicial contempla circuit breaker y aislamiento adicional; faltan implementación y medición de sus umbrales. Pools separados y límites de cuerpo no garantizan por sí solos ausencia de cascadas. Un fallo del gateway o de PostgreSQL aún puede interrumpir el flujo.
+El circuit breaker de FAV tiene umbrales y un ensayo de falla documentados en ADR-024 y POSTMORTEM. El aislamiento adicional por dependencia queda pendiente. Pools separados y límites de cuerpo no garantizan por sí solos ausencia de cascadas. Un fallo del gateway o de PostgreSQL aún puede interrumpir el flujo.
 
 ## Verificación y ensayo de caída
 

@@ -63,7 +63,7 @@ La réplica disponible atendió la muestra estable. El script reemplazó la dete
 
 **Ensayo:** 09/11/2026, Argentina. **Informe:** 09/11/2026.
 **Estado:** ensayo local completado con el sistema completo en Docker Compose, el mock del contrato de FAV 1.1.0, Prometheus y Grafana. No es la jornada conjunta con el FAV real: la falla se inyectó en el mock.
-**Enunciado:** §2.8 (caída provocada en POSTMORTEM), §4.2 (qué ve el usuario cuando el proveedor falla), defensa individual (simulación de caída del proveedor externo).
+**Enunciado:** §2.9 (caída provocada y POSTMORTEM), §4.1 (integración y comportamiento ante fallas del proveedor), defensa individual (simulación de caída del proveedor externo).
 
 ## Reproducción
 

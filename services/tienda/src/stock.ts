@@ -46,6 +46,13 @@ export interface CompraRegistrada {
 export interface PaginaCompras { pagina: number; tamanio: number; total: number; items: CompraRegistrada[] }
 export interface CompraDeSocio extends CompraRegistrada { socioId: string }
 export interface PaginaComprasAdmin { pagina: number; tamanio: number; total: number; totalMinor: number; items: CompraDeSocio[] }
+export interface ResumenComprasAdmin {
+  consultadoEn: string; mesActual: string;
+  hoy: { cantidad: number; importeMinor: number };
+  historico: { cantidad: number; importeMinor: number };
+  mensuales: { mes: string; importeMinor: number }[];
+  productos: { nombre: string; unidades: number }[];
+}
 export interface PrecioCompra { nombre: string; talle: string; color: string; precioMinor: number }
 
 export interface TiendaStockRepository {
@@ -57,6 +64,7 @@ export interface TiendaStockRepository {
   listarCompras(socioId: string, pagina: number, tamanio: number): Promise<PaginaCompras>;
   // Caja: compras de todos los socios, recientes primero; totalMinor suma todas, no solo la página.
   listarComprasAdmin(pagina: number, tamanio: number): Promise<PaginaComprasAdmin>;
+  resumenComprasAdmin(): Promise<ResumenComprasAdmin>;
   comprobarSalud(): Promise<void>;
 }
 
@@ -159,5 +167,9 @@ export class TiendaStockService {
 
   async comprasAdmin(pagina: number, tamanio: number): Promise<PaginaComprasAdmin> {
     return this.repository.listarComprasAdmin(pagina, tamanio);
+  }
+
+  async resumenComprasAdmin(): Promise<ResumenComprasAdmin> {
+    return this.repository.resumenComprasAdmin();
   }
 }

@@ -14,7 +14,11 @@ async function start() {
   const ttl = Number(process.env.AUTH_JWT_TTL_SECONDS ?? 3600);
   if (!url || !sociosUrl || jwtSecret.trim().length < 32 || !key.trim()
     || !Number.isSafeInteger(port) || port < 1 || port > 65535 || !Number.isSafeInteger(ttl) || ttl < 1) throw new Error('Configuración de Accesos incompleta o inválida.');
-  const sedes = JSON.parse(process.env.ACCESOS_SEDES_JSON ?? '[]') as Sede[];
+  const sedes = JSON.parse(process.env.ACCESOS_SEDES_JSON?.trim() || JSON.stringify([
+    { sedeId: 'sede-demo-01', nombre: 'Córdoba' },
+    { sedeId: 'sede-demo-02', nombre: 'San Francisco' },
+    { sedeId: 'sede-hernando', nombre: 'Hernando' },
+  ])) as Sede[];
   if (!Array.isArray(sedes) || !sedes.length || sedes.some(s => !s || !identificador(s.sedeId)
     || typeof s.nombre !== 'string' || !s.nombre.trim() || s.nombre.length > 100 || Object.keys(s).some(k => !['sedeId', 'nombre'].includes(k)))
     || new Set(sedes.map(s => s.sedeId)).size !== sedes.length) throw new Error('Configurar ACCESOS_SEDES_JSON con sedes válidas.');

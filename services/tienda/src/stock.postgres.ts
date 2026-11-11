@@ -2,7 +2,7 @@ import { createHash, randomUUID } from 'node:crypto';
 import { Pool, PoolClient } from 'pg';
 import {
   CompraDeSocio, CompraEntrada, CompraRegistrada, ItemCompra, PaginaCompras, PaginaComprasAdmin, ReposicionEntrada, ReposicionRecibida, StockItem,
-  TiendaError, TiendaStockRepository, VentaEntrada, VentaRecibida,
+  TiendaError, TiendaStockRepository, VentaEntrada, VentaRecibida, ResumenComprasAdmin,
 } from './stock';
 
 // Los IDs del contrato son opacos, sin un límite de longitud. El JSON de cada
@@ -98,6 +98,40 @@ function saldoRepresentable(value: bigint): void {
 }
 
 export class PostgresTiendaStockRepository implements TiendaStockRepository {
+  async resumenComprasAdmin(): Promise<ResumenComprasAdmin> {
+    const result = await this.pool.query<{ resumen: ResumenComprasAdmin }>(`
+      WITH corte AS (
+        SELECT statement_timestamp() AS fecha,
+          statement_timestamp() AT TIME ZONE 'America/Argentina/Buenos_Aires' AS local
+      ), compras AS (
+        SELECT total_minor, respuesta::jsonb AS respuesta,
+          created_at AT TIME ZONE 'America/Argentina/Buenos_Aires' AS fecha_local
+        FROM tienda_compras WHERE created_at <= (SELECT fecha FROM corte)
+      )
+      SELECT jsonb_build_object(
+        'consultadoEn', fecha, 'mesActual', to_char(local,'YYYY-MM'),
+        'hoy', (SELECT jsonb_build_object('cantidad',count(*),'importeMinor',COALESCE(sum(total_minor),0))
+          FROM compras WHERE fecha_local::date=corte.local::date),
+        'historico', (SELECT jsonb_build_object('cantidad',count(*),'importeMinor',COALESCE(sum(total_minor),0)) FROM compras),
+        'mensuales', COALESCE((SELECT jsonb_agg(datos ORDER BY mes) FROM (
+          SELECT to_char(fecha_local,'YYYY-MM') AS mes, sum(total_minor) AS "importeMinor"
+          FROM compras WHERE fecha_local >= date_trunc('month',corte.local)-interval '5 months' GROUP BY mes
+        ) datos),'[]'::jsonb),
+        'productos', COALESCE((SELECT jsonb_agg(datos ORDER BY unidades DESC,nombre) FROM (
+          SELECT item->>'nombre' AS nombre, sum((item->>'unidades')::bigint) AS unidades
+          FROM compras CROSS JOIN LATERAL jsonb_array_elements(respuesta->'items') item
+          GROUP BY item->>'nombre' ORDER BY unidades DESC,nombre LIMIT 8
+        ) datos),'[]'::jsonb)
+      ) AS resumen FROM corte
+    `);
+    const resumen = result.rows[0].resumen;
+    const numeros = [resumen.hoy.cantidad, resumen.hoy.importeMinor, resumen.historico.cantidad,
+      resumen.historico.importeMinor, ...resumen.mensuales.map(m => m.importeMinor), ...resumen.productos.map(p => p.unidades)];
+    if (numeros.some(n => !Number.isSafeInteger(n) || n < 0)) {
+      throw new TiendaError(422, 'RESUMEN_NO_REPRESENTABLE', 'Los totales superan el rango numérico admitido.');
+    }
+    return { ...resumen, consultadoEn: new Date(resumen.consultadoEn).toISOString() };
+  }
   constructor(private readonly pool: Pool) {}
 
   async inicializarEsquema(): Promise<void> {

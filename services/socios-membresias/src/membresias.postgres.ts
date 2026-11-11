@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { guardarSuspension } from './membresias.eventos';
 import { Pool, PoolClient } from 'pg';
-import { ComandoGestion, GestionRepository, PlanGestion, SolicitudGestion, falloGestion } from './membresias.gestion';
+import { ComandoGestion, GestionRepository, PlanGestion, SolicitudGestion, ResumenMembresias, falloGestion } from './membresias.gestion';
 
 // Migración aditiva: no altera solicitudes_membresia del contrato externo histórico.
 export const GESTION_MEMBRESIAS_DDL = `
@@ -55,6 +55,53 @@ function solicitudFila(r: Record<string, unknown>): SolicitudGestion {
 const nuevo = (prefix: string) => prefix + randomUUID();
 export class PostgresGestionMembresias implements GestionRepository {
  constructor(private pool: Pool) {}
+ async resumen(): Promise<ResumenMembresias> {
+  const result = await this.pool.query<{ resumen: ResumenMembresias }>(`
+   WITH corte AS (
+    SELECT statement_timestamp() AS fecha,
+     statement_timestamp() AT TIME ZONE 'America/Argentina/Buenos_Aires' AS local
+   ), pendientes AS (
+    SELECT s.importe_minor, s.moneda, p.pago_id
+    FROM solicitudes_planes s LEFT JOIN pagos_membresia p USING(solicitud_id)
+    WHERE s.estado='PENDIENTE'
+   ), confirmadas AS (
+    SELECT s.nombre_plan, s.moneda, s.importe_minor,
+     c.confirmado_en AT TIME ZONE 'America/Argentina/Buenos_Aires' AS fecha_local
+    FROM solicitudes_planes s JOIN pagos_membresia p USING(solicitud_id)
+    JOIN comprobantes_membresia c USING(pago_id)
+    WHERE s.estado='CONFIRMADA' AND p.estado='CONFIRMADO' AND c.confirmado_en <= (SELECT fecha FROM corte)
+   )
+   SELECT jsonb_build_object(
+    'consultadoEn', fecha, 'mesActual', to_char(local,'YYYY-MM'),
+    'pendientes', jsonb_build_object(
+     'cantidad', (SELECT count(*) FROM pendientes),
+     'conPagoRegistrado', (SELECT count(pago_id) FROM pendientes),
+     'importes', COALESCE((SELECT jsonb_agg(datos ORDER BY moneda) FROM (
+      SELECT moneda, sum(importe_minor) AS "importeMinor" FROM pendientes GROUP BY moneda
+     ) datos),'[]'::jsonb)),
+    'ingresosMensuales', COALESCE((SELECT jsonb_agg(datos ORDER BY mes, moneda) FROM (
+     SELECT to_char(fecha_local,'YYYY-MM') AS mes, moneda, sum(importe_minor) AS "importeMinor"
+     FROM confirmadas WHERE fecha_local >= date_trunc('month',corte.local)-interval '5 months'
+     GROUP BY mes,moneda
+    ) datos),'[]'::jsonb),
+    'ingresosPeriodo', COALESCE((SELECT jsonb_agg(datos ORDER BY moneda) FROM (
+     SELECT moneda, sum(importe_minor) AS "importeMinor" FROM confirmadas
+     WHERE fecha_local >= date_trunc('month',corte.local)-interval '5 months' GROUP BY moneda
+    ) datos),'[]'::jsonb),
+    'confirmadasPorPlan', COALESCE((SELECT jsonb_agg(datos ORDER BY cantidad DESC, "nombrePlan") FROM (
+     SELECT nombre_plan AS "nombrePlan", count(*) AS cantidad FROM confirmadas GROUP BY nombre_plan
+    ) datos),'[]'::jsonb)
+   ) AS resumen FROM corte
+  `);
+  const resumen = result.rows[0].resumen;
+  const numeros = [resumen.pendientes.cantidad, resumen.pendientes.conPagoRegistrado,
+   ...resumen.pendientes.importes.map(i => i.importeMinor), ...resumen.ingresosMensuales.map(i => i.importeMinor),
+   ...resumen.ingresosPeriodo.map(i => i.importeMinor), ...resumen.confirmadasPorPlan.map(p => p.cantidad)];
+  if (numeros.some(n => !Number.isSafeInteger(n) || n < 0)) {
+   throw falloGestion('RESUMEN_NO_REPRESENTABLE', 'Los totales superan el rango numérico admitido.', 422);
+  }
+  return { ...resumen, consultadoEn: new Date(resumen.consultadoEn).toISOString() };
+ }
  async planes() { return (await this.pool.query(planSelect + ' ORDER BY duracion_meses,nombre,plan_id')).rows.map(r => ({ ...r, importeMinor: Number(r.importeMinor) })) as PlanGestion[]; }
  async socios(pagina: number, tamanio: number) { return (await this.pool.query('SELECT socio_id AS "socioId",dni,nombre,email,estado FROM socios ORDER BY socio_id LIMIT $1 OFFSET $2', [tamanio, (pagina - 1) * tamanio])).rows; }
  async solicitudes(socioId: string | undefined, pagina: number, tamanio: number) {

@@ -1,14 +1,18 @@
 import { useCallback, useEffect, useState } from 'react';
 import { PageHeader } from './PageHeader';
 import {
-  apiAccesosOcupacion, apiAccesosSedes, apiBuscarClases, apiComprasCaja, apiConsultarStockTienda,
-  apiPlanesMembresia, apiSolicitudesMembresia,
+  apiAccesosOcupacion, apiAccesosSedes, apiBuscarClases, apiResumenCompras, apiConsultarStockTienda,
+  apiPlanesMembresia, apiResumenMembresias,
 } from '../services/api';
-import type { ClaseCatalogo, PlanMembresia, SolicitudMembresia } from '../services/api';
+import type { ClaseCatalogo, PlanMembresia, ResumenMembresias } from '../services/api';
 
 const card = 'rounded-xl border border-outline-variant bg-surface-container-low p-4 space-y-2';
 const link = 'text-xs font-semibold text-primary hover:underline';
 const pesos = (minor: number) => (minor / 100).toLocaleString('es-AR', { style: 'currency', currency: 'ARS' });
+const importe = (minor: number, moneda: string) => {
+  const formato = new Intl.NumberFormat('es-AR', { style: 'currency', currency: moneda });
+  return formato.format(minor / 10 ** (formato.resolvedOptions().maximumFractionDigits ?? 2));
+};
 
 // Cada bloque se carga por separado: si un servicio no responde, el resto del panel sigue disponible.
 function useDato<T>(cargar: () => Promise<T>, revision: number) {
@@ -40,15 +44,13 @@ export function PanelPrincipal({ onIr }: { onIr: (seccion: string) => void }) {
     const sedes = (await apiAccesosSedes()).items;
     return Promise.all(sedes.map(async s => ({ ...s, ocupacion: (await apiAccesosOcupacion(s.sedeId)).ocupacion })));
   }, []), revision);
-  const cobros = useDato(useCallback(async () => (await apiSolicitudesMembresia(1)).items, []), revision);
+  const cobros = useDato(useCallback(apiResumenMembresias, []), revision);
   const planes = useDato(useCallback(async () => (await apiPlanesMembresia()).items, []), revision);
   const clases = useDato(useCallback(async () => (await apiBuscarClases({ orden: 'inicio_asc', tamanio: 5, desde: new Date().toISOString() })).items, []), revision);
   const tienda = useDato(useCallback(async () => {
-    const [stock, caja] = await Promise.all([apiConsultarStockTienda(), apiComprasCaja(1)]);
-    const hoy = new Date().toDateString();
-    const deHoy = caja.items.filter(c => new Date(c.creadaEn).toDateString() === hoy);
+    const [stock, caja] = await Promise.all([apiConsultarStockTienda(), apiResumenCompras()]);
     return { conStock: stock.items.filter(i => i.unidadesDisponibles > 0).length, sinStock: stock.items.filter(i => i.unidadesDisponibles === 0).length,
-      comprasHoy: deHoy.length, ventasHoy: deHoy.reduce((t, c) => t + c.totalMinor, 0) };
+      comprasHoy: caja.hoy.cantidad, ventasHoy: caja.hoy.importeMinor };
   }, []), revision);
 
   return (
@@ -64,17 +66,17 @@ export function PanelPrincipal({ onIr }: { onIr: (seccion: string) => void }) {
           </>}
         </Bloque>
         <Bloque titulo="Cobros pendientes" estado={cobros} ir={() => onIr('cobros-y-caja')}>
-          {(items: SolicitudMembresia[]) => {
-            const pendientes = items.filter(s => s.estado === 'PENDIENTE');
+          {(resumen: ResumenMembresias) => {
+            const pendientes = resumen.pendientes;
             return <>
-              <p className="text-3xl font-bold text-primary">{pendientes.length} <span className="text-sm font-normal text-on-surface-variant">solicitudes por cobrar</span></p>
-              <p className="text-xs">A cobrar: <strong>{pesos(pendientes.reduce((t, s) => t + s.importeMinor, 0))}</strong> · {pendientes.filter(s => s.pago).length} con cobro registrado sin confirmar</p>
+              <p className="text-3xl font-bold text-primary">{pendientes.cantidad} <span className="text-sm font-normal text-on-surface-variant">solicitudes por cobrar</span></p>
+              <p className="text-xs">A cobrar: <strong>{pendientes.importes.map(i => importe(i.importeMinor, i.moneda)).join(' · ') || 'Sin importes pendientes'}</strong> · {pendientes.conPagoRegistrado} con cobro registrado sin confirmar</p>
             </>;
           }}
         </Bloque>
         <Bloque titulo="Tienda" estado={tienda} ir={() => onIr('tienda-stock')}>
           {t => <>
-            <p className="text-3xl font-bold text-primary">{pesos(t.ventasHoy)} <span className="text-sm font-normal text-on-surface-variant">vendido hoy ({t.comprasHoy} compras)</span></p>
+            <p className="text-3xl font-bold text-primary">{pesos(t.ventasHoy)} <span className="text-sm font-normal text-on-surface-variant">vendido hoy en Argentina ({t.comprasHoy} compras)</span></p>
             <p className="text-xs">{t.conStock} variantes con stock · <span className={t.sinStock ? 'text-error font-semibold' : ''}>{t.sinStock} agotadas</span></p>
           </>}
         </Bloque>
@@ -86,7 +88,7 @@ export function PanelPrincipal({ onIr }: { onIr: (seccion: string) => void }) {
             </li>)}</ul>}
         </Bloque>
         <Bloque titulo="Planes activos" estado={planes} ir={() => onIr('planes-y-tarifas')}>
-          {(items: PlanMembresia[]) => <ul className="text-xs space-y-1">{items.filter(p => p.estado === 'ACTIVO').map(p => <li key={p.planId} className="flex justify-between"><span>{p.nombre}</span><strong>{pesos(p.importeMinor)}</strong></li>)}</ul>}
+          {(items: PlanMembresia[]) => <ul className="text-xs space-y-1">{items.filter(p => p.estado === 'ACTIVO').map(p => <li key={p.planId} className="flex justify-between"><span>{p.nombre}</span><strong>{importe(p.importeMinor, p.moneda)}</strong></li>)}</ul>}
         </Bloque>
       </div>
     </section>

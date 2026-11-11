@@ -10,7 +10,7 @@
 
 El equipo aclaró la asignación del profesor: el gimnasio ofrece el espacio y FAV maneja el abastecimiento de una tienda. Además de consumir su catálogo, el gimnasio debe ofrecer consulta del stock local y recepción de reposiciones. Esta ampliación fue confirmada expresamente; las suposiciones del mock de FAV no constituyen reglas del gimnasio.
 
-La rama externa `feature-inventario` ya no existe. Se inspeccionó `development` en `adb9838023ddd5d4340f8bc7a95b38fdbc695845` para contrastar el cliente existente. Todavía deben confirmar la rama de integración, URL y credenciales. Su límite ficticio de veinte unidades no se adopta.
+El análisis inicial del 06/11/2026 inspeccionó `development` en `adb9838023ddd5d4340f8bc7a95b38fdbc695845` tras retirarse `feature-inventario`. La integración vigente utiliza el contrato de catálogo 1.2.0 y las URLs y credenciales coordinadas con FAV, con recorrido principal verificado en Azure. La reposición admite las cantidades positivas definidas en el contrato propio 1.0.0. [Guía vigente](../contracts/fav-tienda.md).
 
 ## Decisión y responsabilidades
 

@@ -30,6 +30,7 @@
     "test:carga": "node scripts/ejecutar-carga.mjs",
     "test:busqueda": "npm run build && node --test scripts/verificar-busqueda.mjs",
     "test:gestion-clases": "npm run build && node --test scripts/verificar-gestion-clases.mjs",
+    "test:reportes": "npm run build && node --test scripts/verificar-reportes.mjs",
     "frontend:dev": "npm --prefix frontend run dev",
     "frontend:build": "npm --prefix frontend run build",
     "iniciar": "node scripts/iniciar.mjs"

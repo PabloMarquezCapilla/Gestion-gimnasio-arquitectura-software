@@ -1,8 +1,8 @@
 # D11 - Observabilidad
 
-**Actualización Accesos, 30/10/2026:** [ADR-019](ADR-019-accesos-mongodb-recepcion.md) agrega logs correlacionados y métricas de solicitudes, errores, dependencia y respuestas de movimientos por código, más `/metrics/accesos` en gateway. Los contadores incluyen replays, no son movimientos únicos. Tablero, alerta y exportador de spans quedan pendientes.
+**Actualización Accesos, 30/10/2026:** [ADR-019](ADR-019-accesos-mongodb-recepcion.md) agrega logs correlacionados y métricas de solicitudes, errores, dependencia y respuestas de movimientos por código, más `/metrics/accesos` en gateway. Los contadores incluyen replays, no son movimientos únicos.
 
-**Estado:** primera versión implementada para E2: logs JSON, correlación W3C, métricas básicas y primera traza HTTP verificada. Tableros y alertas pendientes.
+**Estado vigente:** logs JSON, correlación W3C, métricas, Prometheus, Grafana y alertas implementados. El tablero está publicado por HTTPS en Azure. La sección del 09/11/2026 documenta su configuración; el exportador de spans y el canal externo de notificaciones quedan pendientes.
 **Fecha original:** 12/10/2026. **Validación:** 19/10/2026.
 **Enunciado:** §2.10, página 3; §6.3, página 8, exige logs correlacionados y primera traza; §5, D11, página 7, pide estrategia, objetivos y alertas.
 
@@ -21,7 +21,9 @@ Ejecución del 19/10/2026 (Argentina): trace ID `c7cab1c968ccd7baa1d58a49564f5e1
 
 `scripts/demostrar-traza-distribuida.mjs` conserva una explicación con memoria e `inject`; es complementaria, no la evidencia de red/almacenamiento real. `npm run test:balanceo` verifica logs de proxy, distribución y recuperación; límites en D12.
 
-## Métricas y estrategia pendiente
+## Métricas y estrategia inicial de E2
+
+Este apartado conserva la propuesta inicial. Su implementación posterior está documentada en «Tablero y alertas implementados».
 
 Socios y Clases exponen `/metrics` en formato compatible con Prometheus: `http_requests_total`, `http_errors_total`, `process_uptime_seconds` y `pg_pool_active_connections`. Son contadores por proceso que se reinician con él. Las conexiones ocupadas provienen de `totalCount - idleCount` del pool.
 
@@ -33,7 +35,7 @@ Criterios propuestos: alertar ante >1% de 5xx durante 5 min, p99 de reservas >15
 
 ## Consecuencias
 
-La primera traza permite seguir una reserva entre servicios HTTP con PostgreSQL. La observabilidad general de §2.10 aún requiere tablero y mayor cobertura; no se acredita por exponer métricas sin recolector ni alertas.
+La primera traza permite seguir una reserva entre servicios HTTP con PostgreSQL. La implementación posterior de §2.10 agrega recolección, tablero y alertas, con los límites de exportación y notificación indicados más abajo.
 
 ## Tablero y alertas implementados (09/11/2026)
 
@@ -62,4 +64,4 @@ Reemplaza los pendientes de "Métricas y estrategia pendiente".
 
 ### Etapa 3 — trazabilidad de membresías
 
-`membresias_operaciones_total` por comando/resultado/servicio/instancia distingue resolución, replay y fallo; no etiqueta socios, claves o pagos individuales. Logs con correlación permiten investigar estados, repetición y errores sin registrar importes ni credenciales. [ADR-021](ADR-021-planes-pagos-membresias.md) y [evidencia](../EVIDENCIA-MEMBRESIAS.md). No incorpora tablero global.
+`membresias_operaciones_total` por comando/resultado/servicio/instancia distingue resolución, replay y fallo; no etiqueta socios, claves o pagos individuales. Logs con correlación permiten investigar estados, repetición y errores sin registrar importes ni credenciales. El tablero global se documenta en la sección del 09/11/2026. [ADR-021](ADR-021-planes-pagos-membresias.md) y [evidencia](../EVIDENCIA-MEMBRESIAS.md).

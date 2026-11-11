@@ -29,7 +29,7 @@ export class MongoAccesosRepository implements AccesosRepository {
     await this.movimientos.createIndex({ socioId: 1, fecha: -1 }, { name: 'uso_socio' });
     // Creación explícita de la colección antes de usar transacciones; no borra historial ni vence claves.
     await this.operaciones.createIndex({ _id: 1 });
-    for (const sede of sedes) await this.catalogo.updateOne({ _id: sede.sedeId }, { $setOnInsert: { ...sede } }, { upsert: true });
+    for (const sede of sedes) await this.catalogo.updateOne({ _id: sede.sedeId }, { $set: { ...sede } }, { upsert: true });
   }
   async salud() { await this.client.db().command({ ping: 1 }, { timeoutMS: 3000 }); }
   async sedes(): Promise<Sede[]> {

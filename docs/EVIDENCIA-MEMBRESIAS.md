@@ -1,5 +1,7 @@
 # Etapa 3 — Planes, pagos manuales y membresías
 
+Este registro conserva los resultados y pendientes de la etapa del 30/10/2026. Las implementaciones posteriores de suspensión, mensajería, Tienda y observabilidad se describen en el [estado vigente](../README.md) y en las actualizaciones de [ADR-021](adr/ADR-021-planes-pagos-membresias.md).
+
 **Fecha:** 30/10/2026. **Base:** `db13cee1bc4d4f75e2b94ed5f5b8ba25dd66938b` (merge de PR #5). **Rama:** `feat/planes-pagos-membresias`.
 
 La implementación, contrato y pruebas se conservan en el commit local `3ccbbaa`. Los logs corresponden al mismo código verificado antes de confirmar; el posterior cambio del título de un escenario sólo aclara que no confirma ni activa un período superpuesto.

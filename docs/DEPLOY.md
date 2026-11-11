@@ -1,7 +1,7 @@
 # Despliegue en la nube (VM con Docker)
 
 **Decisión:** una VM Linux con el mismo Docker Compose que se usa localmente. Se agrega Caddy para HTTPS y la URL pública sale de [sslip.io](https://sslip.io), un DNS gratuito que resuelve `<ip-con-guiones>.sslip.io` a esa IP. Así no hace falta comprar dominio y Let's Encrypt emite el certificado igual.
-**Por qué:** es el sistema completo, idéntico al que se probó: dos réplicas de Clases, PostgreSQL, MongoDB, RabbitMQ, Redis, Prometheus y Grafana. Un PaaS por servicio obligaría a reemplazar las bases por servicios gestionados y a separar la configuración de cada servicio. El costo está estimado en [D13](adr/ADR-013-capacidad-y-costos.md).
+**Por qué:** es el sistema completo, idéntico al que se probó: dos réplicas de Clases, PostgreSQL, MongoDB, RabbitMQ, Redis, Prometheus y Grafana. Un PaaS por servicio obligaría a reemplazar las bases por servicios gestionados y a separar la configuración de cada servicio. [D13](adr/ADR-013-capacidad-y-costos.md) registra 84,68 USD/mes de cómputo para la VM Azure elegida, según la estimación del portal confirmada por el equipo. El presupuesto total requiere disco, IP y consumo adicional.
 
 ```
 Internet ──443──► Caddy (TLS) ──► Gateway NGINX (JWT, rate limiting, ruteo) ──► servicios
@@ -16,7 +16,7 @@ Cualquiera de estas sirve:
 
 | Proveedor | Tamaño recomendado | Nota |
 |---|---|---|
-| Azure for Students | B2ms (2 vCPU, 8 GiB), Ubuntu 24.04 | Crédito educativo sin tarjeta. |
+| Azure for Students | Standard B2s v2 (2 vCPU, 8 GiB), Ubuntu 24.04 | Tamaño desplegado; cómputo estimado en 84,68 USD/mes según el portal compartido por el equipo. |
 | AWS | t3.large (2 vCPU, 8 GiB), Ubuntu 24.04 | Calculado en D13 (~67 USD/mes). |
 | Google Cloud | e2-standard-2 (2 vCPU, 8 GiB) | Crédito inicial. |
 | Oracle Cloud Free | Ampere A1 (4 OCPU, 24 GiB, ARM) | Gratis; las imágenes son multiarquitectura. |
@@ -44,7 +44,7 @@ El script ([`scripts/desplegar-vm.sh`](../scripts/desplegar-vm.sh)):
 3. pasa el dominio al inicializador con `COMPOSE_FILE=compose.yaml:compose.prod.yaml`. En una instalación nueva, el inicializador escribe el dominio y las credenciales juntos en `.env` antes de levantar los servicios;
 4. verifica `https://<dominio>/health`.
 
-Es idempotente: para actualizar después de un push a `main`, volver a ejecutarlo. `.env` y los volúmenes se conservan.
+Para actualizar `main` después de publicar una revisión, seguir [Actualizar la VM existente](#actualizar-la-vm-existente). El script conserva `.env` y los volúmenes. Conviene comprobar el commit resultante porque el script permite continuar aunque falle su `git pull` interno.
 
 Después del primer despliegue:
 
@@ -53,6 +53,10 @@ npm run crear-admin
 ```
 
 ## 3. Configurar las integraciones (por canal privado, nunca en el repositorio)
+
+El inicio operativo usa `CARGAR_DATOS_DEMO=false` por defecto. Para una demostración se puede habilitar `true` en el entorno elegido. La limpieza de cuentas, clases o reservas de demostración existentes se revisa con su historial antes de ejecutarla.
+
+Accesos utiliza Córdoba, San Francisco y Hernando cuando `ACCESOS_SEDES_JSON` está vacío. Una lista configurada en `.env` tiene prioridad. El arranque actualiza los nombres por su identificador e incorpora sedes nuevas. El equipo confirmó conservar el historial de las pruebas compartidas de FAV y Car Cruds al revisar la limpieza de demostración.
 
 Editar `.env` en la VM y volver a ejecutar el script:
 
@@ -65,6 +69,8 @@ Editar `.env` en la VM y volver a ejecutar el script:
 ## 4. URLs a publicar
 
 **Despliegue activo al 10/11/2026.** VM en Azure Chile Central con Ubuntu 24.04, 2 vCPU y 8 GiB de RAM. El NSG `vm-gimnasio-nsg` permite TCP 80 y 443 para Caddy. Desde fuera de la VM se verificaron `200` en el portal, `/health` y el estado de Grafana. La consulta de consignaciones sin credencial respondió `401`.
+
+El 11/11/2026 el equipo confirmó el tamaño **Standard B2s v2 (`Standard_B2s_v2`)** y la estimación de **84,68 USD/mes de cómputo**. Los costos de disco, IP y consumo adicional se completarán en D13 con los datos de la suscripción.
 
 | Para quién | URL |
 |---|---|
@@ -85,9 +91,70 @@ docker compose -f compose.yaml -f compose.prod.yaml ps
 docker compose -f compose.yaml -f compose.prod.yaml logs --since 10m gateway tienda
 ```
 
-**Backups:** `docker compose exec -T postgres pg_dumpall -U postgres > backup.sql`, y para MongoDB, `mongodump` desde su contenedor. No hay backups automáticos; es una limitación aceptada para la evaluación.
+Los respaldos de PostgreSQL y MongoDB se realizan manualmente antes de actualizar o limpiar datos. Los comandos están en el procedimiento siguiente. La automatización de respaldos queda pendiente.
 
 **Verificado localmente (09/11/2026):** el override de producción valida con `docker compose config`. Caddy sirvió por HTTPS el portal, `/health`, Grafana y la API de consignaciones con la clave de FAV, usando un dominio `.localhost`, que Caddy firma con su CA interna. En la VM, el certificado lo emite Let's Encrypt.
+
+## Actualizar la VM existente
+
+**Revisión del 11/11/2026 pendiente de despliegue.** Las correcciones están en `fix/datos-demostracion`, con 288 pruebas de regresión y 7 pruebas de reportes HTTP/PostgreSQL aprobadas, más compilación del frontend. El registro de esos ensayos y de los cambios está en el [plan de cierre](PLAN-ENTREGA-3.md#límites-y-dependencias). Este apartado describe la próxima actualización de Azure.
+
+### Respaldo y versión instalada
+
+Ejecutar desde el checkout de la VM. Las copias quedan en una carpeta privada dentro del home de su usuario. PostgreSQL y MongoDB se respaldan por separado.
+
+```bash
+umask 077
+respaldo="$HOME/respaldos-gimnasio/$(date -u +%Y%m%dT%H%M%SZ)"
+mkdir -p "$respaldo"
+cp .env "$respaldo/entorno.env"
+git rev-parse HEAD > "$respaldo/version.txt"
+docker compose -f compose.yaml -f compose.prod.yaml exec -T postgres pg_dumpall -U postgres > "$respaldo/postgres.sql"
+docker compose -f compose.yaml -f compose.prod.yaml exec -T mongodb sh -c 'exec mongodump --username "$MONGO_INITDB_ROOT_USERNAME" --password "$MONGO_INITDB_ROOT_PASSWORD" --authenticationDatabase admin --db accesos --archive --gzip' > "$respaldo/accesos.archive.gz"
+test -s "$respaldo/entorno.env"
+test -s "$respaldo/postgres.sql"
+gzip -t "$respaldo/accesos.archive.gz"
+```
+
+Comprobar que los comandos de copia finalizaron correctamente. El respaldo de configuración conserva las credenciales de las bases y las integraciones correspondientes a esos datos.
+
+### Aplicar la versión publicada
+
+Estos comandos actualizan `main` una vez integrada la revisión. Revisar `git status --short` y conservar cualquier cambio local antes de cambiar de rama.
+
+```bash
+git status --short
+git switch main
+git pull --ff-only origin main
+git rev-parse --short HEAD
+nano .env
+```
+
+En `.env`, establecer `CARGAR_DATOS_DEMO=false`. Para usar las sedes acordadas, dejar `ACCESOS_SEDES_JSON` vacío o configurar explícitamente los mismos identificadores y nombres definidos en [D3](adr/ADR-003-persistencia.md). Córdoba utiliza `sede-demo-01`, San Francisco `sede-demo-02` y Hernando `sede-hernando`. Accesos actualiza los nombres al iniciar y agrega Hernando cuando falta. Conservar las credenciales, el dominio y las URLs de integración existentes.
+
+```bash
+bash scripts/desplegar-vm.sh
+docker compose -f compose.yaml -f compose.prod.yaml ps
+curl --fail --show-error https://gimnasio.68-211-88-90.sslip.io/health
+```
+
+El despliegue reconstruye la interfaz y los servicios y aplica la configuración a los contenedores. El inicio con `CARGAR_DATOS_DEMO=false` conserva los registros ya persistidos.
+
+### Limpieza de la demostración existente
+
+El equipo acordó conservar el historial compartido con FAV y Car Cruds. La revisión detectó una compra y un vínculo de `socio-demo-01`, además de clases y reservas sintéticas. La limpieza debe identificar las relaciones actuales y conservar la cuenta vinculada, compras, pagos, membresías e historial de integración asociados a las pruebas compartidas. Los nombres de sedes cambian manteniendo los identificadores referenciados por clases y accesos.
+
+La eliminación selectiva de la demostración restante se ejecutará después de revisar ese inventario y el respaldo, mediante transacciones en cada servicio propietario. Se registrarán los identificadores y cantidades afectados y los totales conservados. Su ejecución en Azure está pendiente.
+
+### Comprobaciones posteriores
+
+- Registrar el commit instalado y comprobar que los servicios están saludables y Clases conserva sus dos réplicas.
+- Ingresar como ADMIN y consultar Córdoba, San Francisco y Hernando. Comprobar que los movimientos históricos siguen asociados a su sede.
+- Revisar Panel principal, Caja y Reportes. Los resúmenes incluyen todos los registros, días y meses argentinos e importes por moneda. La ventana mensual abarca el mes actual y los cinco anteriores; los rankings son históricos. Una consulta fallida muestra un error. [Contratos vigentes](contracts/README.md#resúmenes-administrativos).
+- Comprobar catálogo y stock de FAV, compras conservadas y vínculo/historial de Car Cruds. La limpieza de demostración mantiene los hechos de las pruebas compartidas.
+- Revisar el tablero de Grafana y las métricas de las instancias. Registrar por separado cualquier prueba de escritura externa coordinada con los grupos.
+
+La verificación visual de esta revisión y los resultados posteriores a la limpieza se incorporarán al registro de despliegue al ejecutarlos.
 
 ## Verificación de FAV
 

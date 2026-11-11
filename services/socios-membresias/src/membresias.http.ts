@@ -10,6 +10,10 @@ export function registrarGestionMembresias(app: FastifyInstance, repository: Ges
  const repo = () => { if (!repository) throw falloGestion('GESTION_POSTGRES_REQUERIDO','La gestión de planes y pagos requiere PostgreSQL configurado.',503); return repository; };
  const noStore = async (_r: FastifyRequest, reply: FastifyReply) => { reply.header('Cache-Control','no-store'); };
  const lectura = [noStore,autenticar]; const admin = [...lectura,administrador];
+ app.get('/api/v1/solicitudes/resumen', { onRequest: admin }, async r => {
+  if (Object.keys(r.query as object).length) throw falloGestion('DATOS_INVALIDOS', 'La consulta de resumen no admite parámetros.', 400);
+  return repo().resumen();
+ });
  const operar = async (r: FastifyRequest, op: ComandoGestion, extra: Record<string, unknown> = {}) => {
   try {
    const body = datosGestion(op,r.body); const clave = claveGestion(r.headers['idempotency-key']);

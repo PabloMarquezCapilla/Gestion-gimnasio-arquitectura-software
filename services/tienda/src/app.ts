@@ -180,6 +180,11 @@ export function buildTiendaApp(options: TiendaOptions = {}) {
     const query = soloParametros(request.query, ['pagina', 'tamanio']);
     return stockService().comprasAdmin(entero(query.pagina, 1, 10000), entero(query.tamanio, 20, 100));
   });
+  app.get('/api/v1/tienda/admin/resumen', { onRequest: [autenticarUsuario, administrador] }, async (request, reply) => {
+    sinQuery(request.query);
+    reply.header('Cache-Control', 'no-store');
+    return stockService().resumenComprasAdmin();
+  });
   app.get('/api/v1/tienda/compras', { onRequest: [autenticarUsuario, socio] }, async request => {
     const query = soloParametros(request.query, ['pagina', 'tamanio']);
     return stockService().compras((request.user as { sub: string }).sub, entero(query.pagina, 1, 10000), entero(query.tamanio, 10, 50));

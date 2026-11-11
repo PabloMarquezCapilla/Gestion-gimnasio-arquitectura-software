@@ -3,7 +3,7 @@ import { PostgresMembresiasOutbox } from './membresias.eventos';
 import { PublicadorMembresias } from './membresias.rabbit';
 import { Pool } from 'pg';
 import { buildSociosApp } from './app';
-import { PostgresSociosRepository, MemorySociosRepository, ISociosRepository } from './repository';
+import { PostgresSociosRepository, MemorySociosRepository, ISociosRepository, SEED_SOCIOS, SEED_MEMBRESIAS } from './repository';
 import { configuracionAuth } from './security';
 import { credencialesEmpleadosDesdeEntorno } from './empleados.http';
 import { carCrudsConfigDesdeEntorno, HttpCarCrudsClient } from './clients/car-cruds.client';
@@ -12,6 +12,9 @@ import { HttpAccesosUsoClient } from './clients/accesos.client';
 async function start() {
   // Validar secretos antes de inicializar el almacenamiento o abrir el puerto.
   const auth = configuracionAuth();
+  const modoDemo = process.env.CARGAR_DATOS_DEMO?.trim() || 'false';
+  if (!['true', 'false'].includes(modoDemo)) throw new Error('CARGAR_DATOS_DEMO debe ser true o false.');
+  const cargarDatosDemo = modoDemo === 'true';
   const carCrudsConfig = carCrudsConfigDesdeEntorno();
   const carCrudsClient = carCrudsConfig ? new HttpCarCrudsClient(carCrudsConfig) : undefined;
   const empleadosCredenciales = credencialesEmpleadosDesdeEntorno();
@@ -30,7 +33,7 @@ async function start() {
   let repository: ISociosRepository;
   let pool: Pool | undefined;
   if (usarMemoria) {
-    repository = new MemorySociosRepository();
+    repository = new MemorySociosRepository(cargarDatosDemo ? SEED_SOCIOS : [], cargarDatosDemo ? SEED_MEMBRESIAS : []);
     console.log('[socios-membresias] Memoria habilitada explícitamente para desarrollo.');
   } else {
     pool = new Pool({
@@ -42,7 +45,7 @@ async function start() {
     });
     try {
       repository = new PostgresSociosRepository(pool);
-      await repository.inicializarEsquema();
+      await repository.inicializarEsquema({ cargarDatosDemo });
     } catch {
       await pool.end();
       throw new Error('No se pudo inicializar PostgreSQL; no se modifican ni reparan duplicados automáticamente.');

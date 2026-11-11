@@ -37,7 +37,7 @@ export interface ResultadoPromocion {
 export interface IClaseRepository {
   readonly isMock: boolean;
   conexionesActivas(): number;
-  inicializarEsquema(): Promise<void>;
+  inicializarEsquema(opciones?: { cargarDatosDemo?: boolean }): Promise<void>;
   verificarSalud(): Promise<{ ok: boolean; detalle?: string }>;
   listarClases(filtros: FiltrosClases, consultadoEn: string): Promise<{ items: ClaseDTO[]; total: number }>;
   obtenerClase(claseId: string, consultadoEn: string): Promise<ClaseDTO | null>;

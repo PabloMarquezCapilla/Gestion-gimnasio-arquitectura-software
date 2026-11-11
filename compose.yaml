@@ -103,6 +103,7 @@ services:
         SERVICE: socios-membresias
     environment:
       PORT: "3000"
+      CARGAR_DATOS_DEMO: ${CARGAR_DATOS_DEMO:-false}
       DATABASE_URL: postgres://socios:${SOCIOS_DB_PASSWORD:?Falta SOCIOS_DB_PASSWORD en .env}@postgres:5432/socios
       AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:?Falta AUTH_JWT_SECRET en .env}
       SERVICIOS_API_KEY: ${SERVICIOS_API_KEY:?Falta SERVICIOS_API_KEY en .env}
@@ -137,6 +138,7 @@ services:
       replicas: 2
     environment:
       PORT: "3000"
+      CARGAR_DATOS_DEMO: ${CARGAR_DATOS_DEMO:-false}
       DATABASE_URL: postgres://clases:${CLASES_DB_PASSWORD:?Falta CLASES_DB_PASSWORD en .env}@postgres:5432/clases
       RABBITMQ_URL: amqp://gimnasio:${RABBITMQ_PASSWORD:?Falta RABBITMQ_PASSWORD en .env}@rabbitmq:5672/gimnasio
       SOCIOS_SERVICE_URL: http://socios-membresias:3000
@@ -171,8 +173,8 @@ services:
       AUTH_JWT_SECRET: ${AUTH_JWT_SECRET:?Falta AUTH_JWT_SECRET en .env}
       AUTH_JWT_TTL_SECONDS: ${AUTH_JWT_TTL_SECONDS:-3600}
       SERVICIOS_API_KEY: ${SERVICIOS_API_KEY:?Falta SERVICIOS_API_KEY en .env}
-      # Catálogo ficticio inicial, alineado con los IDs de clases. Se inserta sin sobrescribir sedes existentes.
-      ACCESOS_SEDES_JSON: '[{"sedeId":"sede-demo-01","nombre":"Sede demo 01"},{"sedeId":"sede-demo-02","nombre":"Sede demo 02"}]'
+      # Vacío utiliza las sedes acordadas. Una lista explícita configura sus IDs y nombres.
+      ACCESOS_SEDES_JSON: ${ACCESOS_SEDES_JSON:-}
       REDIS_URL: redis://redis:6379
       OCUPACION_CACHE_NAMESPACE: ${OCUPACION_CACHE_NAMESPACE:-pulse:ocupacion:v1}
       OCUPACION_CACHE_TTL_MS: ${OCUPACION_CACHE_TTL_MS:-30000}

@@ -1,12 +1,12 @@
 # D13 - Capacidad y costos
 
-**Estado:** actualizado el 09/11/2026 con un test de carga k6 sostenido y de saturación a través del gateway; capacidad y límite principal medidos. Ver la sección "Test de carga k6" al final.
-**Fecha original:** 12/10/2026. **Validación:** 19/10/2026. **Actualización:** 09/11/2026.
+**Estado:** capacidad local y límite principal medidos con k6; tamaño y estimación de cómputo de Azure confirmados por el equipo. El presupuesto total requiere los costos de disco, IP y consumo adicional.
+**Fecha original:** 12/10/2026. **Validación:** 19/10/2026. **Actualización:** 11/11/2026.
 **Enunciado:** §5, D13, página 7; decisión requerida en §6.3, página 8.
 
 ## Contexto y criterio
 
-El análisis de capacidad debe apoyarse en resultados reproducibles, identificar límites y justificar alternativas de escalado. Se utiliza una línea base local y una estimación ilustrativa de infraestructura; todavía no hay un despliegue ni presupuesto definitivo elegidos.
+El análisis de capacidad debe apoyarse en resultados reproducibles, identificar límites y justificar alternativas de escalado. Se conservan la línea base local y la estimación ilustrativa de E2. El despliegue actual usa Azure; su presupuesto debe completarse con la tarifa de la VM, disco, IP y consumo efectivos de esa suscripción.
 
 ## Prueba de carga reproducible
 
@@ -51,9 +51,23 @@ Fuentes: [EC2 T3, tabla Linux/US East](https://aws.amazon.com/ec2/instance-types
 
 El subtotal excluye transferencia, snapshots/backups, dominio, almacenamiento de logs, soporte, impuestos y créditos de CPU T3 Unlimited. No se descuentan promociones o créditos educativos. La memoria/disco de la VM deben verificarse con todos los flujos y datos antes de adoptarla. Faltan volumen y retención reales, tráfico, objetivo de disponibilidad y presupuesto del grupo para cotizar un despliegue definitivo; con servicios administrados o varias máquinas el costo cambia.
 
+## Presupuesto del despliegue Azure
+
+**Estado al 11/11/2026.** El despliegue utiliza la VM `vm-gimnasio` en Chile Central, Ubuntu 24.04, tamaño **Standard B2s v2 (`Standard_B2s_v2`)**, con **2 vCPU y 8 GiB de RAM**. El equipo aportó la ficha de tamaño del portal Azure y confirmó que la estimación de cómputo mostrada es **84,68 USD por mes**. [Entorno y operación](../DEPLOY.md).
+
+| Concepto | Datos para completar el presupuesto |
+|---|---|
+| Cómputo | Standard B2s v2, 2 vCPU y 8 GiB. Estimación del selector Azure aportada y confirmada por el equipo el 11/11/2026, **84,68 USD/mes**. |
+| Disco | Tipo, capacidad y precio mensual del disco aprovisionado. |
+| IP pública | SKU y tarifa aplicable a la dirección asignada. |
+| Transferencia y respaldos | Consumo previsto y tarifa de los recursos efectivamente utilizados. |
+| Crédito educativo | Saldo disponible y consumo mostrado por la suscripción, registrados por separado del costo estimado. |
+
+El presupuesto mensual se calcula como **84,68 USD de cómputo + disco + IP + consumo adicional**. Los últimos conceptos y el saldo de crédito educativo quedan pendientes de los datos de la suscripción. El monto de cómputo corresponde a la estimación del portal confirmada por el equipo; el gasto efectivo se registra con el consumo facturado. El valor histórico de AWS conserva su proveedor y región originales.
+
 ## Consecuencias
 
-E2 dispone de resultados reproducibles, un límite estructural explicado, una alternativa de escalado condicionada a mediciones y una estimación trazable. El despliegue y su presupuesto definitivo siguen sujetos a elección del equipo; no se han creado recursos ni generado gastos en la nube.
+E2 dispone de resultados reproducibles, un límite estructural explicado, una alternativa de escalado condicionada a mediciones y una estimación trazable. La estimación AWS conserva el escenario estudiado en esa entrega. El despliegue posterior en Azure y sus limitaciones operativas se documentan en ADR-026 y DEPLOY; queda pendiente incorporar su presupuesto efectivo.
 
 ## Test de carga k6 (09/11/2026)
 
@@ -63,4 +77,4 @@ E2 dispone de resultados reproducibles, un límite estructural explicado, una al
 - **Primer límite encontrado y corregido:** `worker_connections` (512 por defecto) del gateway. Producía 17 % de 500 en saturación. Se corrigió con 4096 conexiones y keepalive hacia los servicios.
 - **Límite principal actual:** CPU de las réplicas de Clases (un núcleo cada una, porque Node.js corre en un solo hilo) y de PostgreSQL (búsqueda de texto completo y bloqueos de cupo). Pasado ese punto la latencia crece sin errores.
 - **Escalado elegido:** primero más réplicas de Clases, mientras PostgreSQL tenga CPU libre; después más CPU o una réplica de lectura para el catálogo.
-- **Despliegue:** se eligió una VM con Docker Compose ([DEPLOY](../DEPLOY.md)); el costo es la estimación de arriba. Para la presentación alcanza una VM de 2 vCPU y 8 GiB: la carga esperada está más de un orden de magnitud por debajo del límite medido.
+- **Despliegue:** Azure ejecuta Docker Compose en una VM Standard B2s v2 con 2 vCPU y 8 GiB, cuyo cómputo se estima en 84,68 USD/mes según los datos confirmados por el equipo ([DEPLOY](../DEPLOY.md)). Las mediciones anteriores corresponden al entorno local descrito en la evidencia. La capacidad bajo carga y el costo total efectivo de Azure requieren medición y presupuesto de esa VM.

@@ -94,6 +94,18 @@ try {
   const repoB = new clasesRepository.PostgresClaseRepository(secondPool);
   await Promise.all([sociosRepo.inicializarEsquema(), secondSociosRepo.inicializarEsquema()]);
   await Promise.all([repoA.inicializarEsquema(), repoB.inicializarEsquema()]);
+  assert.equal((await sociosPool.query('SELECT count(*)::int n FROM socios')).rows[0].n, 0);
+  assert.equal((await sociosPool.query('SELECT count(*)::int n FROM membresias')).rows[0].n, 0);
+  assert.equal((await clasesPool.query('SELECT count(*)::int n FROM clases')).rows[0].n, 0);
+  assert.equal((await clasesPool.query('SELECT count(*)::int n FROM reservas')).rows[0].n, 0);
+  const datosDemo = { cargarDatosDemo: true };
+  await Promise.all([sociosRepo.inicializarEsquema(datosDemo), secondSociosRepo.inicializarEsquema(datosDemo)]);
+  await Promise.all([repoA.inicializarEsquema(datosDemo), repoB.inicializarEsquema(datosDemo)]);
+  assert.equal((await sociosPool.query('SELECT count(*)::int n FROM socios')).rows[0].n, 5);
+  assert.equal((await sociosPool.query('SELECT count(*)::int n FROM membresias')).rows[0].n, 5);
+  assert.equal((await clasesPool.query('SELECT count(*)::int n FROM clases')).rows[0].n, 4);
+  assert.equal((await clasesPool.query('SELECT count(*)::int n FROM reservas')).rows[0].n, 44);
+  console.log('Inicio operativo vacío y demostración explícita sin duplicados entre dos instancias verificados.');
   assert.equal((await sociosPool.query("SELECT count(*)::int n FROM socios WHERE rol='ADMIN'")).rows[0].n, 0);
   const adminData = { dni: '90000001', nombre: 'Admin ficticio', email: 'admin@prueba.example', password: randomBytes(12).toString('hex') };
   const initialAdmin = await adminModule.crearAdministrador(sociosRepo, adminData);

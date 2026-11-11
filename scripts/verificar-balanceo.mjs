@@ -21,7 +21,8 @@ const keyNames = ['POSTGRES_ADMIN_PASSWORD', 'SOCIOS_DB_PASSWORD', 'CLASES_DB_PA
   'MONGO_ROOT_PASSWORD', 'ACCESOS_DB_PASSWORD', 'MONGO_KEYFILE', 'RABBITMQ_PASSWORD',
   'CAPACIDAD_API_KEY', 'AUTH_JWT_SECRET', 'SERVICIOS_API_KEY', 'EMPLEADOS_API_KEY', 'GRAFANA_ADMIN_PASSWORD'];
 const keys = Object.fromEntries(keyNames.map(key => [key, randomBytes(32).toString('hex')]));
-const env = { ...process.env, ...keys, EMPLEADOS_ORIGEN_ID: 'grupo-ficticio-balanceo' };
+const env = { ...process.env, ...keys, EMPLEADOS_ORIGEN_ID: 'grupo-ficticio-balanceo',
+  CARGAR_DATOS_DEMO: 'false', ACCESOS_SEDES_JSON: '' };
 let started = false;
 let base;
 
@@ -118,6 +119,33 @@ try {
   console.log('[1/5] Construyendo e iniciando el proyecto temporal ' + project + '...');
   started = true;
   await compose('up', '--build', '--detach', '--wait', '--wait-timeout', '180');
+  const contar = (database, table) => compose('exec', '-T', 'postgres', 'psql', '-U', 'postgres', '-d', database,
+    '-At', '-v', 'ON_ERROR_STOP=1', '-c', 'SELECT count(*) FROM ' + table);
+  for (const [database, table] of [['socios', 'socios'], ['socios', 'membresias'], ['clases', 'clases'], ['clases', 'reservas']]) {
+    assert.equal(await contar(database, table), '0', 'El inicio operativo debe crear ' + table + ' sin demostración');
+  }
+  const sedesOperativas = await compose('exec', '-T', 'accesos-ocupacion', 'node', '--input-type=module', '-e', `
+    import { MongoClient } from 'mongodb';
+    const client = new MongoClient(process.env.MONGODB_URL);
+    try {
+      await client.connect();
+      const sedes = await client.db().collection('sedes')
+        .find({}, { projection: { _id: 0 } }).sort({ sedeId: 1 }).toArray();
+      console.log(JSON.stringify(sedes));
+    } finally {
+      await client.close();
+    }
+  `);
+  assert.deepEqual(JSON.parse(sedesOperativas), [
+    { sedeId: 'sede-demo-01', nombre: 'Córdoba' },
+    { sedeId: 'sede-demo-02', nombre: 'San Francisco' },
+    { sedeId: 'sede-hernando', nombre: 'Hernando' },
+  ]);
+  // El resto del ensayo utiliza cuentas sintéticas en este proyecto temporal.
+  env.CARGAR_DATOS_DEMO = 'true';
+  await compose('up', '--detach', '--wait', '--wait-timeout', '180', 'socios-membresias', 'clases-reservas');
+  assert.equal(await contar('socios', 'socios'), '5');
+  assert.equal(await contar('clases', 'reservas'), '44');
   await compose('exec', '-T', 'gateway', 'nginx', '-t');
   const initial = await replicas();
   assert.equal(initial.length, 2, 'La configuración debe iniciar dos instancias');

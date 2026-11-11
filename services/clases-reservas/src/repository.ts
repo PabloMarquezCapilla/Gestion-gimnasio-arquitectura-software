@@ -340,7 +340,7 @@ export class PostgresClaseRepository implements IClaseRepository {
     }
   }
 
-  async inicializarEsquema(): Promise<void> {
+  async inicializarEsquema({ cargarDatosDemo = false }: { cargarDatosDemo?: boolean } = {}): Promise<void> {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
@@ -395,7 +395,7 @@ export class PostgresClaseRepository implements IClaseRepository {
       await client.query(CLASES_EVENTOS_DDL);
       await client.query(GESTION_CLASES_DDL);
       const countRes = await client.query('SELECT count(*)::int AS count FROM clases');
-      if (countRes.rows[0].count === 0) {
+      if (cargarDatosDemo && countRes.rows[0].count === 0) {
         for (const c of mockClasses) {
           await client.query(
             `INSERT INTO clases (clase_id, nombre, sede_id, profesor, actividad, inicio, fin, capacidad, publicada, created_at)

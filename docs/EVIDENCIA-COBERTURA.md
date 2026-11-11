@@ -1,4 +1,4 @@
-# Evidencia: cobertura de tests unitarios (§2.10)
+# Evidencia de cobertura de tests unitarios (§2.11)
 
 **Fecha:** 09/11/2026. **Comando:** `npm run test:cobertura`, que usa la cobertura nativa de Node 22 sobre el código compilado de los cuatro servicios. Excluye los propios tests, los scripts y el frontend; el frontend tiene sus tests en `npm run test:frontend`.
 

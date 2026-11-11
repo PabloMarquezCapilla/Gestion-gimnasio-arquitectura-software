@@ -14,6 +14,8 @@ Trabajo Práctico Integrador — Arquitectura de Software 2026
 
 Sistema integral de gestión de gimnasios orientado a membresías, pagos y comprobantes internos, reserva de clases, control de acceso y ocupación de sedes. Incluye la vinculación de empleados de Car Cruds con socios y el envío de información de membresías, además de una tienda abastecida por FAV con consulta de catálogo, stock local, reposiciones y ventas administrativas.
 
+El panel principal, la caja y los reportes consultan resúmenes completos calculados por Socios y Tienda en sus bases. Los importes de membresías se agrupan por moneda. Los días y meses siguen el calendario de Argentina. Los gráficos de ingresos y ventas abarcan seis meses, y los rankings por plan y producto muestran el historial.
+
 ## Objetivo
 
 Construir una plataforma que permita gestionar el ciclo completo de un socio dentro de un gimnasio: alta, renovación y vigencia de membresías, registro de pagos y comprobantes internos, búsqueda y reserva de actividades con cupos limitados, control de ingreso y consulta de ocupación de las sedes.
@@ -47,13 +49,15 @@ Las reglas de negocio, exclusiones y criterios de aceptación están en [ALCANCE
 
 ## Estado de implementación
 
+**Revisión del 11/11/2026.** Los resúmenes completos, la demostración desactivada por defecto y las sedes Córdoba, San Francisco y Hernando están verificados localmente en `fix/datos-demostracion`. Su publicación y aplicación en Azure están pendientes. El procedimiento de actualización y limpieza del entorno existente está en [DEPLOY](docs/DEPLOY.md#actualizar-la-vm-existente).
+
 | Componente | Disponible | Pendiente |
 |---|---|---|
 | Socios y Membresías | Login JWT, permisos, altas administrativas, planes, pagos/comprobantes, suspensión inmediata con Outbox, lecturas/vínculos y fotografías Car Cruds con uso, costo y pagos del mes, y POST anterior de empleados. Conexión con Car Cruds confirmada por el equipo en Azure. | Políticas de reactivación y superposición/prorrateos. |
 | Clases y Reservas | Publicación/edición ADMIN, búsqueda FTS, reservas/FIFO, retiro voluntario de espera y suspensión mediante Inbox/RabbitMQ. Sedes de Accesos, versiones y reintentos durables. API/portal, PostgreSQL, dos réplicas y reconstrucción GIN verificados. | Verificación integrada en el despliegue final. |
 | Accesos y Ocupación | Recepción ADMIN: ingresos/egresos, historial y ocupación real; MongoDB transaccional, Redis medido e idempotencia durable. Uso mensual interno para el informe a Car Cruds. | Verificación integrada en el despliegue final. |
-| Tienda | Stock local en PostgreSQL, reposiciones de FAV con clave técnica, ventas ADMIN y panel. Catálogo de FAV validado con OpenAPI 1.2.0 y compra de socios idempotente y atómica (ADR-023/024). | Catálogo, reposiciones y compra verificados en Azure. [Evidencia](docs/EVIDENCIA-TIENDA.md#prueba-conjunta-en-azure-del-10112026). |
-| Gateway y portal | NGINX: rutas, **validación JWT y rate limiting** (ADR-025), balanceo y logs de destinos. Portal React con todas las secciones de administración operativas: Panel principal, Socios, Planes y tarifas (4 planes predeterminados con precio), Cobros y caja (membresías y compras de la tienda), Reportes y Configuración. | Portal y gateway operativos por HTTPS en Azure. [Despliegue](docs/DEPLOY.md). |
+| Tienda | Stock local en PostgreSQL, reposiciones de FAV con clave técnica, ventas ADMIN y panel. Catálogo de FAV validado con OpenAPI 1.2.0 y compra de socios idempotente y atómica (ADR-023/024). Catálogo, reposiciones y compra verificados en Azure. [Evidencia](docs/EVIDENCIA-TIENDA.md#prueba-conjunta-en-azure-del-10112026). | Publicar y comprobar los nuevos resúmenes administrativos en Azure. |
+| Gateway y portal | NGINX con validación JWT, rate limiting (ADR-025), balanceo y logs de destinos. Portal React con Panel principal, Socios, Planes y tarifas, Cobros y caja, Reportes y Configuración. Cuatro planes predeterminados con precios acordados. Portal y gateway operativos por HTTPS en Azure. | Aplicar las correcciones de la revisión del 11/11/2026 y comprobarlas en el portal desplegado. |
 | Observabilidad | Prometheus (todas las instancias y RabbitMQ), Grafana con tablero **Gimnasio · Estado general** y 5 alertas (D11). | Canal de notificación externo y exportador de spans. |
 
 La integración con **Car Cruds** cambia la dirección del intercambio por indicación del profesor: Socios consulta empleados/estado y el ADMIN los vincula manualmente con socios. Desde el panel elige el mes, guarda/revisa una fotografía y confirma su envío; los reintentos conservan contenido, referencia, versión y fecha. Corregir o quitar el vínculo conserva el historial y no modifica membresías. El equipo confirmó la conexión con Car Cruds desde el gimnasio desplegado en Azure. Contrato externo **0.4.0**, estado de verificación, configuración y uso en [la guía](docs/contracts/README.md#integracion-con-car-cruds) y [ADR-018](docs/adr/ADR-018-integracion-car-cruds.md).
@@ -94,6 +98,10 @@ npm run iniciar
 
 El inicio automatizado valida el entorno, genera las credenciales locales ausentes, construye el portal y los cuatro servicios e inicia las dependencias. La primera ejecución necesita Internet. Para iniciar el entorno completo no hace falta instalar las bases ni paquetes npm en Windows: las imágenes realizan su instalación. Las pruebas locales sí requieren las dependencias indicadas más abajo.
 
+El inicio operativo utiliza `CARGAR_DATOS_DEMO=false`, valor predeterminado. En bases nuevas, Socios y Clases crean sus esquemas vacíos. ADMIN realiza las altas y publica las clases desde el portal. Los cuatro planes comerciales acordados se cargan como configuración inicial.
+
+Las sedes acordadas son **Córdoba**, **San Francisco** y **Hernando**. Accesos utiliza los identificadores `sede-demo-01`, `sede-demo-02` y `sede-hernando` respectivamente. Los dos primeros conservan las relaciones existentes. `ACCESOS_SEDES_JSON` permite configurar una lista explícita de identificadores y nombres. Al iniciar, Accesos actualiza los nombres configurados e incorpora las sedes nuevas por identificador.
+
 El script conserva `.env`. Si ya existen volúmenes pero falta ese archivo, recuperar el original; cambiar las claves no actualiza las credenciales persistidas. `.env` no se publica; `.env.example` contiene la configuración de referencia. La única entrada publicada es `localhost:8080`, configurable mediante `GATEWAY_PORT`.
 
 | Acceso local | Uso |
@@ -102,12 +110,13 @@ El script conserva `.env`. Si ya existen volúmenes pero falta ese archivo, recu
 | [http://localhost:8080/consola.html](http://localhost:8080/consola.html) | Consola técnica de clases, reservas y trazas. |
 | `/health/socios`, `/health/clases` | Salud del proceso y conectividad con PostgreSQL. |
 | `/health/accesos`, `/health/tienda` | Verifican MongoDB y PostgreSQL de Tienda respectivamente; no acreditan conexión externa. |
-| `/metrics/socios`, `/metrics/clases`, `/metrics/accesos`, `/metrics/tienda` | Métricas compatibles con Prometheus; falta el tablero global. |
+| `/metrics/socios`, `/metrics/clases`, `/metrics/accesos`, `/metrics/tienda` | Métricas recolectadas por Prometheus y disponibles en el tablero de Grafana. |
 
-Las rutas de salud son decisiones operativas para comprobar disponibilidad, no reglas de negocio. La configuración local usa HTTP; HTTPS y la URL compartida deben resolverse al publicar.
+Las rutas de salud comprueban disponibilidad y conectividad de cada servicio. La configuración local usa HTTP. El entorno Azure utiliza HTTPS y las URLs indicadas en la guía de despliegue.
 
 ### Usuarios de prueba
 
+Para un entorno de demostración, configurar `CARGAR_DATOS_DEMO=true` en su `.env` y ejecutar `npm run iniciar`. Esa opción incorpora las cinco cuentas y membresías siguientes y, si el catálogo está vacío, cuatro clases con 44 reservas sintéticas para ejercitar cupos y espera. Las pruebas de integración habilitan sus propios datos dentro de entornos temporales.
 
 Las siguientes cuentas están definidas en `services/socios-membresias/src/repository.ts`. Todas tienen rol **SOCIO** y contraseña inicial ficticia **`socio123`**:
 
@@ -119,7 +128,7 @@ Las siguientes cuentas están definidas en `services/socios-membresias/src/repos
 | `44444444` | Pedro Vencido | `pedro.vencido@example.com` | Vencida desde 2025. |
 | `55555555` | Ana Suspendida | `ana.suspendida@example.com` | Suspendida. |
 
-La inicialización incorpora las cuentas de demostración faltantes; no restablece una contraseña ya guardada ni reemplaza una membresía existente del mismo identificador. Si se modificaron esos datos, su estado puede diferir de esta tabla. La habilitación también depende de la fecha de la clase.
+Con la demostración habilitada, la inicialización incorpora las cuentas faltantes y conserva los datos existentes del mismo identificador. Si se modificaron esos datos, su estado puede diferir de esta tabla. La habilitación también depende de la fecha de la clase. La opción regula la carga al arrancar. La limpieza de registros ya persistidos requiere revisar sus relaciones, compras e historial de integración.
 
 **Administrador:** no se genera una nueva cuenta ADMIN con contraseña predeterminada. Si todavía no hay una cuenta administrativa elegida por el equipo, ejecutar con el entorno iniciado:
 
@@ -149,7 +158,7 @@ Ingresar DNI, nombre, email, contraseña y confirmación. Para acceder después,
 | Abrir el catálogo de Tienda como socio | Con FAV configurado, el catálogo muestra las variantes del proveedor con unidades disponibles en el gimnasio. |
 | Reactivar una membresía o gestionar períodos superpuestos | Las reglas administrativas siguen pendientes de definición. |
 
-El JWT se guarda en memoria: recargar la página o recibir un 401 requiere nuevo login. En una base nueva, Yoga del 12/11/2026 tiene tres cupos y Pilates del mismo día está llena; los movimientos cambian esos valores. Las fechas de demostración son fijas: las clases iniciadas rechazan nuevas reservas, espera y cancelaciones.
+El JWT se guarda en memoria. Recargar la página o recibir un 401 requiere nuevo login. Con la demostración habilitada en una base vacía, Yoga del 12/11/2026 tiene tres cupos y Pilates del mismo día está llena; los movimientos cambian esos valores. Las fechas de demostración son fijas. Las clases iniciadas rechazan nuevas reservas, espera y cancelaciones. Para probar en otras fechas, ADMIN publica clases futuras.
 
 Para probar el **POST del diseño anterior** de empleados, usar el [ejemplo operativo PowerShell](docs/contracts/README.md#ejemplo-operativo-en-powershell): alta nueva 201, misma clave/cuerpo mismos IDs, clave reutilizada con otros datos 409 y credencial inválida 401. Ese POST no habilita membresías ni permite iniciar sesión por el empleado; tampoco consulta ni envía datos a Car Cruds.
 
@@ -240,7 +249,7 @@ Los identificadores opacos se conservan serializados como JSON; no se consultan 
 
 ## Recepción y ocupación — etapa 1
 
-Con el inicio habitual, ingresar como ADMIN y abrir **Recepción y Ocupación**. Elegir sede, ingresar el ID del socio y seleccionar Ingreso o Egreso. Se consultan ocupación e historial reales; los rechazos quedan visibles y no cambian la ocupación. Las sedes iniciales de Compose son ficticias (`sede-demo-01`/`sede-demo-02`), alineadas con las clases existentes. El catálogo se inserta sin sobrescribir registros; no hay CRUD nuevo de sedes.
+Con el inicio habitual, ingresar como ADMIN y abrir **Recepción y Ocupación**. Elegir sede, ingresar el ID del socio y seleccionar Ingreso o Egreso. Se consultan ocupación e historial reales; los rechazos quedan visibles y no cambian la ocupación. Las sedes iniciales son Córdoba, San Francisco y Hernando. `ACCESOS_SEDES_JSON` configura sus identificadores y nombres. El arranque actualiza los nombres e incorpora las sedes nuevas.
 
 El ingreso consulta habilitación en Socios; el egreso cierra una presencia sin depender de esa consulta. Una respuesta incierta conserva clave/cuerpo en sessionStorage por actor para reintentar sin duplicar; recargar exige login nuevamente, pero conserva la operación. No borrar el almacenamiento del navegador mientras haya una operación incierta. La autorización usa JWT ADMIN hasta su vencimiento, sin nuevo rol ni revocación inmediata.
 
@@ -287,6 +296,7 @@ npm --prefix frontend ci --ignore-scripts
 | `npm run test:carga` | k6 contra el gateway del sistema en marcha: uso normal, `-- tasa 400` y `-- estres`. Capacidad ~480 solicitudes/s y límite principal identificado. [Evidencia](docs/EVIDENCIA-CARGA.md). |
 | `npm run simulacro:fav` | Caída y lentitud provocadas de FAV con el mock: caché degradada, circuit breaker, compra idempotente y alertas. [Postmortem](docs/POSTMORTEM.md). |
 | `npm run test:gestion-clases` | 17 pruebas con dos instancias, PostgreSQL, Accesos/MongoDB y Socios HTTP reales. Publicación/edición, reconstrucción GIN, retiro, permisos, reintentos, rollback, carreras y caída de dependencias. [Búsqueda](docs/EVIDENCIA-BUSQUEDA.md), [retiro y FIFO](docs/adr/ADR-017-consistencia-y-recuperacion-de-espera.md). |
+| `npm run test:reportes` | HTTP y PostgreSQL reales. Totales con 251 solicitudes y 551 compras, permisos ADMIN, calendario argentino, monedas, contratos y límite numérico. |
 
 Las pruebas de PostgreSQL, balanceo y Tienda requieren Docker, usan recursos temporales propios, no cargan `.env` y los retiran al terminar. Los tests en memoria no acreditan durabilidad.
 
@@ -308,8 +318,8 @@ El trabajo de cierre parte de `main` actualizado y se prepara en ramas de funcio
 | [Contrato e integración](docs/contracts/README.md) | Capacidad ofrecida, versión, ejemplos, errores, autenticación e idempotencia (§4.1). |
 | [FAV: contrato y guía](docs/contracts/fav-tienda.md) | Integración bidireccional desplegada y verificada con FAV en Azure (§4.1). |
 | [Plan de cierre](docs/PLAN-ENTREGA-3.md) | Etapas, verificaciones y decisiones pendientes para la presentación y defensa; se completa una etapa por vez. |
-| [Postmortem](docs/POSTMORTEM.md) | Caída de una réplica y caída/lentitud del proveedor FAV: impacto, línea temporal, detección, respuesta, causa y mejoras (§2.8 y §3). |
-| [Despliegue](docs/DEPLOY.md) | VM con Docker Compose, Caddy y HTTPS; URLs a publicar e integraciones (§4.1, §6.4). |
+| [Postmortem](docs/POSTMORTEM.md) | Caída de una réplica y caída/lentitud del proveedor FAV, con impacto, línea temporal, detección, respuesta, causa y mejoras (§2.9 y §3). |
+| [Despliegue](docs/DEPLOY.md) | VM con Docker Compose, Caddy y HTTPS; URLs públicas e integraciones (§4.1 y presentación grupal, páginas 8–9). |
 | [Contrato de eventos](docs/contracts/asyncapi-membresias-v1.yaml) | AsyncAPI 3.0 del evento `MembresiaActualizada`, con cola y DLQ (§2.4). |
 | Evidencias | [Carga](docs/EVIDENCIA-CARGA.md), [cobertura](docs/EVIDENCIA-COBERTURA.md), [caché](docs/EVIDENCIA-CACHE.md), [búsqueda](docs/EVIDENCIA-BUSQUEDA.md), [eventos](docs/EVIDENCIA-EVENTOS-MEMBRESIA.md), [Tienda](docs/EVIDENCIA-TIENDA.md). |
 
@@ -323,7 +333,7 @@ Redis no autoriza ingresos: sólo acelera el agregado por sede. Si falla, se con
 
 ## Etapa 3: planes, pagos manuales y membresías
 
-Socios requiere PostgreSQL para esta capacidad. Iniciar con las instrucciones Compose anteriores; el esquema aditivo se aplica en el arranque, sin recrear volúmenes ni borrar registros. No hay planes ni tarifas predeterminadas: ADMIN crea el plan con nombre, importe entero en la unidad mínima de la moneda y código reconocido, y registra las fechas exactas al solicitar. No se calculan mensualidades ni se convierten monedas.
+Socios requiere PostgreSQL para esta capacidad. El esquema aditivo se aplica al iniciar con Compose. Los cuatro planes comerciales acordados se incorporan como configuración inicial. ADMIN puede crear planes con nombre, duración, importe entero en la unidad mínima de la moneda y código reconocido. El portal calcula la vigencia de la solicitud según la duración y la regla de fin de mes documentada en ADR-021. Cada pago conserva el importe y la moneda del contrato elegido.
 
 Desde «Socios & Membresías» o «Planes y Tarifas»: dar de alta o elegir socio → configurar/elegir plan → crear solicitud → registrar pago pendiente con referencia única → verificar el cobro por el procedimiento administrativo → confirmar pago. Sólo entonces se registra comprobante interno no fiscal y membresía habilitada según sus fechas. El socio consulta estado/solicitudes/comprobantes en «Membresía y Pagos» y reserva si la cobertura incluye ahora y la clase. Para nuevo período, ADMIN registra fechas no superpuestas y confirma un nuevo pago; acumulación, reactivación y prorrateo quedan bloqueados para revisión. No se cobra al socio mediante el portal ni se integra una pasarela.
 

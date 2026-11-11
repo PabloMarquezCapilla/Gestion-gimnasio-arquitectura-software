@@ -1,19 +1,23 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { PageHeader } from './PageHeader';
-import { apiComprasCaja, apiSolicitudesMembresia } from '../services/api';
-import type { CompraCaja, SolicitudMembresia } from '../services/api';
+import { apiResumenCompras, apiResumenMembresias } from '../services/api';
+import type { ResumenComprasAdmin, ResumenMembresias } from '../services/api';
 
 const card = 'rounded-xl border border-outline-variant bg-surface-container-low p-4 space-y-3';
 const pesos = (minor: number) => (minor / 100).toLocaleString('es-AR', { style: 'currency', currency: 'ARS' });
-const mesDe = (fecha: string) => fecha.slice(0, 7);
-const nombreMes = (mes: string) => new Date(mes + '-15').toLocaleDateString('es-AR', { month: 'long', year: 'numeric' });
-const MAX_PAGINAS = 10;
+const dinero = (minor: number, moneda: string) => {
+  const formato = new Intl.NumberFormat('es-AR', { style: 'currency', currency: moneda });
+  return formato.format(minor / 10 ** (formato.resolvedOptions().maximumFractionDigits ?? 2));
+};
+const nombreMes = (mes: string) => new Date(mes + '-15T12:00:00Z').toLocaleDateString('es-AR', {
+  month: 'long', year: 'numeric', timeZone: 'America/Argentina/Buenos_Aires',
+});
 
-function ultimosMeses(n: number): string[] {
-  const d = new Date();
+function ultimosMeses(mesActual: string, n = 6): string[] {
+  const [anio, mes] = mesActual.split('-').map(Number);
   return Array.from({ length: n }, (_, i) => {
-    const m = new Date(d.getFullYear(), d.getMonth() - (n - 1 - i), 1);
-    return `${m.getFullYear()}-${String(m.getMonth() + 1).padStart(2, '0')}`;
+    const m = new Date(Date.UTC(anio, mes - 1 - (n - 1 - i), 1));
+    return m.toISOString().slice(0, 7);
   });
 }
 
@@ -29,38 +33,23 @@ function Barras({ filas }: { filas: { etiqueta: string; valor: number; texto: st
   );
 }
 
-// Reportes de negocio calculados desde los datos de Socios y Tienda (últimos registros, hasta 10 páginas).
+// Cada propietario agrega todos sus registros en una consulta, con calendario de Argentina.
 export function ReportesPanel() {
-  const [datos, setDatos] = useState<{ solicitudes: SolicitudMembresia[]; compras: CompraCaja[] } | null>(null);
+  const [datos, setDatos] = useState<{ membresias: ResumenMembresias; compras: ResumenComprasAdmin } | null>(null);
   const [error, setError] = useState('');
+  const cargaActual = useRef(0);
   const cargar = useCallback(async () => {
+    const carga = ++cargaActual.current;
     setDatos(null); setError('');
     try {
-      const solicitudes: SolicitudMembresia[] = [];
-      for (let p = 1; p <= MAX_PAGINAS; p++) {
-        const r = await apiSolicitudesMembresia(p);
-        solicitudes.push(...r.items);
-        if (r.items.length < 20) break;
-      }
-      const compras: CompraCaja[] = [];
-      for (let p = 1; p <= MAX_PAGINAS; p++) {
-        const r = await apiComprasCaja(p);
-        compras.push(...r.items);
-        if (p * r.tamanio >= r.total) break;
-      }
-      setDatos({ solicitudes, compras });
-    } catch (e) { setError(e instanceof Error ? e.message : 'No se pudieron calcular los reportes.'); }
+      const [membresias, compras] = await Promise.all([apiResumenMembresias(), apiResumenCompras()]);
+      if (carga === cargaActual.current) setDatos({ membresias, compras });
+    } catch (e) { if (carga === cargaActual.current) setError(e instanceof Error ? e.message : 'No se pudieron calcular los reportes.'); }
   }, []);
-  useEffect(() => { void cargar(); }, [cargar]);
+  useEffect(() => { void cargar(); return () => { cargaActual.current++; }; }, [cargar]);
 
-  const meses = ultimosMeses(6);
-  const confirmadas = datos?.solicitudes.filter(s => s.estado === 'CONFIRMADA' && s.comprobante) ?? [];
-  const ingresosMembresias = meses.map(m => confirmadas.filter(s => mesDe(s.comprobante!.confirmadoEn) === m).reduce((t, s) => t + s.importeMinor, 0));
-  const ventasTienda = meses.map(m => (datos?.compras ?? []).filter(c => mesDe(c.creadaEn) === m).reduce((t, c) => t + c.totalMinor, 0));
-  const porPlan = new Map<string, number>();
-  confirmadas.forEach(s => porPlan.set(s.nombrePlan, (porPlan.get(s.nombrePlan) ?? 0) + 1));
-  const porProducto = new Map<string, number>();
-  (datos?.compras ?? []).forEach(c => c.items.forEach(i => porProducto.set(i.nombre, (porProducto.get(i.nombre) ?? 0) + i.unidades)));
+  const mesesMembresias = datos ? ultimosMeses(datos.membresias.mesActual) : [];
+  const mesesTienda = datos ? ultimosMeses(datos.compras.mesActual) : [];
   const grafana = `${window.location.protocol}//${window.location.hostname === 'localhost' ? 'localhost:3001' : 'grafana.' + window.location.host}`;
 
   return (
@@ -68,29 +57,38 @@ export function ReportesPanel() {
       <PageHeader eyebrow="ANÁLISIS" title="Reportes"
         description="Revisá los ingresos por membresías y las ventas registradas en la tienda."
         action={<button type="button" className="app-button" onClick={() => void cargar()}>Actualizar</button>} />
-      <p className="text-sm">Ingresos y ventas de los últimos 6 meses. El estado técnico del sistema (errores, latencia, réplicas) está en el <a className="text-primary underline" href={grafana} target="_blank" rel="noreferrer">tablero de Grafana</a>.</p>
+      <p className="text-sm">Ingresos y ventas de los últimos 6 meses, según el calendario de Argentina. El estado técnico del sistema (errores, latencia, réplicas) está en el <a className="text-primary underline" href={grafana} target="_blank" rel="noreferrer">tablero de Grafana</a>.</p>
       {error && <p role="alert" className="text-error">{error}</p>}
       {!datos && !error && <p role="status">Calculando reportes…</p>}
       {datos && <div className="grid gap-4 lg:grid-cols-2">
         <section className={card}>
           <h2 className="font-bold">Ingresos por membresías (pagos confirmados)</h2>
-          <p className="text-2xl font-bold text-primary">{pesos(ingresosMembresias.reduce((a, b) => a + b, 0))}</p>
-          <Barras filas={meses.map((m, i) => ({ etiqueta: nombreMes(m), valor: ingresosMembresias[i], texto: pesos(ingresosMembresias[i]) }))} />
+          {datos.membresias.ingresosPeriodo.length === 0 && <p>Sin pagos confirmados en los últimos seis meses.</p>}
+          {datos.membresias.ingresosPeriodo.map(total => <div key={total.moneda}>
+            <p className="text-2xl font-bold text-primary">{dinero(total.importeMinor, total.moneda)}</p>
+            <Barras filas={mesesMembresias.map(mes => {
+              const valor = datos.membresias.ingresosMensuales.find(i => i.mes === mes && i.moneda === total.moneda)?.importeMinor ?? 0;
+              return { etiqueta: nombreMes(mes), valor, texto: dinero(valor, total.moneda) };
+            })} />
+          </div>)}
         </section>
         <section className={card}>
           <h2 className="font-bold">Ventas de la tienda (compras de socios)</h2>
-          <p className="text-2xl font-bold text-primary">{pesos(ventasTienda.reduce((a, b) => a + b, 0))}</p>
-          <Barras filas={meses.map((m, i) => ({ etiqueta: nombreMes(m), valor: ventasTienda[i], texto: pesos(ventasTienda[i]) }))} />
+          <p className="text-2xl font-bold text-primary">{pesos(datos.compras.mensuales.reduce((suma, mes) => suma + mes.importeMinor, 0))}</p>
+          <Barras filas={mesesTienda.map(mes => {
+            const valor = datos.compras.mensuales.find(i => i.mes === mes)?.importeMinor ?? 0;
+            return { etiqueta: nombreMes(mes), valor, texto: pesos(valor) };
+          })} />
         </section>
         <section className={card}>
-          <h2 className="font-bold">Membresías confirmadas por plan</h2>
-          {porPlan.size === 0 ? <p className="text-xs">Sin membresías confirmadas.</p> :
-            <Barras filas={[...porPlan].sort((a, b) => b[1] - a[1]).map(([plan, n]) => ({ etiqueta: plan, valor: n, texto: String(n) }))} />}
+          <h2 className="font-bold">Membresías confirmadas por plan — histórico</h2>
+          {datos.membresias.confirmadasPorPlan.length === 0 ? <p className="text-xs">Sin membresías confirmadas.</p> :
+            <Barras filas={datos.membresias.confirmadasPorPlan.map(p => ({ etiqueta: p.nombrePlan, valor: p.cantidad, texto: String(p.cantidad) }))} />}
         </section>
         <section className={card}>
-          <h2 className="font-bold">Productos más vendidos (unidades)</h2>
-          {porProducto.size === 0 ? <p className="text-xs">Sin ventas de la tienda.</p> :
-            <Barras filas={[...porProducto].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([p, n]) => ({ etiqueta: p, valor: n, texto: String(n) }))} />}
+          <h2 className="font-bold">Productos más vendidos — histórico (unidades)</h2>
+          {datos.compras.productos.length === 0 ? <p className="text-xs">Sin ventas de la tienda.</p> :
+            <Barras filas={datos.compras.productos.map(p => ({ etiqueta: p.nombre, valor: p.unidades, texto: String(p.unidades) }))} />}
         </section>
       </div>}
     </section>

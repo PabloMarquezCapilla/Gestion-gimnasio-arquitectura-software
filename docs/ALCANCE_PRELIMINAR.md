@@ -82,7 +82,7 @@ Cada intento de ingreso validará el estado de la membresía. Recepción registr
 
 Los ingresos y egresos deben alternarse por socio y sede: no se admite un segundo ingreso sin una salida intermedia ni una salida sin un ingreso abierto. La ocupación de una sede corresponde a la cantidad de socios con un ingreso aceptado que todavía no tiene una salida asociada. Un movimiento rechazado no modifica esa ocupación.
 
-**Implementación de etapa 1, 30/10/2026:** recepción en panel ADMIN existente, sin rol nuevo ni operaciones para SOCIO. MongoDB guarda movimientos, presencias e idempotencia. CA-G05–G07 conservan sus reglas; el egreso no vuelve a validar membresía. ADR-019 justifica la restricción de acceso y la vigencia local del JWT. Caché y consumo de uso desde Car Cruds quedan para otra etapa.
+**Implementación de etapa 1, 30/10/2026.** Recepción en panel ADMIN existente, con MongoDB para movimientos, presencias e idempotencia. CA-G05–G07 conservan sus reglas; el egreso no vuelve a validar membresía. ADR-019 justifica la restricción de acceso y la vigencia local del JWT. Posteriormente se implementaron la caché Redis de ocupación (ADR-020) y la consulta interna de ingresos efectivos para el informe mensual de Car Cruds (ADR-018). Las sedes acordadas el 11/11/2026 son Córdoba, San Francisco y Hernando.
 
 No se incluyen lectores, molinetes ni otros dispositivos físicos en esta versión.
 
@@ -133,6 +133,12 @@ Los datos de prueba serán ficticios; está pendiente confirmar si esa condició
 | RF-11 | El socio puede consultar productos y disponibilidad de FAV desde Tienda conforme al contrato externo acordado, distinguiendo esa disponibilidad del stock físico de la tienda del gimnasio. |
 | RF-12 | FAV puede consultar el stock local de la tienda y registrar reposiciones mediante la capacidad compartida de Tienda, sin duplicar entregas. |
 | RF-13 | ADMIN del gimnasio puede registrar unidades vendidas y consultar las existencias de la tienda sin permitir stock negativo. |
+
+### Indicadores y reportes administrativos
+
+El panel administrativo resume cobros pendientes, ocupación, próximas clases y compras de la tienda. Caja consulta compras individuales paginadas y sus totales completos. Reportes muestra ingresos por pagos de membresía confirmados y compras de socios del mes actual y los cinco anteriores, además de cantidades históricas por plan y de los ocho productos más vendidos por nombre.
+
+Socios y Tienda calculan los agregados en sus propias bases y requieren JWT ADMIN. Cada respuesta informa su instante de consulta. Días y meses siguen `America/Argentina/Buenos_Aires`; los importes de membresías se agrupan por moneda. Una fuente vacía válida produce totales cero y un error de consulta se informa como tal. Estos reportes describen las operaciones registradas de pagos y tienda. [Contratos y verificación](contracts/README.md#resúmenes-administrativos).
 
 ## Reglas de negocio generales
 

@@ -49,7 +49,7 @@ test('Suspensión, Outbox/RabbitMQ/Inbox y recuperación con PostgreSQL reales',
     const rabbitUrl='amqp://prueba:'+password+'@127.0.0.1:'+port;
     await eventually(async()=>{try{connection=await connect(rabbitUrl,{timeout:1000});connection.on('error',()=>{});return true;}catch{return false;}},60000);
     const repo=new sociosRepo.PostgresSociosRepository(pool),clases=new clasesRepo.PostgresClaseRepository(clasesPool);
-    await repo.inicializarEsquema();await clases.inicializarEsquema();
+    await repo.inicializarEsquema({ cargarDatosDemo: true });await clases.inicializarEsquema();
     const admin=await adminModule.crearAdministrador(repo,{dni:'88009911',nombre:'Admin de prueba',email:'eventos@example.invalid',password:'sintetica-eventos'});
     const auth={jwtSecret:'eventos-sintetico-'.repeat(4),internalApiKey:'servicios-eventos-ficticia'};
     const gestion=new gestionModule.PostgresGestionMembresias(pool);
