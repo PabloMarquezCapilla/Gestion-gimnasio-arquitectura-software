@@ -1,6 +1,6 @@
 # Arquitectura del sistema
 
-**Estado documental.** Revisión al 09/11/2026: Tienda consume el catálogo de FAV y los socios compran (ADR-023/024); el gateway valida JWT y limita tráfico (ADR-025); hay Prometheus, Grafana y alertas (D11); se agregaron test de carga (D13) y despliegue en VM preparado (ADR-026). El texto que sigue es la revisión al 08/11/2026, con búsqueda en API/portal, publicación/edición ADMIN y suspensión mediante eventos verificadas localmente. Car Cruds dispone de lecturas, vinculación y envío mensual manual con persistencia e historial; conexión operativa y prueba conjunta pendientes. Tienda implementa stock/reposiciones para FAV y ventas administrativas con PostgreSQL; publicación y prueba conjunta pendientes. El POST anterior de empleados conserva su implementación.
+**Estado documental al 10/11/2026.** El gimnasio está desplegado en Azure y el recorrido principal con FAV está verificado en ambos sentidos. El gateway valida JWT y limita tráfico (ADR-025), y la observabilidad usa Prometheus, Grafana y alertas (D11). La búsqueda, la administración de clases y la suspensión mediante eventos se verificaron localmente. Car Cruds dispone de lecturas, vinculación y envío mensual manual con persistencia e historial, con conexión operativa y prueba conjunta pendientes.
 
 **Enunciado:** §3, página 4; §4.1, páginas 5–6; §5, páginas 6–7; §6.2–6.3, página 8. Los patrones internos y el balanceo corresponden a §2.1 y §2.3, página 2.
 
@@ -78,7 +78,7 @@ El [contrato externo 0.3.0 y el perfil mensual](contracts/README.md#integracion-
 
 ### Integración con FAV: consumo y capacidad ofrecida
 
-**Consumo de FAV (10/11/2026).** Tienda llama a `GET /v1/productos` desde su backend y valida el [contrato 1.2.0](contracts/fav-catalogo-pedidos-1.2.0.openapi.yaml). La URL base de Azure es `https://fav-ucc.chilecentral.cloudapp.azure.com`. El equipo verificó en Azure HTTP 200 para catálogo (5 productos, 19 variantes) y disponibilidad (10 variantes), con validación OpenAPI 1.2.0. Las pruebas automatizadas de compra usan un proveedor simulado. FAV reportó HTTP 401 al consumir consignaciones del gimnasio en Azure. Ver [configuración y prueba controlada](DEPLOY.md#verificación-de-fav).
+**Consumo de FAV (10/11/2026).** Tienda llama a `GET /v1/productos` desde su backend y valida el [contrato 1.2.0](contracts/fav-catalogo-pedidos-1.2.0.openapi.yaml). El gimnasio verificó el catálogo real desde Azure y recibió dos reposiciones enviadas por FAV. [Evidencia](EVIDENCIA-TIENDA.md#prueba-conjunta-en-azure-del-10112026).
 - El catálogo (`GET /api/v1/tienda/productos`) cruza esos productos con el stock consignado local y muestra solo las variantes con unidades.
 - El socio compra con `POST /api/v1/tienda/compras`. Una compra nueva vuelve a consultar el catálogo de FAV para cotizar antes de la transacción. Si falla la consulta, se rechaza la compra; el catálogo de lectura puede seguir disponible en modo degradado. El descuento de varias variantes es atómico e idempotente.
 - Protección: timeout de 3 s con un reintento, circuit breaker y caché de 60 s con uso degradado hasta 15 min.
@@ -152,7 +152,7 @@ flowchart LR
     sistema -->|Socios: GET empleados/estado · cliente implementado<br/>Conexión conjunta pendiente · Bearer gym| consumidor
     sistema -->|POST de fotografía mensual · Bearer gym<br/>Envío manual implementado; conexión pendiente| consumidor
     sistema -.->|Tienda: catálogo y precios<br/>Lecturas autenticadas verificadas| proveedor
-    proveedor -->|Consulta stock local y registra reposiciones<br/>API local implementada; prueba conjunta pendiente| sistema
+    proveedor -->|Consulta stock local y registra reposiciones<br/>API publicada en Azure| sistema
 ```
 
 ## Diagrama de contenedores (C4 - Nivel 2)
@@ -187,10 +187,10 @@ flowchart TB
     socios -->|POST evidencia mensual · Bearer gym<br/>Envío manual implementado; conexión pendiente| carcruds
     distribuidora["FAV · catálogo y disponibilidad de distribuidora<br/>Consumidor de stock/reposiciones del gimnasio"]
     tienda -.->|Consulta externa prevista<br/>Contrato y conexión por acordar| distribuidora
-    distribuidora -->|GET stock · POST reposiciones · X-API-Key<br/>POST con Idempotency-Key · prueba conjunta pendiente| gateway
+    distribuidora -->|GET stock · POST reposiciones · X-API-Key<br/>POST con Idempotency-Key| gateway
 ```
 
-Las líneas discontinuas indican partes previstas. El cliente de lectura de Car Cruds se verificó contra HTTP controlado, sin prueba conjunta aún. El entorno local utiliza HTTP; HTTPS y publicación accesible se resolverán en el despliegue.
+Las líneas discontinuas indican partes previstas. El cliente de lectura de Car Cruds se verificó contra HTTP controlado y su prueba conjunta sigue pendiente. El entorno local utiliza HTTP y el despliegue de Azure ofrece HTTPS.
 
 ## Diagrama de secuencia del flujo principal
 

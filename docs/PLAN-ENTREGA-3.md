@@ -1,6 +1,6 @@
 # Plan de cierre de entrega 3
 
-**Estado.** 10/11/2026. El gimnasio está desplegado por HTTPS en Azure. El catálogo de FAV se verificó desde el entorno local. Quedan pendientes las políticas administrativas abiertas, la configuración de proveedores en la VM y las pruebas conjuntas con ambos grupos.
+**Estado.** 10/11/2026. El gimnasio está desplegado por HTTPS en Azure. Se verificó el recorrido principal con FAV en ambos sentidos. Quedan pendientes las políticas administrativas abiertas y la conexión y prueba conjunta con Car Cruds.
 **Referencia:** presentación grupal, páginas 8–9 del enunciado. La defensa individual de la página 9 tiene verificaciones adicionales, identificadas abajo.
 
 **Correcciones verificadas el 10/11/2026.** Fin de mes con regla confirmada, duración contractual durable para Car Cruds y costo desconocido ante datos históricos incompletos o fracciones. El descubrimiento de pruebas excluye el lanzador de carga. Balanceo genera su credencial de Grafana y reconoce sus volúmenes al limpiar. Aprobaron 278 pruebas de regresión/cobertura, 21 de PostgreSQL y el ensayo de balanceo con limpieza. La compilación frontend aprobó 41 módulos. Se mantienen los cuatro 504 transitorios durante detección de una réplica caída. [Detalle y límites](EVIDENCIA-MEMBRESIAS.md#correcciones-verificadas-el-10112026).
@@ -13,10 +13,10 @@ Completar una etapa por vez: explicar el cambio, modificar lo mínimo necesario,
 
 Se conservaron pagos/planes/membresías, reservas/FIFO, Accesos con MongoDB, caché Redis medida, JWT, balanceo y Car Cruds. El 06/11/2026 se verificaron **196/196 pruebas** y compilación frontend de **35 módulos** después de actualizar la copia local.
 
-## 1. Contrato ofrecido a FAV — definido localmente; revisión con FAV pendiente
+## 1. Contrato ofrecido a FAV — publicado y verificado
 
 - Documentar el nuevo acuerdo: FAV también consume una API del gimnasio; Tienda administra un stock local único, independiente de sedes, recibe reposiciones y ADMIN registra ventas.
-- Definidos [OpenAPI 1.0.0](contracts/openapi-fav-v1.yaml) y [guía FAV](contracts/fav-tienda.md): `GET /api/v1/consignaciones/stock`, `POST /api/v1/consignaciones/reposiciones`, `X-API-Key`, `Idempotency-Key` para el POST, modelos, reglas, ejemplos y códigos HTTP. El contrato y la guía forman parte de esta rama; aceptación de FAV, publicación del servicio y prueba conjunta pendientes.
+- Definidos [OpenAPI 1.0.0](contracts/openapi-fav-v1.yaml) y [guía FAV](contracts/fav-tienda.md) con las operaciones de stock y reposición, autenticación e idempotencia. FAV envió reposiciones a la API publicada en Azure.
 - Conservar la misma entrega/respuesta ante repetición; clave o referencia reutilizada con datos diferentes produce conflicto. No permitir stock negativo ni agregar devoluciones o ajustes.
 - **Cierre:** OpenAPI y guía coherentes, ejemplos validados y decisiones registradas. Un contrato publicado no acredita endpoints implementados.
 - **Verificación documental del 06/11/2026:** YAML procesable, 40 referencias resueltas, 7 esquemas compilados y 19 ejemplos válidos; se rechazaron entradas inválidas y se comprobó que no existe el límite ficticio de veinte unidades. La verificación operativa se detalla en el paso 2.
@@ -30,13 +30,13 @@ Se conservaron pagos/planes/membresías, reservas/FIFO, Accesos con MongoDB, cac
 - **Cierre:** resultados finales y límites en [EVIDENCIA-TIENDA](EVIDENCIA-TIENDA.md). El consumo de catálogo, aceptación de FAV, URL pública y prueba conjunta pertenecen a las etapas 3 y 9.
 - **Documentación:** D3, ADR-022, contrato, arquitectura y evidencia. **Enunciado:** §2.1–2.2/2.8, §4.1 y presentación, páginas 8–9.
 
-## 3. Consulta de productos de FAV y compra de socios — implementado y verificado localmente (09/11/2026)
+## 3. Consulta de productos de FAV y compra de socios — verificado en Azure
 
-- Contrato de FAV `catalogo-pedidos` 1.1.0 fijado desde `development` `b9cb3e4` en [fav-catalogo-pedidos-1.1.0.openapi.yaml](contracts/fav-catalogo-pedidos-1.1.0.openapi.yaml). El cliente pertenece a Tienda: portal → gateway → Tienda → FAV.
+- Tienda consume el [contrato de FAV 1.2.0](contracts/fav-catalogo-pedidos-1.2.0.openapi.yaml) desde su backend. El flujo pasa del portal al gateway, a Tienda y a FAV.
 - El catálogo cruza los productos de FAV con el stock consignado local. Los socios compran desde la web con precio tomado en el servidor y descuento atómico e idempotente. Protección: timeout, reintento, circuit breaker y caché degradada. [ADR-023](adr/ADR-023-compra-de-socios-en-tienda.md), [ADR-024](adr/ADR-024-circuit-breaker-fav.md) y contrato propio [openapi-tienda-socios-v1.yaml](contracts/openapi-tienda-socios-v1.yaml).
 - **Verificación:** test de contrato del cliente contra el OpenAPI fijado; tests del circuito, del catálogo degradado y de las compras; `npm run test:tienda` con PostgreSQL real y dos instancias, donde 10 compradores simultáneos por la última unidad dan exactamente una compra.
 - **Revisión del 10/11/2026.** Se creó `feat/conexion-fav` desde `main` actualizado tras la PR #9. La URL pública comunicada por FAV responde. Su contrato 1.2.0 conserva el esquema del catálogo 1.1.0 fijado y su cliente ya distingue rechazos, conflictos y resultados inciertos de reposiciones. Compilación y 27 pruebas de Tienda aprobadas.
-- **Conexión verificada.** Con la credencial renovada, Tienda consultó 5 productos y 19 variantes de FAV. El gateway local devolvió `200` con `origen: FAV` y catálogo vacío, consistente con el stock consignado local. Queda pendiente configurar el catálogo en la VM y probar la reposición desde FAV. [Detalle de coordinación](contracts/fav-tienda.md).
+- **Prueba conjunta.** En Azure, Tienda devolvió `200` con `origen: FAV` y dos productos con stock local. El equipo confirmó dos reposiciones enviadas desde FAV y el gateway registró una compra con `201`. [Evidencia](EVIDENCIA-TIENDA.md#prueba-conjunta-en-azure-del-10112026).
 
 ## 4. Cambios de membresía y mensajería — completo y verificado localmente
 
@@ -71,7 +71,7 @@ Se reutilizan Clases y Reservas, su arquitectura Hexagonal, PostgreSQL FTS/GIN y
 
 ### Continuación después del paso 5
 
-El retiro de espera y el recorrido propio del paso 6 están verificados. Continúan las políticas administrativas pendientes, la conexión real con Car Cruds y la prueba conjunta con FAV. Los pasos 8 y 9 registran la verificación de observabilidad y el despliegue.
+El retiro de espera y el recorrido propio del paso 6 están verificados. Continúan las políticas administrativas pendientes y la conexión real con Car Cruds. Los pasos 8 y 9 registran la verificación de observabilidad y el despliegue.
 
 ## 6. Cierre del recorrido del socio — retiro verificado localmente; políticas administrativas pendientes
 
@@ -117,9 +117,7 @@ Texto original del paso:
 - Cobertura con umbrales ([EVIDENCIA-COBERTURA](EVIDENCIA-COBERTURA.md)).
 - AsyncAPI del evento.
 
-**Pendiente:**
-- Configurar los accesos externos en la VM y compartir la URL con FAV y Car Cruds.
-- Pruebas conjuntas.
+**Pendiente.** Configurar el acceso a Car Cruds en la VM y realizar la prueba conjunta con ese grupo.
 
 **Hecho el 10/11/2026.** Se desplegó el gimnasio en Azure Chile Central. El portal, `/health` y el estado de Grafana devolvieron `200` por HTTPS. [URLs públicas](DEPLOY.md#4-urls-a-publicar).
 
@@ -135,4 +133,4 @@ Texto original del paso:
 
 ## Límites y dependencias
 
-No se agregan pasarela, factura fiscal, devoluciones, ajustes, stock por sede, consignaciones adicionales ni CRUD nuevos ajenos al alcance. Siguen pendientes la configuración de proveedores en Azure, las pruebas conjuntas y las políticas comerciales abiertas. La persistencia de Tienda ya se acordó e implementó con PostgreSQL.
+No se agregan pasarela, factura fiscal, devoluciones, ajustes, stock por sede, consignaciones adicionales ni CRUD nuevos ajenos al alcance. Siguen pendientes la conexión con Car Cruds y las políticas comerciales abiertas. La persistencia de Tienda ya se acordó e implementó con PostgreSQL.

@@ -2,7 +2,7 @@
 
 **Contrato:** [OpenAPI FAV 1.0.0](openapi-fav-v1.yaml). **Responsable:** microservicio Tienda del gimnasio.
 
-**Estado al 10/11/2026.** Tienda consulta el catálogo público de FAV desde el entorno local. El gateway devolvió `200` con `origen: FAV` y una lista vacía porque aún no hay reposiciones en el stock local. La API de consignaciones está publicada por HTTPS en Azure. Faltan configurar el catálogo en la VM y realizar la prueba conjunta de reposiciones.
+**Estado al 10/11/2026.** Tienda consulta el catálogo real de FAV desde Azure. El portal mostró dos productos con stock consignado, se registraron dos reposiciones enviadas por FAV y el gateway registró una compra exitosa. [Evidencia](../EVIDENCIA-TIENDA.md#prueba-conjunta-en-azure-del-10112026).
 
 **Enunciado:** §3, página 4 (documentación); §4.1, páginas 5–6 (contrato formal, integración y pruebas); §5 D8/D9, página 7 (capacidad ofrecida y consumo del proveedor). Decisión: [ADR-022](../adr/ADR-022-tienda-y-consignaciones-fav.md).
 
@@ -99,11 +99,11 @@ Los errores usan JSON con `codigo` estable y `mensaje` explicativo. Las decision
 | 500 | `ERROR_INTERNO` | Resultado potencialmente incierto: recuperar con los mismos datos. |
 | 503 | `SERVICIO_NO_DISPONIBLE` | Reintentar conservando los mismos datos. |
 
-**Correcciones verificadas en el cliente de FAV.** Su adaptador ahora distingue errores de configuración, conflictos, rechazos contractuales e incertidumbre. Para confirmar una reposición exige `201`, estado `RECIBIDA` y un UUID válido. Las redirecciones se evalúan sin seguirlas. Esto resuelve las observaciones de la revisión anterior del cliente. Queda verificar el comportamiento desplegado en la prueba conjunta. [Cliente de FAV](https://github.com/JuanHernandez-99/Fav-del-universo/blob/ff8ae75fb93cb31c0b597a36d18598890980fdf9/services/inventario/internal/adaptadores/gimnasio/cliente.go).
+**Cliente de FAV.** Su adaptador distingue errores de configuración, conflictos, rechazos contractuales e incertidumbre. Para confirmar una reposición exige `201`, estado `RECIBIDA` y un UUID válido. Las redirecciones se evalúan sin seguirlas. [Cliente de FAV](https://github.com/JuanHernandez-99/Fav-del-universo/blob/ff8ae75fb93cb31c0b597a36d18598890980fdf9/services/inventario/internal/adaptadores/gimnasio/cliente.go).
 
-## Coordinación pendiente
+## Verificación conjunta
 
-Configurar el catálogo de FAV en Azure y compartir con FAV la URL pública y su clave de consignaciones por canal privado. Probar juntos una reposición ficticia, la consulta de stock y su aparición en el catálogo del socio. Verificar repeticiones por clave y referencia, conflictos y recuperación ante fallos. [EVIDENCIA-TIENDA](../EVIDENCIA-TIENDA.md).
+El recorrido en Azure verificó el catálogo, la consulta de stock, la recepción de reposiciones de FAV y una compra. Los ensayos de repetición por clave y referencia, conflictos y recuperación ante fallos están registrados en la evidencia local. [EVIDENCIA-TIENDA](../EVIDENCIA-TIENDA.md).
 
 ## Operaciones internas del administrador
 
@@ -122,7 +122,7 @@ En **Tienda y stock**, ADMIN selecciona variante/unidades y confirma la venta re
 
 ## Consumo del catálogo de FAV (gimnasio → FAV)
 
-**Desde el 09/11/2026.** Contrato de FAV fijado: [catalogo-pedidos 1.1.0](fav-catalogo-pedidos-1.1.0.openapi.yaml), copia sin modificar de [`development` `b9cb3e4`](https://github.com/JuanHernandez-99/Fav-del-universo/blob/b9cb3e4eb75fab338c34a8d3e244188c67dda464/docs/contracts/catalogo-pedidos-v1.openapi.yaml). Tienda usa solo `GET /v1/productos`. No usa `/v1/disponibilidad`, que es stock online de FAV y no el del gimnasio, ni `/v1/pedidos`, que no está habilitado para nuestra clave.
+Tienda usa `GET /v1/productos` del [contrato FAV 1.2.0](fav-catalogo-pedidos-1.2.0.openapi.yaml). El verificador del contrato también consulta `GET /v1/disponibilidad`. Esa disponibilidad corresponde al stock online de FAV. El portal usa las unidades consignadas en el gimnasio.
 
 | Variable | Uso |
 |---|---|
