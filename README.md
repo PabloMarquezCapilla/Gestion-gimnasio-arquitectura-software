@@ -108,6 +108,7 @@ El script conserva `.env`. Si ya existen volúmenes pero falta ese archivo, recu
 |---|---|
 | [http://localhost:8080](http://localhost:8080) | Portal del socio y administración. |
 | [http://localhost:8080/consola.html](http://localhost:8080/consola.html) | Consola técnica de clases, reservas y trazas. |
+| [http://localhost:8080/docs/](http://localhost:8080/docs/) | Swagger UI de los contratos publicados a otros grupos: FAV (stock y reposiciones) y Car Cruds (recepción de empleados). |
 | `/health/socios`, `/health/clases` | Salud del proceso y conectividad con PostgreSQL. |
 | `/health/accesos`, `/health/tienda` | Verifican MongoDB y PostgreSQL de Tienda respectivamente; no acreditan conexión externa. |
 | `/metrics/socios`, `/metrics/clases`, `/metrics/accesos`, `/metrics/tienda` | Métricas recolectadas por Prometheus y disponibles en el tablero de Grafana. |

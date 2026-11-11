@@ -1,0 +1,8 @@
+{
+  "name": "gimnasio-swagger-ui",
+  "private": true,
+  "description": "Swagger UI estático servido por el gateway en /docs/ para los contratos publicados a FAV y Car Cruds.",
+  "dependencies": {
+    "swagger-ui-dist": "5.17.14"
+  }
+}

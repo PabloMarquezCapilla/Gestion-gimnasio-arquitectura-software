@@ -1,5 +1,7 @@
 # Contratos e integraciones entre grupos
 
+**Documentación interactiva (Swagger UI):** el gateway publica en `/docs/` ([local](http://localhost:8080/docs/) · [Azure](https://gimnasio.68-211-88-90.sslip.io/docs/)) los dos contratos que el gimnasio ofrece a otros grupos: [OpenAPI FAV](openapi-fav-v1.yaml) y [OpenAPI Empleados](openapi-empleados-v1.yaml) para Car Cruds. Un selector permite elegir el contrato, ver modelos, ejemplos y errores, y probar las operaciones con «Try it out». Los YAML de esta carpeta son la fuente única: la imagen del gateway los copia sin modificarlos y sirve Swagger UI (`swagger-ui-dist` 5.17.14) sin depender de un CDN.
+
 **API interna de recepción, 30/10/2026:** [OpenAPI Accesos 1.0.0](openapi-accesos-v1.yaml), [ADR-019](../adr/ADR-019-accesos-mongodb-recepcion.md) y [evidencia](../EVIDENCIA-ACCESOS.md). Requiere JWT ADMIN, pasa por el gateway y no reemplaza ningún contrato externo. POST con Idempotency-Key; consultar/registrar ocupación e historial no concede permisos a SOCIO.
 
 **Estado de Car Cruds:** lecturas, vinculación administrativa y envío manual de fotografías implementados. El equipo confirmó la conexión desde Azure, con URL y token configurados. El [registro operativo](#estado-de-la-conexión-en-azure) reúne el estado de verificación. El POST anterior del gimnasio conserva su contrato y documentación histórica.

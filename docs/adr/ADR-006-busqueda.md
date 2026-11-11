@@ -8,6 +8,8 @@
 
 Clases y Reservas es propietario del catálogo. Se mantiene PostgreSQL Full-Text Search (FTS) con GIN para buscar texto en nombre, actividad y profesor, evitando operar un segundo motor y sincronizar otra copia del catálogo. Un motor dedicado sigue siendo una alternativa si las mediciones justifican su complejidad. No se afirma una cantidad de usuarios o clases que el equipo no haya confirmado.
 
+**Relación con la caché.** La búsqueda no se cachea: devuelve cupos y espera actuales con `Cache-Control: no-store`. Redis se usa solo para la ocupación por sede en Accesos. La comparación entre ambos componentes está en [D3](ADR-003-persistencia.md#relación-entre-caché-y-motor-de-búsqueda).
+
 ## Implementado y verificado
 
 - `PostgresClaseRepository.inicializarEsquema` crea `documento_busqueda`, columna `tsvector` generada con diccionario español y pesos A/B/C para nombre/actividad/profesor, e índice GIN `idx_clases_fts`.

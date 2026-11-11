@@ -1,6 +1,6 @@
 # Integración con FAV: stock y reposiciones del gimnasio
 
-**Contrato:** [OpenAPI FAV 1.0.0](openapi-fav-v1.yaml). **Responsable:** microservicio Tienda del gimnasio.
+**Contrato:** [OpenAPI FAV 1.0.0](openapi-fav-v1.yaml), también navegable en Swagger UI en `/docs/` del gateway ([Azure](https://gimnasio.68-211-88-90.sslip.io/docs/)). **Responsable:** microservicio Tienda del gimnasio.
 
 **Estado al 10/11/2026.** Tienda consulta el catálogo real de FAV desde Azure. El portal mostró dos productos con stock consignado, se registraron dos reposiciones enviadas por FAV y el gateway registró una compra exitosa. [Evidencia](../EVIDENCIA-TIENDA.md#prueba-conjunta-en-azure-del-10112026).
 

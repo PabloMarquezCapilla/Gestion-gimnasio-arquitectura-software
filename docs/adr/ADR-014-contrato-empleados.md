@@ -40,7 +40,7 @@ La implementación persistente conserva origen, clave, datos normalizados y resu
 
 ### Contrato y compatibilidad
 
-Se publica [openapi-empleados-v1.yaml](../contracts/openapi-empleados-v1.yaml), versión `1.0.1`, como contrato independiente para esta capacidad. `1.0.0` fue la versión inicial del mock; `1.0.1` actualiza descripciones y servidores al estado operativo, sin cambiar campos, respuestas ni reglas. Su guía está en [docs/contracts/README.md](../contracts/README.md).
+Se publica [openapi-empleados-v1.yaml](../contracts/openapi-empleados-v1.yaml), versión `1.0.1`, como contrato independiente para esta capacidad. `1.0.0` fue la versión inicial del mock; `1.0.1` actualiza descripciones y servidores al estado operativo, sin cambiar campos, respuestas ni reglas. Su guía está en [docs/contracts/README.md](../contracts/README.md) y puede navegarse y probarse con Swagger UI en `/docs/` del gateway.
 
 El [contrato anterior de clases](../contracts/openapi-v1.yaml) se conserva como antecedente y para las pruebas existentes. Las APIs tienen rutas y versiones independientes: empleados `1.0.1` y clases `1.0.0`. Los GET de clases se conservan como funciones del gimnasio.
 

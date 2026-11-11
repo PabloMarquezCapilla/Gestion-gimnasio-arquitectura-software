@@ -23,6 +23,22 @@ El esquema y los datos de demostración se inicializan por separado. Socios y Cl
 | Accesos y Ocupación | MongoDB, base `accesos`: sedes, movimientos e historial por identificador/tiempo, presencias abiertas y ocupación derivada. Redis para la lectura de ocupación. | Recepción transaccional e idempotencia durable implementadas; caché implementada y medida según ADR-020. |
 | Tienda | PostgreSQL 17, base y usuario `tienda`: stock por variante, entregas por referencia, ventas por actor y resultados por operación/origen/clave. El catálogo y stock de distribuidora siguen en FAV. | `tienda_stock`, `tienda_reposiciones`, `tienda_ventas` y `tienda_operaciones` implementadas; stock, movimiento y respuesta se guardan en una transacción. ADR-022 revisa la decisión previa de no guardar existencias. |
 
+### Relación entre caché y motor de búsqueda
+
+La caché y el motor de búsqueda son dos estructuras derivadas, cada una dentro del servicio propietario de su fuente de verdad. Ninguna de las dos decide un ingreso, una reserva ni un cupo.
+
+| | Motor de búsqueda | Caché |
+|---|---|---|
+| Tecnología | PostgreSQL Full-Text Search: columna `documento_busqueda` (`tsvector` generado, pesos A/B/C) e índice GIN `idx_clases_fts` | Redis 8, cache-aside |
+| Servicio y fuente | Clases y Reservas, base `clases` | Accesos y Ocupación; fuente MongoDB `accesos` |
+| Qué contiene | Índice de nombre, actividad y profesor de cada clase | Solo el entero de ocupación por sede |
+| Actualización | En la misma transacción que la clase: no hay copia que sincronizar ni demora de indexación | TTL de 30 s e invalidación por generación después de cada movimiento confirmado |
+| Si falla | La búsqueda responde 503; no se sirven resultados cacheados | Se degrada a MongoDB; la búsqueda no se ve afectada |
+
+**Por qué la búsqueda no pasa por la caché.** `GET /api/v1/catalogo/clases` devuelve, junto con los resultados, cupos libres y estado de la lista de espera. Esos datos cambian con cada reserva, por eso la respuesta lleva `Cache-Control: no-store` y la reserva vuelve a evaluar capacidad dentro de su transacción ([D7](ADR-007-cache.md)). Como el índice FTS vive en la misma base que las reservas, una sola consulta obtiene coincidencias y disponibilidad en un mismo snapshot; un motor externo o una caché delante agregarían una copia con su propia demora de actualización. En cambio, la ocupación por sede es un agregado repetitivo y tolerante a unos segundos de antigüedad, y por eso es el único dato cacheado ([ADR-020](ADR-020-cache-ocupacion-redis.md)).
+
+Los dos componentes no comparten datos ni dependencias: una caída de Redis no afecta la búsqueda y una caída de PostgreSQL no altera la caché de ocupación. Cachear resultados de búsqueda queda como alternativa futura, que exigiría separar los metadatos de la clase (cacheables) de la disponibilidad (siempre en vivo) y revisar el contrato. Detalle de la búsqueda en [D6](ADR-006-busqueda.md).
+
 Las bases relacionales comparten una instancia local, con usuarios/credenciales separados y permisos por base. Esto separa propiedad, no recursos físicos ni disponibilidad. El servicio consumidor usa APIs y referencias por ID, sin claves foráneas entre bases. Límites vigentes en [D1](ADR-022-tienda-y-consignaciones-fav.md).
 
 La elección de PostgreSQL para Tienda fue confirmada por el equipo: las existencias, referencias únicas y respuestas idempotentes necesitan operaciones atómicas y se reutiliza el motor existente sin agregar otro servidor. El inicializador crea base/rol faltantes sin borrar registros ni rotar claves existentes; el inicio completa `TIENDA_DB_PASSWORD` y `FAV_API_KEY` solo cuando faltan. Las credenciales permanecen fuera de Git.

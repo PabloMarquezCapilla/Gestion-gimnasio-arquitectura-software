@@ -27,7 +27,7 @@ Este apartado conserva la propuesta inicial. Su implementación posterior está 
 
 Socios y Clases exponen `/metrics` en formato compatible con Prometheus: `http_requests_total`, `http_errors_total`, `process_uptime_seconds` y `pg_pool_active_connections`. Son contadores por proceso que se reinician con él. Las conexiones ocupadas provienen de `totalCount - idleCount` del pool.
 
-Accesos incorpora histogramas de duración/antigüedad y contadores de caché en etapa 2 ([métricas](../EVIDENCIA-CACHE.md)). Siguen pendientes métricas de cola/event loop, recolector Prometheus, Grafana, alertas y exportador OpenTelemetry. Un identificador W3C permite correlacionar logs, pero enviar spans completos a un backend requiere instrumentación/exportación adicional.
+Accesos incorpora histogramas de duración/antigüedad y contadores de caché en etapa 2 ([métricas](../EVIDENCIA-CACHE.md)). En ese momento seguían pendientes métricas de cola/event loop, recolector Prometheus, Grafana, alertas y exportador OpenTelemetry; los tres primeros se implementaron después (ver «Tablero y alertas implementados»). Un identificador W3C permite correlacionar logs, pero enviar spans completos a un backend requiere instrumentación/exportación adicional.
 
 Se conserva como diseño el tablero RED (tasa, errores, duración) y USE (utilización, saturación, errores). Objetivos iniciales propuestos: disponibilidad mensual 99,5%, 95% de reservas bajo 500 ms y 99% de lecturas de clases bajo 150 ms. No están acreditados por una prueba local breve ni confirmados como compromiso del negocio.
 
@@ -36,6 +36,32 @@ Criterios propuestos: alertar ante >1% de 5xx durante 5 min, p99 de reservas >15
 ## Consecuencias
 
 La primera traza permite seguir una reserva entre servicios HTTP con PostgreSQL. La implementación posterior de §2.10 agrega recolección, tablero y alertas, con los límites de exportación y notificación indicados más abajo.
+
+## Por qué Prometheus y Grafana
+
+Cada servicio expone `/metrics`, pero esos contadores viven en el proceso, se reinician con él y no muestran tendencias ni el sistema completo. Se necesitan tres funciones distintas: **recolectar y guardar** las series, **evaluar alertas** y **visualizarlas** en un tablero. Prometheus cubre las dos primeras y Grafana la tercera.
+
+**Qué aporta Grafana.** La interfaz de Prometheus sirve para consultas puntuales en PromQL, pero no ofrece tableros persistentes. Grafana reúne en una sola vista las métricas de los cuatro servicios, el reparto entre réplicas de Clases, el circuito hacia FAV, la caché de ocupación, las colas y la DLQ de RabbitMQ y las conexiones a PostgreSQL. Así es posible:
+
+- seguir el tablero RED (tasa, errores, duración) y USE (utilización, saturación, errores) definido en la estrategia;
+- detectar un problema mirando un único tablero, sin escribir consultas, durante la demostración, la prueba de carga y el [simulacro de FAV](../POSTMORTEM.md);
+- ver las alertas activas junto a las métricas que las explican.
+
+**Por qué esta opción y no otra.**
+
+- Es open source, sin costo de licencias, y lee Prometheus como fuente de datos nativa.
+- Se configura como código: la fuente de datos y el tablero están versionados en `infra/observabilidad/grafana/provisioning` y `dashboards`. `docker compose up` reproduce el mismo tablero en cualquier equipo, sin pasos manuales.
+- El mismo stack corre en local y en la VM de Azure (publicado por HTTPS), con lectura anónima para la demostración.
+- Consume pocos recursos para una sola VM.
+
+| Alternativa | Motivo para descartarla |
+|---|---|
+| Solo la interfaz de Prometheus | Sin tableros persistentes; exige escribir PromQL para cada consulta. |
+| Azure Monitor / Application Insights | Acopla la observabilidad al proveedor, tiene costo por ingesta y no se reproduce en el entorno local. |
+| ELK / Kibana | Orientado a logs; Elasticsearch requiere mucha más memoria que la disponible en la VM. |
+| Datadog / New Relic | SaaS pago; los datos salen del entorno del proyecto. |
+
+**Costo y límites.** Suma un contenedor (`grafana/grafana:11.4.0`) con su volumen `grafana-data` y una credencial de administrador que se mantiene fuera de Git. Grafana no genera métricas ni trazas: solo muestra lo que Prometheus recolecta. El exportador de spans sigue pendiente.
 
 ## Tablero y alertas implementados (09/11/2026)
 
