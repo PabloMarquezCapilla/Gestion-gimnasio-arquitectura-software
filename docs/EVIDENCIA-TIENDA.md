@@ -3,6 +3,7 @@
 ## Revisión de conexión externa del 10/11/2026
 
 - API de FAV en `https://fav-ucc.chilecentral.cloudapp.azure.com`. La primera credencial recibió `401 NO_AUTENTICADO`. Con la credencial renovada, `GET /v1/productos` devolvió `200` con JSON y el cliente de Tienda validó 5 productos y 19 variantes.
+- En la verificación autenticada reportada por el equipo, `GET /v1/disponibilidad` también devolvió `200` para diez variantes. Ambas respuestas validaron contra OpenAPI 1.2.0. FAV reportó un `401` al consumir las consignaciones del gimnasio en Azure; la autenticación de ese sentido queda pendiente.
 - En `development` `ff8ae75fb93cb31c0b597a36d18598890980fdf9`, el contrato 1.2.0 mantiene idénticos el esquema y las respuestas del catálogo respecto de la copia 1.1.0 de Tienda. Se conserva el cliente actual. Su adaptador de reposiciones ya exige `201`, `RECIBIDA` y UUID válido y distingue configuración, conflictos e incertidumbre.
 - `npm run build --workspace=@gimnasio/tienda` y las 27 pruebas de `services/tienda/test/*.test.mjs` aprobadas. Cubren contrato, autorización, compras, idempotencia, caché degradada y circuit breaker mediante servidores locales. Esta revisión no volvió a ejecutar las pruebas PostgreSQL descritas abajo.
 - Se configuró el catálogo en el `.env` local y se levantó Docker Compose. Con una cuenta de demostración, el gateway local respondió `200` en `GET /api/v1/tienda/productos` con `origen: FAV` y `total: 0`. La consulta de consignaciones también devolvió `200` con stock vacío. Las consultas verificaron el flujo sin registrar movimientos.

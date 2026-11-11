@@ -1,6 +1,6 @@
 # Arquitectura del sistema
 
-**Estado documental.** Revisión al 09/11/2026: Tienda consume el catálogo de FAV y los socios compran (ADR-023/024); el gateway valida JWT y limita tráfico (ADR-025); hay Prometheus, Grafana y alertas (D11); se agregaron test de carga (D13) y despliegue en VM preparado (ADR-026). El texto que sigue es la revisión al 08/11/2026, con búsqueda en API/portal, publicación/edición ADMIN y suspensión mediante eventos verificadas localmente. Car Cruds dispone de lecturas, vinculación y envío mensual manual con persistencia e historial; conexión operativa y prueba conjunta pendientes. Tienda implementa stock/reposiciones para FAV y ventas administrativas con PostgreSQL; consumo del catálogo, publicación y prueba conjunta pendientes. El POST anterior de empleados conserva su implementación.
+**Estado documental.** Revisión al 09/11/2026: Tienda consume el catálogo de FAV y los socios compran (ADR-023/024); el gateway valida JWT y limita tráfico (ADR-025); hay Prometheus, Grafana y alertas (D11); se agregaron test de carga (D13) y despliegue en VM preparado (ADR-026). El texto que sigue es la revisión al 08/11/2026, con búsqueda en API/portal, publicación/edición ADMIN y suspensión mediante eventos verificadas localmente. Car Cruds dispone de lecturas, vinculación y envío mensual manual con persistencia e historial; conexión operativa y prueba conjunta pendientes. Tienda implementa stock/reposiciones para FAV y ventas administrativas con PostgreSQL; publicación y prueba conjunta pendientes. El POST anterior de empleados conserva su implementación.
 
 **Enunciado:** §3, página 4; §4.1, páginas 5–6; §5, páginas 6–7; §6.2–6.3, página 8. Los patrones internos y el balanceo corresponden a §2.1 y §2.3, página 2.
 
@@ -11,7 +11,7 @@
 | **Socios y Membresías** | Socios, planes, membresías, pagos, comprobantes, referencias externas, solicitudes, vínculos Car Cruds, auditoría y registro de fotografías/envíos. | Capas; JWT, altas, habilitación, lecturas/vinculación/envío manual Car Cruds para ADMIN y POST anterior. PostgreSQL: `socios`, `membresias`, `solicitudes_membresia`, `empleados_externos`, `altas_empleados_idempotencia`, `car_cruds_vinculos`, `car_cruds_vinculos_historial`, `car_cruds_evidencias_series` y `car_cruds_evidencias`. Planes, solicitudes y pagos manuales con comprobantes transaccionales (ADR-021); conexión externa conjunta pendiente. |
 | **Clases y Reservas** | Clases, capacidad, reservas, espera, operaciones administrativas e índice de búsqueda derivado. | Hexagonal. Publicación/edición ADMIN con sedes de Accesos, versiones y reintentos durables. Reservas/FIFO, retiro voluntario y suspensión mediante Inbox. Búsqueda FTS en API y portal. PostgreSQL con `clases`, `clases_operaciones`, `reservas`, `lista_espera` e índice GIN. Reconstrucción, recorrido propio y retiro verificados localmente. |
 | **Accesos y Ocupación** | Sedes, intentos y movimientos de acceso, presencias y ocupación/caché derivadas. | Capas; recepción ADMIN, ingresos/egresos, historial y ocupación con transacciones MongoDB. Cache-aside Redis sobre ocupación, invalidación y TTL; ver ADR-019 y ADR-020. |
-| **Tienda** | Consultar catálogo/disponibilidad de FAV y administrar el stock físico de una única tienda del gimnasio: reposiciones, ventas e idempotencia. FAV conserva su catálogo y stock de distribuidora. | Capas; API FAV con clave técnica, consulta/ventas ADMIN con JWT y panel. PostgreSQL 17, base `tienda`: `tienda_stock`, `tienda_reposiciones`, `tienda_ventas`, `tienda_operaciones`. Además consume el catálogo de FAV 1.1.0 (cliente con circuit breaker y caché) y registra compras de socios en `tienda_compras`/`tienda_compra_items` (ADR-023/024). Falta la conexión conjunta con FAV. |
+| **Tienda** | Consultar catálogo/disponibilidad de FAV y administrar el stock físico de una única tienda del gimnasio: reposiciones, ventas e idempotencia. FAV conserva su catálogo y stock de distribuidora. | Capas; API FAV con clave técnica, consulta/ventas ADMIN con JWT y panel. PostgreSQL 17, base `tienda`: `tienda_stock`, `tienda_reposiciones`, `tienda_ventas`, `tienda_operaciones`. Además consume el catálogo de FAV 1.2.0 (cliente con circuit breaker y caché) y registra compras de socios en `tienda_compras`/`tienda_compra_items` (ADR-023/024). Falta la conexión conjunta con FAV. |
 
 Socios, Clases y Tienda usan bases y usuarios PostgreSQL separados en una instancia local compartida; no hay acceso de un servicio a tablas ajenas. MongoDB tiene un replica set de un solo nodo, sin redundancia. El diseño de motores y restricciones se justifica en [D3](adr/ADR-003-persistencia.md); los límites vigentes, en [D1](adr/ADR-022-tienda-y-consignaciones-fav.md). El inicializador incorpora base y usuario de Tienda sin recrear volúmenes ni rotar credenciales existentes.
 
@@ -21,7 +21,7 @@ NGINX sirve el portal React y enruta las solicitudes por un único puerto local 
 
 - **Clases, Hexagonal.** `app.ts` adapta HTTP. Los casos de reserva, búsqueda y administración están en `application/`. `gestion-clases.service.ts` define puertos de almacenamiento y sedes, implementados por `gestion-clases.postgres.ts` y `clients/sedes.client.ts`. `busqueda-clases.postgres.ts` consulta la base existente. `server.ts` compone adaptadores y trabajadores. El catálogo histórico conserva su contrato.
 - **Socios, Capas:** HTTP (`app.ts`, `empleados.http.ts`) → servicios de aplicación (`services.ts`, `empleados.service.ts`, `car-cruds.service.ts`, `car-cruds-vinculos.service.ts`, `car-cruds-evidencias.service.ts`) → repositorio o cliente externo `clients/car-cruds.client.ts`. Los puertos de vínculos/evidencias tienen adaptadores PostgreSQL y memoria; `car-cruds-evidencias.storage.ts` aplica las transacciones y el almacenamiento del mensaje. `server.ts` compone el cliente con configuración opcional. Criptografía y JWT están en `security.ts`.
-- **Tienda, Capas:** `app.ts` adapta HTTP y permisos → `stock.ts` valida comandos y define el puerto → `stock.postgres.ts` implementa persistencia; `server.ts` compone pool/aplicación. El servicio de catálogo conserva su respuesta pendiente y todavía no tiene adaptador externo. Accesos concreta Capas con lectura derivada de presencias abiertas; ADR-019 revisa su propuesta previa por eventos, sin introducir broker.
+- **Tienda, Capas:** `app.ts` adapta HTTP y permisos → `stock.ts` valida comandos y define el puerto → `stock.postgres.ts` implementa persistencia; `server.ts` compone pool/aplicación. El cliente HTTP de FAV valida el catálogo externo y Tienda cruza sus variantes con el stock consignado. Accesos concreta Capas con lectura derivada de presencias abiertas; ADR-019 revisa su propuesta previa por eventos, sin introducir broker.
 - **Identidad:** JWT HS256 firmado con vencimiento configurable (una hora por defecto), rol y controles de propietario. Alta interna solo ADMIN; bootstrap local sin contraseña administrativa predeterminada nueva. El portal mantiene la sesión en memoria. [D2](adr/ADR-002-arquitectura-interna-de-servicios.md), [autenticación](adr/ADR-016-autenticacion-y-altas.md).
 
 ## Interfaz de usuario
@@ -78,9 +78,9 @@ El [contrato externo 0.3.0 y el perfil mensual](contracts/README.md#integracion-
 
 ### Integración con FAV: consumo y capacidad ofrecida
 
-**Consumo de FAV (09/11/2026).** Tienda llama a `GET /v1/productos` de FAV desde su backend, con el contrato 1.1.0 fijado. El portal nunca habla con FAV.
+**Consumo de FAV (10/11/2026).** Tienda llama a `GET /v1/productos` desde su backend y valida el [contrato 1.2.0](contracts/fav-catalogo-pedidos-1.2.0.openapi.yaml). La URL base de Azure es `https://fav-ucc.chilecentral.cloudapp.azure.com`. El equipo verificó en Azure HTTP 200 para catálogo (5 productos, 19 variantes) y disponibilidad (10 variantes), con validación OpenAPI 1.2.0. Las pruebas automatizadas de compra usan un proveedor simulado. FAV reportó HTTP 401 al consumir consignaciones del gimnasio en Azure. Ver [configuración y prueba controlada](DEPLOY.md#verificación-de-fav).
 - El catálogo (`GET /api/v1/tienda/productos`) cruza esos productos con el stock consignado local y muestra solo las variantes con unidades.
-- El socio compra con `POST /api/v1/tienda/compras`. El precio se toma del catálogo en el servidor, y el descuento de varias variantes es atómico e idempotente.
+- El socio compra con `POST /api/v1/tienda/compras`. Una compra nueva vuelve a consultar el catálogo de FAV para cotizar antes de la transacción. Si falla la consulta, se rechaza la compra; el catálogo de lectura puede seguir disponible en modo degradado. El descuento de varias variantes es atómico e idempotente.
 - Protección: timeout de 3 s con un reintento, circuit breaker y caché de 60 s con uso degradado hasta 15 min.
 - `/health/tienda` no depende de FAV. `/metrics/tienda` expone el estado del circuito y los aciertos de caché.
 - Decisiones: [ADR-023](adr/ADR-023-compra-de-socios-en-tienda.md), [ADR-024](adr/ADR-024-circuit-breaker-fav.md) y [D9](adr/ADR-009-consumo-del-proveedor.md).
@@ -98,7 +98,7 @@ sequenceDiagram
         T->>T: catálogo en memoria
     else circuito cerrado
         T->>FAV: GET /v1/productos (X-API-Key, 3 s, 1 reintento)
-        FAV-->>T: 200 catálogo (validado contra 1.1.0)
+        FAV-->>T: 200 catálogo (validado contra 1.2.0)
     else FAV caído o circuito abierto
         T->>T: copia ≤ 15 min → origen CACHE_DEGRADADA, si no 503
     end
@@ -107,7 +107,7 @@ sequenceDiagram
     Socio->>GW: POST /api/v1/tienda/compras (Idempotency-Key)
     GW->>T: proxy (sin reintento del gateway)
     T->>DB: ¿compra previa con esa clave?
-    T->>T: cotizar con el catálogo (fuera de la transacción)
+    T->>FAV: cotizar con GET /v1/productos (solo compra nueva)
     T->>DB: BEGIN, FOR UPDATE ordenado, validar y descontar, guardar compra, COMMIT
     T-->>Socio: 201 REGISTRADA (o 409 STOCK_INSUFICIENTE)
 ```
@@ -151,7 +151,7 @@ flowchart LR
     recepcion -->|Web UI| sistema
     sistema -->|Socios: GET empleados/estado · cliente implementado<br/>Conexión conjunta pendiente · Bearer gym| consumidor
     sistema -->|POST de fotografía mensual · Bearer gym<br/>Envío manual implementado; conexión pendiente| consumidor
-    sistema -.->|Tienda: consulta de catálogo y disponibilidad<br/>Integración pendiente| proveedor
+    sistema -.->|Tienda: catálogo y precios<br/>Lecturas autenticadas verificadas| proveedor
     proveedor -->|Consulta stock local y registra reposiciones<br/>API local implementada; prueba conjunta pendiente| sistema
 ```
 
@@ -169,7 +169,7 @@ flowchart TB
         gateway -->|API anterior: POST /api/v1/integraciones/empleados<br/>X-API-Key e Idempotency-Key| socios
         gateway -->|/api/v1/integraciones/car-cruds/* · JWT ADMIN<br/>Lecturas, búsqueda y vínculos con historial| socios
         gateway -->|Recepción ADMIN · JWT| accesos["Accesos y Ocupación<br/>Ingresos, egresos, historial y ocupación"]
-        gateway -->|GET /api/v1/tienda/productos · JWT<br/>503: catálogo externo pendiente| tienda["Tienda · Capas<br/>Stock, reposiciones y ventas<br/>Cliente de catálogo externo pendiente"]
+        gateway -->|GET /api/v1/tienda/productos · JWT<br/>503 si FAV no está configurado| tienda["Tienda · Capas<br/>Stock, reposiciones y ventas<br/>Cliente HTTP FAV 1.2.0"]
         gateway -->|API FAV de stock/reposiciones · X-API-Key<br/>Stock y ventas ADMIN · JWT| tienda
         
         clases -->|HTTP: consulta de habilitación<br/>Ahora y fecha de clase · X-Service-Key| socios
@@ -234,7 +234,7 @@ sequenceDiagram
 - **Dominio pendiente.** Políticas para reactivación, superposición, acumulación/prorrateo y credenciales de empleados. Publicación/edición de clases implementadas con las reglas confirmadas. Planes, solicitudes, pagos/comprobantes y nuevos períodos explícitos no superpuestos están implementados (ADR-021). Accesos ya implementa movimientos, ocupación y caché. El consumo desde Car Cruds queda pendiente.
 - **Integración externa:**
   - **Car Cruds:** contrato fijado; lecturas, vínculo y envío durable probados localmente. El informe ya completa `used` (vía Accesos), `costMinor` y `spendingMinor`. Falta la prueba conjunta con conexión operativa.
-  - **FAV:** Tienda consume su catálogo 1.1.0 con circuit breaker y caché degradada, y los socios compran desde el portal ([ADR-023](adr/ADR-023-compra-de-socios-en-tienda.md)). No hay pasarela de pago, cancelación ni devolución: la compra se paga y retira en el mostrador. La caché y el circuito son por instancia.
+  - **FAV:** Tienda consume su catálogo 1.2.0 con circuit breaker y caché degradada, y los socios compran desde el portal ([ADR-023](adr/ADR-023-compra-de-socios-en-tienda.md)). No hay pasarela de pago, cancelación ni devolución: la compra se paga y retira en el mostrador. La caché y el circuito son por instancia.
   - La publicación accesible, la aceptación y las pruebas entre grupos siguen pendientes (§4.1).
 - **Búsqueda y caché.** Paso 5 verificado localmente con API, portal, publicación/edición, filtros, páginas y orden. Se compararon consultas durante una reconstrucción real de GIN con dos instancias y se verificó el recorrido por NGINX. El mantenimiento local está documentado en D6. Redis de ocupación conserva su implementación y mediciones. [Evidencia de búsqueda](EVIDENCIA-BUSQUEDA.md).
 - **Mensajería.** Suspensión, Outbox/RabbitMQ/Inbox, cancelación y DLQ implementados. Consistencia eventual hasta consumo, broker único y revisión manual de DLQ. Reactivación requiere ampliar evento y proyección.
@@ -264,7 +264,7 @@ Estas limitaciones mantienen visibles los requisitos generales y de la presentac
 | **D8 anterior** | Recepción de empleados y solicitud pendiente | Reemplazado en diseño; contrato 1.0.1 y POST local conservados | [ADR-014](adr/ADR-014-contrato-empleados.md) |
 | **D8 vigente** | Información mensual para Car Cruds | Lecturas, vínculo y envío manual verificados localmente; conexión conjunta pendiente | [ADR-018](adr/ADR-018-integracion-car-cruds.md) |
 | **D8 adicional** | Stock y reposiciones para FAV | Contrato 1.0.0 y backend local verificados; publicación/conexión pendientes; no reemplaza Car Cruds | [ADR-022](adr/ADR-022-tienda-y-consignaciones-fav.md) |
-| **D9** | Consulta de catálogo y disponibilidad de FAV | Cliente pendiente; rama, contrato de disponibilidad y conexión por acordar | [ADR-009](adr/ADR-009-consumo-del-proveedor.md) |
+| **D9** | Consulta de catálogo y disponibilidad de FAV | Cliente 1.2.0 implementado; disponibilidad online en el verificador; lecturas autenticadas verificadas | [ADR-009](adr/ADR-009-consumo-del-proveedor.md) |
 | **D10** | Resiliencia | Implementación parcial y pendientes identificados | [ADR-010](adr/ADR-010-resiliencia.md) |
 | **D11** | Observabilidad (Logs, Trazas y Métricas) | 1ª versión en E2 | [ADR-011](adr/ADR-011-observabilidad.md) |
 | **D12** | Balanceo de carga | Distribución, detección y reemplazo verificados con límites explícitos | [ADR-012](adr/ADR-012-balanceo-de-carga.md) |

@@ -60,10 +60,10 @@ export class CatalogoFavService {
   get estadoCircuito(): EstadoCircuito { return this.breaker.estado; }
   get configurado(): boolean { return this.client !== undefined; }
 
-  async vigente(contexto?: ContextoSalida): Promise<CatalogoVigente> {
+  async vigente(contexto?: ContextoSalida, actualizar = false): Promise<CatalogoVigente> {
     if (!this.client) throw new TiendaError(503, 'PROVEEDOR_NO_CONFIGURADO', 'El catálogo de FAV todavía no está configurado.');
     const ahora = this.clock();
-    if (this.cache && ahora - this.cache.obtenidoEn < this.ttl) {
+    if (!actualizar && this.cache && ahora - this.cache.obtenidoEn < this.ttl) {
       this.contadores.cacheFresca++;
       return { origen: 'FAV', actualizadoEn: new Date(this.cache.obtenidoEn).toISOString(), productos: this.cache.productos };
     }
@@ -73,12 +73,12 @@ export class CatalogoFavService {
     } catch (error) {
       if (error instanceof CircuitoAbiertoError) this.contadores.rechazosCircuito++;
       else this.contadores.fallosFav++;
+      if (error instanceof FavError && !error.esIndisponibilidad) throw error;
       const cache = this.cache;
-      if (cache && this.clock() - cache.obtenidoEn < this.vigenciaDegradada) {
+      if (!actualizar && cache && this.clock() - cache.obtenidoEn < this.vigenciaDegradada) {
         this.contadores.cacheDegradada++;
         return { origen: 'CACHE_DEGRADADA', actualizadoEn: new Date(cache.obtenidoEn).toISOString(), productos: cache.productos };
       }
-      if (error instanceof FavError && !error.esIndisponibilidad) throw error;
       throw new TiendaError(503, 'PROVEEDOR_NO_DISPONIBLE', 'El catálogo de FAV no está disponible en este momento. Intentá nuevamente en unos minutos.');
     }
   }
@@ -116,7 +116,7 @@ export class CatalogoFavService {
   }
 
   async precios(codigos: string[], contexto?: ContextoSalida): Promise<Map<string, PrecioVigente>> {
-    const catalogo = await this.vigente(contexto);
+    const catalogo = await this.vigente(contexto, true);
     const buscados = new Set(codigos), precios = new Map<string, PrecioVigente>();
     for (const producto of catalogo.productos) {
       for (const variante of producto.variantes) {

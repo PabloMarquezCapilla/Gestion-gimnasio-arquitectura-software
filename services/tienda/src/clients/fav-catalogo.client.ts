@@ -30,13 +30,13 @@ type CodigoFav = 'FAV_CREDENCIAL_RECHAZADA' | 'FAV_RESPUESTA_INVALIDA' | 'FAV_NO
 
 const fallos: Record<CodigoFav, [number, string]> = {
   FAV_CREDENCIAL_RECHAZADA: [502, 'FAV rechazó la credencial del gimnasio.'],
-  FAV_RESPUESTA_INVALIDA: [502, 'La respuesta de FAV no cumple el contrato catálogo-pedidos 1.1.0.'],
+  FAV_RESPUESTA_INVALIDA: [502, 'La respuesta de FAV no cumple el contrato catálogo-pedidos 1.2.0.'],
   FAV_NO_DISPONIBLE: [503, 'No se pudo consultar el catálogo de FAV.'],
   FAV_TIEMPO_AGOTADO: [504, 'Se agotó el tiempo de consulta al catálogo de FAV.'],
 };
 
 export class FavError extends TiendaError {
-  constructor(readonly codigoFav: CodigoFav) {
+  constructor(readonly codigoFav: CodigoFav, readonly estadoHttpFav?: number) {
     super(fallos[codigoFav][0], codigoFav, fallos[codigoFav][1]);
     this.name = 'FavError';
   }
@@ -81,13 +81,19 @@ export function favCatalogoConfigDesdeEntorno(env: NodeJS.ProcessEnv = process.e
 }
 
 const contract = parse(readFileSync(
-  resolve(__dirname, '../../../../docs/contracts/fav-catalogo-pedidos-1.1.0.openapi.yaml'), 'utf8',
+  resolve(__dirname, '../../../../docs/contracts/fav-catalogo-pedidos-1.2.0.openapi.yaml'), 'utf8',
 )) as { paths: Record<string, any>; components: unknown };
 const ajv = new Ajv({ strict: false });
 addFormats(ajv);
 ajv.addFormat('double', { type: 'number', validate: Number.isFinite });
 const validarCatalogo = ajv.compile<{ items: ProductoFav[] }>({
   ...contract.paths['/v1/productos'].get.responses['200'].content['application/json'].schema,
+  components: contract.components,
+});
+export interface DisponibilidadFav { varianteId: string; disponible: number }
+
+const validarDisponibilidad = ajv.compile<{ items: DisponibilidadFav[] }>({
+  ...contract.paths['/v1/disponibilidad'].get.responses['200'].content['application/json'].schema,
   components: contract.components,
 });
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
@@ -101,12 +107,12 @@ export class HttpFavCatalogoClient implements FavCatalogoClient {
 
   async listarProductos(contexto?: ContextoSalida): Promise<ProductoFav[]> {
     const body = await this.consultar(new URL('v1/productos', this.config.baseUrl), contexto);
-    if (!validarCatalogo(body)) throw new FavError('FAV_RESPUESTA_INVALIDA');
+    if (!validarCatalogo(body)) throw new FavError('FAV_RESPUESTA_INVALIDA', 200);
     const variantes = body.items.flatMap(producto => producto.variantes.map(variante => variante.varianteId));
     // Un precio negativo o un id de variante repetido haría ambigua la compra.
     if (new Set(variantes).size !== variantes.length
       || body.items.some(producto => producto.variantes.some(variante => variante.precio < 0))) {
-      throw new FavError('FAV_RESPUESTA_INVALIDA');
+      throw new FavError('FAV_RESPUESTA_INVALIDA', 200);
     }
     return body.items.map(({ productoId, nombre, categoria, descripcion, fotoUrl, variantes }) => ({
       productoId, nombre, categoria,
@@ -114,6 +120,21 @@ export class HttpFavCatalogoClient implements FavCatalogoClient {
       ...(fotoUrl === undefined ? {} : { fotoUrl }),
       variantes: variantes.map(({ varianteId, talle, color, precio }) => ({ varianteId, talle, color, precio })),
     }));
+  }
+
+  async consultarDisponibilidad(ids: string[]): Promise<DisponibilidadFav[]> {
+    const variantes = [...new Set(ids)];
+    if (!variantes.length || variantes.length > 200 || variantes.some(id => !id || id.includes(','))) {
+      throw new Error('Indicar entre 1 y 200 identificadores de variante válidos.');
+    }
+    const url = new URL('v1/disponibilidad', this.config.baseUrl);
+    url.searchParams.set('variantes', variantes.join(','));
+    const body = await this.consultar(url);
+    if (!validarDisponibilidad(body) || body.items.length !== variantes.length
+      || body.items.some((item, indice) => item.varianteId !== variantes[indice])) {
+      throw new FavError('FAV_RESPUESTA_INVALIDA', 200);
+    }
+    return body.items.map(({ varianteId, disponible }) => ({ varianteId, disponible }));
   }
 
   // Lectura segura: un único reintento con jitter dentro del mismo presupuesto total.
@@ -135,9 +156,9 @@ export class HttpFavCatalogoClient implements FavCatalogoClient {
           },
         });
         if (response.status === 200) return await this.leerJson(response);
-        if ([401, 403].includes(response.status)) throw new FavError('FAV_CREDENCIAL_RECHAZADA');
-        if ([429, 500, 502, 503, 504].includes(response.status)) throw new FavError('FAV_NO_DISPONIBLE');
-        throw new FavError('FAV_RESPUESTA_INVALIDA');
+        if ([401, 403].includes(response.status)) throw new FavError('FAV_CREDENCIAL_RECHAZADA', response.status);
+        if ([429, 500, 502, 503, 504].includes(response.status)) throw new FavError('FAV_NO_DISPONIBLE', response.status);
+        throw new FavError('FAV_RESPUESTA_INVALIDA', response.status);
       } catch (error) {
         fallo = controller.signal.aborted || performance.now() >= deadline
           ? new FavError('FAV_TIEMPO_AGOTADO')
@@ -156,7 +177,7 @@ export class HttpFavCatalogoClient implements FavCatalogoClient {
   private async leerJson(response: Response): Promise<unknown> {
     if (response.headers.get('content-type')?.split(';', 1)[0].trim().toLowerCase() !== 'application/json'
       || !response.body) {
-      throw new FavError('FAV_RESPUESTA_INVALIDA');
+      throw new FavError('FAV_RESPUESTA_INVALIDA', 200);
     }
     const reader = response.body.getReader();
     const partes: Uint8Array[] = [];
@@ -166,7 +187,7 @@ export class HttpFavCatalogoClient implements FavCatalogoClient {
         const result = await reader.read();
         if (result.done) break;
         bytes += result.value.byteLength;
-        if (bytes > MAX_BODY_BYTES) throw new FavError('FAV_RESPUESTA_INVALIDA');
+        if (bytes > MAX_BODY_BYTES) throw new FavError('FAV_RESPUESTA_INVALIDA', 200);
         partes.push(result.value);
       }
     } finally {
@@ -175,7 +196,7 @@ export class HttpFavCatalogoClient implements FavCatalogoClient {
     try {
       return JSON.parse(new TextDecoder('utf-8', { fatal: true }).decode(Buffer.concat(partes))) as unknown;
     } catch {
-      throw new FavError('FAV_RESPUESTA_INVALIDA');
+      throw new FavError('FAV_RESPUESTA_INVALIDA', 200);
     }
   }
 }
