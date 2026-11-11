@@ -5,7 +5,7 @@ info:
   description: >-
     Contrato inicial definido con el equipo del gimnasio el 06/11/2026.
     Endpoints implementados y verificados localmente con PostgreSQL real.
-    API publicada en Azure. Aceptación de FAV y prueba conjunta pendientes. Ver
+    API publicada en Azure y verificada con FAV. Ver
     fav-tienda.md. Tienda administra el stock físico de una única tienda del gimnasio.
     FAV conserva su catálogo y stock de distribuidora. productoCodigo es el
     identificador opaco varianteId de FAV, no un nombre ni un producto genérico.

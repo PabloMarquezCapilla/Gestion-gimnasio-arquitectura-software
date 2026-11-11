@@ -1,13 +1,21 @@
 # Tienda: implementación y verificación local
 
+## Prueba conjunta en Azure del 10/11/2026
+
+- En la versión desplegada `7b413fd`, el portal y Tienda respondieron por HTTPS. La consulta autenticada de catálogo devolvió `200`, `origen: FAV` y dos productos con stock consignado.
+- La consulta de stock con la clave del gimnasio en Azure devolvió `200`. PostgreSQL registró dos reposiciones de `fav` y el equipo confirmó que ambas llegaron desde el sistema de FAV.
+- El gateway registró `201` para una compra del socio en el portal desplegado. Los ensayos de idempotencia, concurrencia y fallos se documentan por separado.
+
+[Contrato de consignaciones](contracts/fav-tienda.md) · [Portal de Azure](https://gimnasio.68-211-88-90.sslip.io/)
+
 ## Revisión de conexión externa del 10/11/2026
 
 - API de FAV en `https://fav-ucc.chilecentral.cloudapp.azure.com`. La primera credencial recibió `401 NO_AUTENTICADO`. Con la credencial renovada, `GET /v1/productos` devolvió `200` con JSON y el cliente de Tienda validó 5 productos y 19 variantes.
-- En la verificación autenticada reportada por el equipo, `GET /v1/disponibilidad` también devolvió `200` para diez variantes. Ambas respuestas validaron contra OpenAPI 1.2.0. FAV reportó un `401` al consumir las consignaciones del gimnasio en Azure; la autenticación de ese sentido queda pendiente.
+- En la verificación autenticada reportada por el equipo, `GET /v1/disponibilidad` también devolvió `200` para diez variantes. Ambas respuestas validaron contra OpenAPI 1.2.0. El `401` inicial en la consulta de consignaciones se resolvió usando la clave de la VM.
 - En `development` `ff8ae75fb93cb31c0b597a36d18598890980fdf9`, el contrato 1.2.0 mantiene idénticos el esquema y las respuestas del catálogo respecto de la copia 1.1.0 de Tienda. Se conserva el cliente actual. Su adaptador de reposiciones ya exige `201`, `RECIBIDA` y UUID válido y distingue configuración, conflictos e incertidumbre.
 - `npm run build --workspace=@gimnasio/tienda` y las 27 pruebas de `services/tienda/test/*.test.mjs` aprobadas. Cubren contrato, autorización, compras, idempotencia, caché degradada y circuit breaker mediante servidores locales. Esta revisión no volvió a ejecutar las pruebas PostgreSQL descritas abajo.
 - Se configuró el catálogo en el `.env` local y se levantó Docker Compose. Con una cuenta de demostración, el gateway local respondió `200` en `GET /api/v1/tienda/productos` con `origen: FAV` y `total: 0`. La consulta de consignaciones también devolvió `200` con stock vacío. Las consultas verificaron el flujo sin registrar movimientos.
-- En Azure, el portal y `/health` respondieron `200` por HTTPS. La consulta de consignaciones sin credencial respondió `401`. Quedan pendientes configurar el catálogo externo en la VM y hacer la prueba conjunta con FAV. [Coordinación y contrato](contracts/fav-tienda.md).
+- En Azure, el portal y `/health` respondieron `200` por HTTPS. La consulta de consignaciones sin credencial respondió `401`. [Coordinación y contrato](contracts/fav-tienda.md).
 
 ## Evidencia de la implementación inicial
 
