@@ -109,7 +109,7 @@ export function TiendaPanel() {
 
       {catalogo?.origen === 'CACHE_DEGRADADA' && (
         <p role="status" className="rounded-lg bg-tertiary-container text-on-tertiary-container p-3 text-xs">
-          FAV no responde: mostramos el catálogo de las {new Date(catalogo.actualizadoEn).toLocaleTimeString('es-AR')}. Los precios pueden haber cambiado.
+          FAV no responde: mostramos el catálogo de las {new Date(catalogo.actualizadoEn).toLocaleTimeString('es-AR')}. La compra requiere que FAV vuelva a responder para validar el precio.
         </p>
       )}
 
@@ -182,7 +182,7 @@ export function TiendaPanel() {
                   <button type="button" onClick={() => quitar(i.variante.productoCodigo)} className="underline">Quitar</button></span>
               </li>
             ))}
-            <li className="flex justify-between font-semibold"><span>Total</span><span>{pesos(totalCarrito)}</span></li>
+            <li className="flex justify-between font-semibold"><span>Total estimado</span><span>{pesos(totalCarrito)}</span></li>
           </ul>
         )}
         {(pendiente || carrito.size > 0) && (

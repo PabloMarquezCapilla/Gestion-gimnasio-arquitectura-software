@@ -1,5 +1,5 @@
 // Test de contrato del consumo de FAV: el cliente se ejecuta contra un servidor HTTP
-// real que responde con los ejemplos del OpenAPI fijado (catalogo-pedidos 1.1.0).
+// real que responde con los ejemplos del OpenAPI fijado (catalogo-pedidos 1.2.0).
 // Si FAV cambia el contrato de forma incompatible, la validación del cliente lo rechaza.
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -9,7 +9,7 @@ import { resolve } from 'node:path';
 import { parse } from 'yaml';
 import { FavError, HttpFavCatalogoClient, favCatalogoConfigDesdeEntorno } from '../dist/clients/fav-catalogo.client.js';
 
-const contrato = parse(readFileSync(resolve(import.meta.dirname, '../../../docs/contracts/fav-catalogo-pedidos-1.1.0.openapi.yaml'), 'utf8'));
+const contrato = parse(readFileSync(resolve(import.meta.dirname, '../../../docs/contracts/fav-catalogo-pedidos-1.2.0.openapi.yaml'), 'utf8'));
 const ejemplo = contrato.components.examples.Catalogo.value;
 
 async function servidor(t, responder) {
@@ -26,7 +26,7 @@ const json = (res, status, body, type = 'application/json') => { res.writeHead(s
 const codigo = c => error => error instanceof FavError && error.codigo === c;
 
 test('el contrato fijado conserva las operaciones que consume Tienda', () => {
-  assert.equal(contrato.info.version, '1.1.0');
+  assert.equal(contrato.info.version, '1.2.0');
   assert.ok(contrato.paths['/v1/productos'].get);
   assert.equal(contrato.components.securitySchemes.ClaveDeGrupo.name, 'X-API-Key');
   assert.deepEqual(contrato.components.schemas.Variante.required, ['varianteId', 'talle', 'color', 'precio']);
@@ -96,4 +96,18 @@ test('configuración desde el entorno: vacía es "no configurado", parcial es er
   assert.throws(() => favCatalogoConfigDesdeEntorno({ FAV_CATALOGO_BASE_URL: 'http://fav', FAV_CATALOGO_API_KEY: 'k', FAV_CATALOGO_TIMEOUT_MS: '0' }));
   assert.deepEqual(favCatalogoConfigDesdeEntorno({ FAV_CATALOGO_BASE_URL: 'http://fav/api', FAV_CATALOGO_API_KEY: 'k' }),
     { baseUrl: 'http://fav/api/', apiKey: 'k', timeoutMs: 3000 });
+});
+
+test('consulta disponibilidad para las variantes solicitadas y valida la respuesta', async (t) => {
+  const ids = ['var-remera-basica-blanca-m', 'var-jean-mom-celeste-38'];
+  const items = ids.map((varianteId, disponible) => ({ varianteId, disponible }));
+  const { url, recibidas } = await servidor(t, (_req, res, intento) =>
+    json(res, 200, { items: intento === 1 ? items : [items[0]] }));
+  const client = new HttpFavCatalogoClient({ baseUrl: url, apiKey: 'clave-ficticia' });
+  assert.deepEqual(await client.consultarDisponibilidad([...ids, ids[0]]), items);
+  const consulta = new URL(recibidas[0].url, url);
+  assert.equal(consulta.pathname, '/fav/v1/disponibilidad');
+  assert.equal(consulta.searchParams.get('variantes'), ids.join(','));
+  assert.equal(recibidas[0].headers['x-api-key'], 'clave-ficticia');
+  await assert.rejects(client.consultarDisponibilidad(ids), codigo('FAV_RESPUESTA_INVALIDA'));
 });

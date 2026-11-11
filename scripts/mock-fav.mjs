@@ -1,4 +1,4 @@
-// Mock local del catálogo de FAV (contrato catalogo-pedidos 1.1.0, fijado en docs/contracts).
+// Mock local del catálogo de FAV (contrato catalogo-pedidos 1.2.0, fijado en docs/contracts).
 // Sirve el ejemplo del contrato y permite simular caídas para la jornada de fallas:
 //   POST /__mock/modo {"modo":"normal"|"caido"|"lento"|"invalido"}
 import { createServer } from 'node:http';
@@ -9,7 +9,7 @@ import { randomUUID } from 'node:crypto';
 import { parse } from 'yaml';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
-const contract = parse(readFileSync(resolve(root, 'docs/contracts/fav-catalogo-pedidos-1.1.0.openapi.yaml'), 'utf8'));
+const contract = parse(readFileSync(resolve(root, 'docs/contracts/fav-catalogo-pedidos-1.2.0.openapi.yaml'), 'utf8'));
 const port = Number(process.env.MOCK_FAV_PORT ?? 8090);
 const apiKey = process.env.MOCK_FAV_API_KEY ?? 'clave-fav-local';
 const catalogo = contract.components.examples.Catalogo.value;

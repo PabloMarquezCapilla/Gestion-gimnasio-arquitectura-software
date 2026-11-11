@@ -25,7 +25,7 @@ FAV publicó la versión 1.1.0 de su contrato (`catalogo-pedidos`, commit `b9cb3
    - Se usó una tabla propia en lugar de `tienda_operaciones`: los CHECK de esa tabla solo admiten REPOSICION/VENTA, y modificarlos requeriría una migración sobre datos existentes.
 4. **Contrato propio para el portal:** `docs/contracts/openapi-tienda-socios-v1.yaml` 1.0.0.
 5. **Lo que ve el usuario cuando FAV falla:**
-   - Si hay una copia del catálogo de hasta 15 minutos: catálogo con `origen: CACHE_DEGRADADA` y un aviso "precios pueden haber cambiado". Las compras se cotizan con esa copia.
+   - Si hay una copia del catálogo de hasta 15 minutos: catálogo con `origen: CACHE_DEGRADADA` y un aviso "precios pueden haber cambiado". El portal puede mostrar esa copia. Una compra nueva debe consultar a FAV para cotizar.
    - Si no hay copia: `503 PROVEEDOR_NO_DISPONIBLE` con un mensaje claro, sin catálogo vacío inventado. Las compras nuevas se rechazan; los reintentos de compras ya registradas siguen respondiendo.
    - Contrato roto o credencial rechazada: `502` (no reintentable), sin abrir el circuito.
 
@@ -38,6 +38,6 @@ FAV publicó la versión 1.1.0 de su contrato (`catalogo-pedidos`, commit `b9cb3
 ## Consecuencias
 
 - Las compras impactan en `unidadesVendidas`, que FAV ve en `GET /api/v1/consignaciones/stock`. Se cierra el circuito consignación → venta → reposición.
-- Con la caché degradada se aceptan precios de hasta 15 minutos de antigüedad. El total queda fijado en la compra.
+- El total queda fijado con el precio que FAV devuelve al cotizar la compra. Un reintento idempotente devuelve el resultado registrado.
 - No hay cancelación, devolución ni marca de "pagada/retirada" en esta versión.
 - `/health` de Tienda no depende de FAV, para que una caída del proveedor no saque instancias del balanceo.

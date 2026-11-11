@@ -14,7 +14,7 @@ import { postgresTiendaPrueba } from './tienda/entorno.mjs';
 // se reemplaza por el ejemplo de su contrato fijado: la prueba no sale a la red.
 test('Tienda: compras de socios concurrentes, idempotentes y validadas contra el contrato', { timeout: 180000 }, async t => {
   const contrato = parse(await readFile(new URL('../docs/contracts/openapi-tienda-socios-v1.yaml', import.meta.url), 'utf8'));
-  const fav = parse(await readFile(new URL('../docs/contracts/fav-catalogo-pedidos-1.1.0.openapi.yaml', import.meta.url), 'utf8'));
+  const fav = parse(await readFile(new URL('../docs/contracts/fav-catalogo-pedidos-1.2.0.openapi.yaml', import.meta.url), 'utf8'));
   const ajv = new Ajv2020({ strict: false });
   addFormats(ajv, { mode: 'full' });
   const esquema = (ruta, metodo, status) => {

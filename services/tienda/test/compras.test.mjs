@@ -129,10 +129,14 @@ test('el cliente no puede imponer precio ni comprar variantes fuera del catálog
 });
 
 test('FAV caído: sirve caché degradada, luego 503; la compra repetida sigue respondiendo', async (t) => {
-  const { app, fav, token, avanzar } = await fixture(t);
+  const { app, repo, fav, token, avanzar } = await fixture(t);
   const body = { items: [{ productoCodigo: 'var-remera-m', unidades: 1 }] };
   assert.equal((await comprar(app, token(), body)).statusCode, 201);
   fav.estado.falla = new FavError('FAV_NO_DISPONIBLE');
+  const nuevaConCache = await comprar(app, token(), body, 'compra-clave-0002');
+  assert.equal(nuevaConCache.statusCode, 503);
+  assert.equal(repo.compras.length, 1);
+  assert.equal((await repo.listarStock()).find(item => item.productoCodigo === 'var-remera-m').unidadesDisponibles, 4);
   avanzar(61_000);
   const degradado = await app.inject({ url: '/api/v1/tienda/productos', headers: { authorization: token() } });
   assert.equal(degradado.statusCode, 200);
@@ -186,4 +190,15 @@ test('la caja (ADMIN) ve las compras de todos los socios con el total; un socio 
   assert.deepEqual(caja.json().items.map(c => c.socioId), ['socio-2', 'socio-1']);
   const socio = await app.inject({ url: '/api/v1/tienda/admin/compras', headers: { authorization: token('socio-1') } });
   assert.equal(socio.statusCode, 403);
+});
+
+test('un rechazo de credencial se informa aunque haya una copia degradada', async (t) => {
+  const { app, fav, token, avanzar } = await fixture(t);
+  const consultar = () => app.inject({ url: '/api/v1/tienda/productos', headers: { authorization: token() } });
+  assert.equal((await consultar()).statusCode, 200);
+  avanzar(61_000);
+  fav.estado.falla = new FavError('FAV_CREDENCIAL_RECHAZADA', 401);
+  const respuesta = await consultar();
+  assert.equal(respuesta.statusCode, 502);
+  assert.equal(respuesta.json().codigo, 'FAV_CREDENCIAL_RECHAZADA');
 });
