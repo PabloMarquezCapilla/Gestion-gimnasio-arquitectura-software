@@ -72,7 +72,7 @@ Las llamadas parten directamente del backend con Bearer de aplicación `gym`. El
 
 Car Cruds es propietario de empleados, estado laboral e informe receptor. El gimnasio conserva socios/membresías, vínculos, auditoría y fotografías/envíos. Accesos registra ingresos efectivos. Socios no lee sus colecciones: consulta `GET /internal/v1/accesos/uso` con `X-Service-Key` (2 s, un reintento) para `used`. `costMinor` y `spendingMinor` salen de planes y pagos confirmados propios. Lo que no responde o no alcanza se informa como desconocido (`null`). La fuente actual comprueba afiliación positiva al observar el mes actual y conserva pruebas positivas anteriores del mismo socio/mes; no inventa negativos. Consultar/vincular no habilita una membresía, y una baja laboral no la cancela automáticamente.
 
-El [contrato externo 0.3.0 y el perfil mensual](contracts/README.md#integracion-con-car-cruds) y [D8 vigente](adr/ADR-018-integracion-car-cruds.md) documentan el diseño y las rutas propias. Se verificaron lecturas/envíos con HTTP controlado, persistencia/recuperación con PostgreSQL real y pantalla con datos ficticios; faltan URL/token y prueba conjunta. El POST receptor pertenece a Car Cruds: las verificaciones locales todavía no acreditan la conexión operativa entre grupos de §4.1.
+El [contrato externo 0.4.0 y el perfil mensual](contracts/README.md#integracion-con-car-cruds) y [D8 vigente](adr/ADR-018-integracion-car-cruds.md) documentan el diseño y las rutas propias. Se verificaron lecturas/envíos con HTTP controlado, persistencia/recuperación con PostgreSQL real y pantalla con datos ficticios; faltan URL/token y prueba conjunta. La referencia 0.4.0 proviene del repositorio oficial; la versión desplegada y los permisos efectivos del token siguen pendientes de confirmación. El POST receptor pertenece a Car Cruds: las verificaciones locales todavía no acreditan la conexión operativa entre grupos de §4.1.
 
 **Implementación anterior conservada:** `POST /api/v1/integraciones/empleados`, contrato propio **1.0.1**, sigue disponible localmente con su mock. Usa `X-API-Key`, `Idempotency-Key` y una transacción para socio, solicitud pendiente, referencia y respuesta original. No realiza el nuevo flujo. [ADR-014 reemplazado en diseño](adr/ADR-014-contrato-empleados.md).
 
@@ -182,7 +182,7 @@ flowchart TB
         socios -->|Outbox y publicación confirmada| rabbitmq["RabbitMQ 4.1<br/>MembresiaActualizada v1 · suspensión<br/>Cola durable y DLQ"]
         rabbitmq -->|Consumo · Inbox y cancelación atómicos| clases
     end
-    carcruds["Car Cruds · Empleados<br/>OpenAPI 0.3.0<br/>Empleados, estado e informe receptor"]
+    carcruds["Car Cruds · Empleados<br/>OpenAPI 0.4.0 de referencia<br/>Empleados, estado e informe receptor"]
     socios -->|GET empleados/estado · Bearer gym<br/>Cliente implementado; conexión por coordinar| carcruds
     socios -->|POST evidencia mensual · Bearer gym<br/>Envío manual implementado; conexión pendiente| carcruds
     distribuidora["FAV · catálogo y disponibilidad de distribuidora<br/>Consumidor de stock/reposiciones del gimnasio"]

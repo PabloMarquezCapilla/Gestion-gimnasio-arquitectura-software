@@ -59,6 +59,10 @@ function validarConfig(config: CarCrudsConfig): Required<CarCrudsConfig> {
   if (!['http:', 'https:'].includes(url.protocol) || url.username || url.password || url.search || url.hash) {
     throw new Error('CAR_CRUDS_BASE_URL debe ser HTTP/HTTPS, sin credenciales, consulta ni fragmento.');
   }
+  const local = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
+  if (url.protocol !== 'https:' && !local) {
+    throw new Error('CAR_CRUDS_BASE_URL requiere HTTPS para enviar el token fuera de loopback.');
+  }
   if (typeof config.token !== 'string' || !/^[A-Za-z0-9._~+\/-]+=*$/.test(config.token)) {
     throw new Error('CAR_CRUDS_TOKEN debe contener únicamente la credencial Bearer de aplicación.');
   }
@@ -90,7 +94,7 @@ export function carCrudsConfigDesdeEntorno(env: NodeJS.ProcessEnv = process.env)
 }
 
 const contract = JSON.parse(readFileSync(
-  resolve(__dirname, '../../../../docs/contracts/car-cruds-employees-0.3.0.openapi.json'), 'utf8',
+  resolve(__dirname, '../../../../docs/contracts/car-cruds-employees-0.4.0.openapi.json'), 'utf8',
 ));
 const ajv = new Ajv({ strict: false });
 addFormats(ajv);

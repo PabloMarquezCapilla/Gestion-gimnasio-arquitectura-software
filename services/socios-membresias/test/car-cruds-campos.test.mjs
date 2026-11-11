@@ -1,4 +1,4 @@
-// Campos used/costMinor/spendingMinor del informe mensual a Car Cruds (perfil 0.3.0)
+// Campos used/costMinor/spendingMinor del informe mensual a Car Cruds (perfil 0.4.0)
 // y test de contrato: el payload completo cumple el OpenAPI fijado del proveedor.
 import assert from 'node:assert/strict';
 import test from 'node:test';
@@ -15,7 +15,7 @@ const { CarCrudsEvidenciasService, costoMensual, gastoDelMes, limitesMes } = ser
 const { HttpAccesosUsoClient } = accesosModule;
 const { MemorySociosRepository, SEED_SOCIOS, SEED_MEMBRESIAS } = repoModule;
 
-const contrato = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../docs/contracts/car-cruds-employees-0.3.0.openapi.json'), 'utf8'));
+const contrato = JSON.parse(readFileSync(resolve(import.meta.dirname, '../../../docs/contracts/car-cruds-employees-0.4.0.openapi.json'), 'utf8'));
 const ajv = new Ajv({ strict: false });
 addFormats(ajv);
 ajv.addFormat('int64', { type: 'number', validate: Number.isSafeInteger });
