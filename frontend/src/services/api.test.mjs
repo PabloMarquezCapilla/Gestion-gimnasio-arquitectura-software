@@ -10,6 +10,51 @@ const { outputText } = ts.transpileModule(source, {
 });
 const api = await import('data:text/javascript;base64,' + Buffer.from(outputText).toString('base64'));
 const originalFetch = globalThis.fetch;
+const resumenMembresias = {
+  consultadoEn: '2026-11-11T15:00:00Z', mesActual: '2026-11',
+  pendientes: { cantidad: 251, conPagoRegistrado: 0, importes: [{ moneda: 'ARS', importeMinor: 25100 }] },
+  ingresosMensuales: [{ mes: '2026-10', moneda: 'ARS', importeMinor: 100 }],
+  ingresosPeriodo: [{ moneda: 'ARS', importeMinor: 100 }],
+  confirmadasPorPlan: [{ nombrePlan: 'Mensual', cantidad: 1 }],
+};
+const resumenCompras = {
+  consultadoEn: '2026-11-11T15:00:00Z', mesActual: '2026-11',
+  hoy: { cantidad: 551, importeMinor: 55100 }, historico: { cantidad: 551, importeMinor: 55100 },
+  mensuales: [{ mes: '2026-11', importeMinor: 55100 }], productos: [{ nombre: 'Producto', unidades: 551 }],
+};
+
+test('Los resúmenes administrativos consultan sus endpoints completos con la sesión actual', async () => {
+  api.setApiSession('jwt-admin-reportes');
+  for (const [fn, ruta, datos] of [
+    [api.apiResumenMembresias, '/api/v1/solicitudes/resumen', resumenMembresias],
+    [api.apiResumenCompras, '/api/v1/tienda/admin/resumen', resumenCompras],
+  ]) {
+    globalThis.fetch = async (url, options) => {
+      assert.equal(url, ruta); assert.equal(options.headers.get('Authorization'), 'Bearer jwt-admin-reportes');
+      return json(datos);
+    };
+    assert.deepEqual(await fn(), datos);
+  }
+});
+test('Los resúmenes rechazan cuerpos incompletos, meses inválidos y totales inseguros', async () => {
+  api.setApiSession('jwt-admin-reportes');
+  for (const [fn, datos, variantes] of [
+    [api.apiResumenMembresias, resumenMembresias, [
+      { mesActual: '2026-13' }, { ingresosMensuales: [{ mes: '2026-00', moneda: 'ARS', importeMinor: 100 }] },
+      { pendientes: { cantidad: 1, conPagoRegistrado: 2, importes: [] } },
+      { ingresosPeriodo: [{ moneda: 'ARS', importeMinor: Number.MAX_SAFE_INTEGER + 1 }] },
+    ]],
+    [api.apiResumenCompras, resumenCompras, [
+      { hoy: { cantidad: 552, importeMinor: 55100 } }, { historico: { cantidad: -1, importeMinor: 55100 } },
+      { mensuales: [{ mes: '2026-11', importeMinor: -100 }] }, { productos: [{ nombre: 'Producto', unidades: 1.5 }] },
+    ]],
+  ]) {
+    for (const variante of [{}, ...variantes.map(cambio => ({ ...datos, ...cambio }))]) {
+      globalThis.fetch = async () => json(variante);
+      await assert.rejects(fn(), { status: 502, codigo: 'RESPUESTA_INVALIDA' });
+    }
+  }
+});
 const socio = { socioId: 'socio-prueba', nombre: 'Socio de prueba', rol: 'SOCIO' };
 const registro = { dni: '12345678', nombre: 'Socio de prueba', email: 'socio@example.test', password: 'clave-de-prueba' };
 const json = (data, status = 200) => new Response(JSON.stringify(data), {

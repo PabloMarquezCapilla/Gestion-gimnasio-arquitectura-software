@@ -635,14 +635,6 @@ export const UserPanel: React.FC<UserPanelProps> = ({ user, onLogout, showToast,
 
                     <div className="flex items-center justify-between pt-1">
                       <button
-                        disabled title="La integración con calendario no está implementada."
-                        className="text-xs text-on-surface-variant hover:text-on-surface flex items-center gap-1 transition-colors"
-                      >
-                        <span className="material-symbols-outlined text-sm">calendar_add_on</span>
-                        <span>Agendar</span>
-                      </button>
-
-                      <button
                         disabled={!!pendingAction || loading || !!loadError || !res.inicio || new Date(res.inicio).getTime() <= Date.now()}
                         onClick={() => void handleCancelEntry(res.reservaId)}
                         className="px-2.5 py-1 rounded-md bg-error-container hover:opacity-85 text-error text-xs font-semibold border border-error/30 transition-colors flex items-center gap-1"

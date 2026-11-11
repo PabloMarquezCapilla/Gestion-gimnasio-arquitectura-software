@@ -1,6 +1,6 @@
 # Arquitectura del sistema
 
-**Estado documental al 10/11/2026.** El gimnasio está desplegado en Azure y el recorrido principal con FAV está verificado en ambos sentidos. El gateway valida JWT y limita tráfico (ADR-025), y la observabilidad usa Prometheus, Grafana y alertas (D11). La búsqueda, la administración de clases y la suspensión mediante eventos se verificaron localmente. Car Cruds dispone de lecturas, vinculación y envío mensual manual con persistencia e historial. El equipo confirmó la conexión con Car Cruds desde Azure.
+**Estado documental al 11/11/2026.** El gimnasio está desplegado en Azure y el recorrido principal con FAV está verificado en ambos sentidos. El gateway valida JWT y limita tráfico (ADR-025), y la observabilidad usa Prometheus, Grafana y alertas (D11). La búsqueda, la administración de clases y la suspensión mediante eventos se verificaron localmente. Car Cruds dispone de lecturas, vinculación y envío mensual manual con persistencia e historial. El equipo confirmó la conexión con Car Cruds desde Azure. Las correcciones de demostración, sedes y resúmenes de la rama `fix/datos-demostracion` están verificadas localmente y pendientes de publicación y despliegue.
 
 **Enunciado:** §3, página 4; §4.1, páginas 5–6; §5, páginas 6–7; §6.2–6.3, página 8. Los patrones internos y el balanceo corresponden a §2.1 y §2.3, página 2.
 
@@ -14,6 +14,10 @@
 | **Tienda** | Consultar catálogo/disponibilidad de FAV y administrar el stock físico de una única tienda del gimnasio: reposiciones, ventas e idempotencia. FAV conserva su catálogo y stock de distribuidora. | Capas; API FAV con clave técnica, consulta/ventas ADMIN con JWT y panel. PostgreSQL 17, base `tienda`: `tienda_stock`, `tienda_reposiciones`, `tienda_ventas`, `tienda_operaciones`. Además consume el catálogo de FAV 1.2.0 (cliente con circuit breaker y caché) y registra compras de socios en `tienda_compras`/`tienda_compra_items` (ADR-023/024). Recorrido principal con FAV verificado en Azure. |
 
 Socios, Clases y Tienda usan bases y usuarios PostgreSQL separados en una instancia local compartida; no hay acceso de un servicio a tablas ajenas. MongoDB tiene un replica set de un solo nodo, sin redundancia. El diseño de motores y restricciones se justifica en [D3](adr/ADR-003-persistencia.md); los límites vigentes, en [D1](adr/ADR-022-tienda-y-consignaciones-fav.md). El inicializador incorpora base y usuario de Tienda sin recrear volúmenes ni rotar credenciales existentes.
+
+El inicio operativo de Socios y Clases crea sus esquemas sin cargar demostraciones. `CARGAR_DATOS_DEMO` vale `false` por defecto. Al activarlo explícitamente se incorporan las cuentas y membresías de prueba y, en un catálogo vacío, las clases y reservas sintéticas. Las verificaciones que usan esos datos los habilitan en sus propios recursos temporales. El administrador gestiona las altas y clases operativas desde el portal. [Inicialización y persistencia](adr/ADR-003-persistencia.md).
+
+El equipo definió el 11/11/2026 las sedes Córdoba, San Francisco y Hernando. Accesos configura sus nombres mediante `ACCESOS_SEDES_JSON` o utiliza esa lista por defecto. Los identificadores son `sede-demo-01` para Córdoba, `sede-demo-02` para San Francisco y `sede-hernando` para Hernando. La inicialización actualiza nombres e incorpora identificadores nuevos. Los movimientos y clases referencian el identificador estable.
 
 NGINX sirve el portal React y enruta las solicitudes por un único puerto local (`8080` o `GATEWAY_PORT`). Desde el 09/11/2026 el gateway valida firma y vigencia del JWT en las rutas del portal (njs) y aplica rate limiting por IP, por login y por clave externa ([ADR-025](adr/ADR-025-autenticacion-y-control-de-trafico-en-gateway.md)). Los permisos por rol se siguen validando en los servicios. En el despliegue, Caddy termina HTTPS delante del gateway ([ADR-026](adr/ADR-026-despliegue-en-vm.md)). Las llamadas internas y las salidas al proveedor no pasan por nuestro gateway.
 
@@ -33,6 +37,8 @@ El acceso público y los formularios de inicio de sesión y alta administrativa 
 La verificación local del acceso confirmó HTTP 200 con la cuenta de demostración y HTTP 401 con contraseña incorrecta, tanto desde Vite como desde el gateway reconstruido. El ingreso y cierre de sesión se probaron también en navegador, junto con la presentación a 390 px de ancho.
 
 Los indicadores muestran socios y solicitudes de la página consultada y planes activos obtenidos de las API existentes. El estado de cuenta del listado y el estado de cada membresía se presentan por separado. El alta, JWT, permisos, cálculo de vigencia, suspensión y recuperación con la misma clave de idempotencia reutilizan el flujo existente. La confirmación pendiente se muestra únicamente si existe una operación guardada para ese administrador. Esta adaptación visual corresponde a una solicitud del grupo y conserva el alcance funcional documentado.
+
+El panel principal, Reportes y Caja consultan `GET /api/v1/solicitudes/resumen` y `GET /api/v1/tienda/admin/resumen` con JWT ADMIN. Cada propietario agrega todos sus registros en una sola consulta PostgreSQL y devuelve `consultadoEn`. Los totales diarios y mensuales usan `America/Argentina/Buenos_Aires`. Socios agrupa importes por moneda. Los gráficos cubren el mes actual y los cinco anteriores, y los rankings por plan/producto son históricos. Cada servicio produce su propia lectura consistente. Los listados conservan su paginación. Contratos y errores en [la guía](contracts/README.md#resúmenes-administrativos).
 
 Los colores y las tipografías se definen en el tema de Tailwind. `PageHeader` unifica la jerarquía visual y la hoja compartida adapta tarjetas, controles y tablas. En móvil se pliega el menú administrativo y las tablas mantienen su desplazamiento horizontal con foco por teclado. La credencial y los estados de membresía conservan los datos del servidor. Los indicadores distinguen habilitación, suspensión, vencimiento y falta de información.
 
@@ -241,7 +247,7 @@ sequenceDiagram
 - **Disponibilidad:** un gateway, una instancia PostgreSQL y MongoDB de un nodo. Dos réplicas HTTP no eliminan esos puntos de falla ni los errores durante detección. No hay despliegue multizona. El circuit breaker cubre solo la dependencia externa de FAV ([ADR-024](adr/ADR-024-circuit-breaker-fav.md)); no hay límite de concurrencia.
 - **Identidad:** Clases y Tienda validan el JWT hasta su vencimiento; no hay revocación inmediata ni refresh tokens. La configuración actual del POST admite un origen externo por entorno.
 - **Operación:** hay tablero, alertas y prueba de carga ([EVIDENCIA-CARGA](EVIDENCIA-CARGA.md)). No hay notificación externa de alertas, exportador de spans ni backups automáticos. El despliegue es una sola VM (ADR-026). Las mediciones son de una PC local, no de la VM. Los ensayos de caída usan el mock de FAV, no la jornada conjunta.
-- **Datos de demostración:** clases con fechas fijas y cuentas ficticias; los datos persistidos pueden diferir de los iniciales. No hay gestión versionada completa de migraciones ni política de purga de idempotencia.
+- **Datos de demostración.** La carga requiere `CARGAR_DATOS_DEMO=true`. El cambio del valor de arranque conserva los registros existentes, cuya limpieza sigue pendiente en Azure. Se conservará el historial de integración acordado. La migración versionada completa y la política de purga de idempotencia quedan pendientes.
 
 Estas limitaciones mantienen visibles los requisitos generales y de la presentación final pendientes (§6, páginas 8–9); no amplían el alcance funcional acordado.
 
@@ -265,7 +271,7 @@ Estas limitaciones mantienen visibles los requisitos generales y de la presentac
 | **D8 vigente** | Información mensual para Car Cruds | Lecturas, vínculo y envío manual implementados; conexión desde Azure confirmada por el equipo | [ADR-018](adr/ADR-018-integracion-car-cruds.md) |
 | **D8 adicional** | Stock y reposiciones para FAV | Contrato propio 1.0.0 publicado por HTTPS; reposiciones de FAV confirmadas por el equipo en Azure | [ADR-022](adr/ADR-022-tienda-y-consignaciones-fav.md) |
 | **D9** | Consulta de catálogo y disponibilidad de FAV | Cliente 1.2.0 implementado; disponibilidad online en el verificador; lecturas autenticadas verificadas | [ADR-009](adr/ADR-009-consumo-del-proveedor.md) |
-| **D10** | Resiliencia | Implementación parcial y pendientes identificados | [ADR-010](adr/ADR-010-resiliencia.md) |
+| **D10** | Resiliencia | Timeouts, reintentos, recuperación, circuit breaker FAV y límites del gateway verificados | [ADR-010](adr/ADR-010-resiliencia.md) |
 | **D11** | Observabilidad (Logs, Trazas y Métricas) | 1ª versión en E2 | [ADR-011](adr/ADR-011-observabilidad.md) |
 | **D12** | Balanceo de carga | Distribución, detección y reemplazo verificados con límites explícitos | [ADR-012](adr/ADR-012-balanceo-de-carga.md) |
 | **D13** | Capacidad y estimación de costos | Línea base local y estimación ilustrativa | [ADR-013](adr/ADR-013-capacidad-y-costos.md) |
@@ -276,7 +282,7 @@ Estas limitaciones mantienen visibles los requisitos generales y de la presentac
 | D9, concreción | Compra de socios con catálogo de FAV | Implementada; reemplaza parcialmente ADR-022/009 | [ADR-023](adr/ADR-023-compra-de-socios-en-tienda.md) |
 | D10, concreción | Circuit breaker y caché degradada hacia FAV | Implementado y ensayado | [ADR-024](adr/ADR-024-circuit-breaker-fav.md) |
 | Adicional | Autenticación y control de tráfico en el gateway | Implementado y verificado | [ADR-025](adr/ADR-025-autenticacion-y-control-de-trafico-en-gateway.md) |
-| Adicional | Despliegue en VM con Caddy | Preparado; falta crear la VM | [ADR-026](adr/ADR-026-despliegue-en-vm.md) |
+| Adicional | Despliegue en VM con Caddy | Operativo en Azure por HTTPS, con Grafana e integraciones | [ADR-026](adr/ADR-026-despliegue-en-vm.md) |
 
 ### Caché de ocupación (etapa 2)
 

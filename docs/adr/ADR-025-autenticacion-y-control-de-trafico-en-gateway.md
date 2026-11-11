@@ -3,7 +3,7 @@
 **Estado:** aceptada e implementada; verificada con el stack completo el 09/11/2026.
 **Fecha:** 09/11/2026.
 **Complementa:** [ADR-016](ADR-016-autenticacion-y-altas.md), donde la autenticación quedaba en cada servicio, y [D10](ADR-010-resiliencia.md).
-**Enunciado:** §6.4, "punto de entrada único con autenticación, direccionamiento y control de tráfico".
+**Enunciado:** presentación grupal, páginas 8–9, "punto de entrada único con autenticación, direccionamiento y control de tráfico".
 
 ## Contexto
 

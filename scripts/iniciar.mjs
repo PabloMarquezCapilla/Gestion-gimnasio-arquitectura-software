@@ -56,6 +56,7 @@ if (!existsSync(envPath)) {
     '# Generado para el entorno local. No subir al repositorio.',
     '# Conservar junto a los volúmenes; no cambiar claves de bases ya inicializadas.',
     'GATEWAY_PORT=8080',
+    'CARGAR_DATOS_DEMO=false',
     'EMPLEADOS_ORIGEN_ID=grupo-ficticio-local',
     ...(process.env.DOMINIO ? [`DOMINIO=${JSON.stringify(process.env.DOMINIO)}`] : []),
     ...keys.map(key => `${key}=${randomBytes(32).toString('hex')}`),

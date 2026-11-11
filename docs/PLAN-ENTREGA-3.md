@@ -1,6 +1,6 @@
 # Plan de cierre de entrega 3
 
-**Estado.** 10/11/2026. El gimnasio está desplegado por HTTPS en Azure. Se verificó el recorrido principal con FAV en ambos sentidos y el equipo confirmó la conexión con Car Cruds. Las políticas administrativas y económicas abiertas se detallan en los pasos 6 y 7.
+**Estado.** 11/11/2026. El gimnasio está desplegado por HTTPS en Azure. Se verificó el recorrido principal con FAV en ambos sentidos y el equipo confirmó la conexión con Car Cruds. Las correcciones de demostración, sedes y reportes están verificadas localmente en `fix/datos-demostracion`, pendientes de publicación y actualización de la VM. Las políticas administrativas y económicas abiertas se detallan en los pasos 6 y 7.
 **Referencia:** presentación grupal, páginas 8–9 del enunciado. La defensa individual de la página 9 tiene verificaciones adicionales, identificadas abajo.
 
 **Correcciones verificadas el 10/11/2026.** Fin de mes con regla confirmada, duración contractual durable para Car Cruds y costo desconocido ante datos históricos incompletos o fracciones. El descubrimiento de pruebas excluye el lanzador de carga. Balanceo genera su credencial de Grafana y reconoce sus volúmenes al limpiar. Aprobaron 278 pruebas de regresión/cobertura, 21 de PostgreSQL y el ensayo de balanceo con limpieza. La compilación frontend aprobó 41 módulos. Se mantienen los cuatro 504 transitorios durante detección de una réplica caída. [Detalle y límites](EVIDENCIA-MEMBRESIAS.md#correcciones-verificadas-el-10112026).
@@ -132,5 +132,11 @@ Texto original del paso:
 - **Documentación:** README, alcance, arquitectura, D13 y evidencia. **Enunciado:** §2.11–2.12/§3, páginas 3–4; presentación y defensa, páginas 8–9.
 
 ## Límites y dependencias
+
+**Revisión del 11/11/2026.** La rama `fix/datos-demostracion` desactiva la carga automática de demostración por defecto y configura las sedes Córdoba, San Francisco y Hernando. Panel principal, Caja y Reportes obtienen agregados completos desde cada servicio, con calendario argentino e importes por moneda. Se actualizaron contratos, estados documentales y referencias del enunciado. Pasaron 288 pruebas de regresión y 7 de reportes con HTTP/PostgreSQL, además de compilar el frontend. Quedan pendientes publicar estas correcciones, revisar y limpiar los registros de demostración existentes preservando el historial de integración, y completar el presupuesto efectivo de Azure en D13.
+
+El [procedimiento de actualización](DEPLOY.md#actualizar-la-vm-existente) documenta respaldo, versión publicada, configuración, limpieza selectiva y comprobaciones del portal. El equipo confirmó Standard B2s v2, 2 vCPU, 8 GiB y una estimación de cómputo de 84,68 USD/mes. D13 incorpora esos datos y conserva pendientes disco, IP y consumo adicional. Los resultados de despliegue, limpieza y revisión visual se registrarán al ejecutar esa etapa.
+
+La revisión documental comprobó los enlaces locales de la documentación y las referencias internas de 13 contratos sin destinos ausentes. La configuración Compose de producción validó con el dominio público configurado y `git diff --check` aprobó.
 
 El alcance conserva pagos manuales con comprobantes internos y una única tienda con PostgreSQL, reposiciones y ventas. Las políticas comerciales abiertas siguen identificadas en los pasos 6 y 7. Las conexiones con FAV y Car Cruds están documentadas junto con sus verificaciones.

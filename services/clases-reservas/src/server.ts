@@ -8,8 +8,12 @@ import { PostgresClaseRepository, MemoryClaseRepository } from './repository';
 import { HttpSociosClient, MockSociosClient } from './clients/socios.client';
 import { HttpSedesClient } from './clients/sedes.client';
 import { PostgresGestionClases } from './gestion-clases.postgres';
+import { mockClasses } from './mock-data';
 
 async function start() {
+  const modoDemo = process.env.CARGAR_DATOS_DEMO?.trim() || 'false';
+  if (!['true', 'false'].includes(modoDemo)) throw new Error('CARGAR_DATOS_DEMO debe ser true o false.');
+  const cargarDatosDemo = modoDemo === 'true';
   const apiKey = process.env.CAPACIDAD_API_KEY;
   if (!apiKey || !apiKey.trim()) {
     throw new Error('Definí CAPACIDAD_API_KEY antes de iniciar el servicio.');
@@ -54,7 +58,7 @@ async function start() {
       pool.on('error',() => { console.error('[clases-reservas] Conexión inactiva de PostgreSQL interrumpida.'); });
       closeRepository = () => pool.end();
       const pgRepo = new PostgresClaseRepository(pool);
-      await pgRepo.inicializarEsquema();
+      await pgRepo.inicializarEsquema({ cargarDatosDemo });
       buscador = new PostgresBuscadorClases(pool);
       gestionClases = new PostgresGestionClases(pool);
       eventosRepository = new PostgresMembresiasEventos(pool);
@@ -71,11 +75,11 @@ async function start() {
         );
       }
       console.warn('[clases-reservas] No se pudo conectar a PostgreSQL, iniciando en memoria para desarrollo:', err);
-      repository = new MemoryClaseRepository(undefined, true);
+      repository = new MemoryClaseRepository(cargarDatosDemo ? mockClasses : [], true);
     }
   } else {
     console.log('[clases-reservas] Iniciando con repositorio en memoria.');
-    repository = new MemoryClaseRepository();
+    repository = new MemoryClaseRepository(cargarDatosDemo ? mockClasses : []);
   }
 
   const sociosClient = sociosUrl

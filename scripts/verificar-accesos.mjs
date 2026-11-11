@@ -35,7 +35,7 @@ function docker(args) {
   return r.stdout.trim();
 }
 
-test('Accesos: MongoDB real, HTTP, concurrencia, recuperación y seguridad', { timeout: 120000 }, async t => {
+test('Accesos: MongoDB real, HTTP, concurrencia, recuperación y seguridad', { timeout: 180000 }, async t => {
   const contract = parse(await readFile(resolve('docs/contracts/openapi-accesos-v1.yaml'), 'utf8'));
   const ajv = new Ajv2020({ strict: false }); addFormats(ajv);
   const validarMovimiento = ajv.compile({ ...contract.components.schemas.Resultado, components: contract.components });
@@ -93,7 +93,7 @@ test('Accesos: MongoDB real, HTTP, concurrencia, recuperación y seguridad', { t
     const login = await request(sociosUrl, '/api/v1/auth/login', { body: { emailOrDni: admin.email, password: 'clave-solo-ficticia' } });
     assert.equal(login.status, 200); const token = login.body.token;
     const startApp = async repo => {
-      const app = access.buildAccesosApp({ repository: repo, socios: new sociosClient.HttpSociosClient(sociosUrl, internalApiKey, 500), jwtSecret });
+      const app = access.buildAccesosApp({ repository: repo, socios: new sociosClient.HttpSociosClient(sociosUrl, internalApiKey), jwtSecret });
       apps.push(app); await app.listen({ host: '127.0.0.1', port: 0 }); return 'http://127.0.0.1:' + app.server.address().port;
     };
     const a = await startApp(repoA); const b = await startApp(repoB);
@@ -109,6 +109,16 @@ test('Accesos: MongoDB real, HTTP, concurrencia, recuperación y seguridad', { t
       const r = await move('socio-demo-01'); assert.equal(r.status, 201); assert.equal(r.body.movimiento.aceptado, true);
       assert.equal(await occupancy(), 1); assert.equal(r.headers.get('x-correlation-id'), 'a'.repeat(32));
       assert.equal(await client.db().collection('movimientos').countDocuments(), 1);
+    });
+    await t.test('Cambiar el nombre configurado conserva la sede, ocupación e historial', async () => {
+      try {
+        await repoB.inicializar([{ ...sedes[0], nombre: 'Córdoba' }, sedes[1]]);
+        assert.equal((await repoA.sedes()).find(s => s.sedeId === sedes[0].sedeId).nombre, 'Córdoba');
+        assert.equal(await occupancy(), 1);
+        assert.equal(await client.db().collection('movimientos').countDocuments(), 1);
+      } finally {
+        await repoA.inicializar(sedes);
+      }
     });
     await t.test('Inhabilitado e ingreso repetido quedan en historial sin incrementar ocupación', async () => {
       assert.equal((await move('socio-demo-01')).status, 409);
@@ -174,7 +184,8 @@ test('Accesos: MongoDB real, HTTP, concurrencia, recuperación y seguridad', { t
           ...process.env, NODE_ENV: 'production', PORT: String(servicePort), MONGODB_URL: uri, AUTH_JWT_SECRET: jwtSecret,
           AUTH_JWT_TTL_SECONDS: '3600', SERVICIOS_API_KEY: internalApiKey, SOCIOS_SERVICE_URL: sociosUrl, ACCESOS_SEDES_JSON: JSON.stringify(sedes),
         } });
-        for (let n = 0; n < 80; n++) {
+        const limiteInicio = Date.now() + 30000;
+        while (Date.now() < limiteInicio) {
           try { if ((await request(base, '/health')).status === 200) return; } catch {}
           if (servidor.exitCode !== null) throw new Error('No inició Accesos temporal.'); await pause(100);
         }

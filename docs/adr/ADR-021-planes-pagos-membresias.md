@@ -41,6 +41,8 @@ Migración aditiva integrada al inicializador existente bajo `pg_advisory_xact_l
 
 ## HTTP, interfaz y observabilidad
 
+**Actualización del 11/11/2026.** Los totales de Panel principal y Reportes se obtienen de `GET /api/v1/solicitudes/resumen`, con JWT ADMIN. Una consulta PostgreSQL agrega todas las solicitudes y comprobantes confirmados, con importes por moneda y calendario argentino. El mes actual y los cinco anteriores forman la ventana de ingresos. El ranking por plan mantiene el nombre contratado y abarca el historial. Los listados siguen paginados para la gestión individual. El contrato vigente es 1.3.0. La carga de cuentas y membresías de demostración requiere `CARGAR_DATOS_DEMO=true`; los cuatro planes comerciales acordados permanecen como configuración inicial. [Contrato y pruebas](../contracts/README.md#resúmenes-administrativos).
+
 [OpenAPI propio](../contracts/openapi-membresias-v1.yaml). Gateway enruta planes/solicitudes/pagos a Socios sin reintento de esos upstreams; no cambia APIs externas. Se conserva y no se usa la ruta antigua `POST /socios/:id/membresias`, que rechaza activación directa. No se pasa una membresía activa como cuerpo arbitrario.
 
 El panel muestra socios, planes, solicitudes, pago pendiente/rechazado y comprobante interno. Confirmar exige una acción explícita tras verificar el cobro. SessionStorage conserva por actor una sola operación incierta (ruta/cuerpo/clave, sin JWT), para repetirla después de recargar/iniciar sesión. Tras resolver, vuelve a consultar al servidor; un replay histórico no se interpreta como estado actual. Las respuestas inválidas o errores de red nunca se muestran como confirmación. El socio sólo consulta su historial; no hay botones de pago administrativo.

@@ -95,4 +95,4 @@ Los ensayos reales requieren Docker y verifican la identidad de sus recursos ant
 
 En esta etapa inicial se verificó el contrato de consignaciones localmente. FAV es responsable de enviar el `varianteId` correspondiente a la prenda recibida. Las compras y el consumo del catálogo se incorporaron después, según [ADR-023](adr/ADR-023-compra-de-socios-en-tienda.md).
 
-La instancia PostgreSQL compartida continúa siendo un punto de falla. JWT se valida localmente hasta vencer, sin revocación inmediata. No se purga automáticamente el historial/idempotencia. Las métricas de operaciones resueltas incluyen repeticiones y no representan ventas únicas; el tablero global y la prueba de carga final pertenecen a etapas posteriores.
+La instancia PostgreSQL compartida continúa siendo un punto de falla. JWT se valida localmente hasta vencer, sin revocación inmediata. No se purga automáticamente el historial/idempotencia. Las métricas de operaciones resueltas incluyen repeticiones y no representan ventas únicas. El tablero global y la prueba de carga se incorporaron posteriormente y se documentan en [D11](adr/ADR-011-observabilidad.md) y [EVIDENCIA-CARGA](EVIDENCIA-CARGA.md).

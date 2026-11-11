@@ -20,9 +20,22 @@ El acuerdo confirmado el 06/11/2026 incorpora ambos sentidos: Tienda consumirá 
 
 En sentido inverso, Tienda consume el catálogo de FAV y lo usa en la compra de socios ([ADR-023](../adr/ADR-023-compra-de-socios-en-tienda.md)). La revisión del contrato externo 1.2.0 confirmó compatibilidad con el cliente existente. El gimnasio está publicado por HTTPS y el recorrido de catálogo, reposición y compra está verificado. [Evidencia conjunta](../EVIDENCIA-TIENDA.md#prueba-conjunta-en-azure-del-10112026).
 
+## Resúmenes administrativos
+
+El panel principal, Reportes y Caja consultan totales calculados en PostgreSQL por el servicio propietario de los datos. Cada respuesta representa una lectura consistente e informa `consultadoEn`. Las solicitudes y compras individuales mantienen sus listados paginados.
+
+| Ruta interna con JWT ADMIN | Resultado |
+|---|---|
+| `GET /api/v1/solicitudes/resumen` | Cantidad e importes pendientes por moneda, cobros confirmados de los últimos seis meses y cantidad histórica de membresías confirmadas por nombre de plan. [Membresías 1.3.0](openapi-membresias-v1.yaml). |
+| `GET /api/v1/tienda/admin/resumen` | Compras e importe de hoy, totales históricos, ventas de los últimos seis meses y ocho productos más vendidos históricamente. Importes en centavos de ARS. [Tienda 1.2.0](openapi-tienda-socios-v1.yaml). |
+
+El día y mes se calculan en `America/Argentina/Buenos_Aires`. Los seis meses incluyen el actual. Las rutas requieren una sesión ADMIN y responden con `Cache-Control: no-store`. Parámetros adicionales producen 400, sesión ausente 401, rol insuficiente 403, un total que exceda el rango entero seguro 422 `RESUMEN_NO_REPRESENTABLE` e indisponibilidad de PostgreSQL 503. Los importes de distintas monedas se muestran por separado.
+
+`npm run test:reportes` verifica HTTP/PostgreSQL y valida las respuestas contra ambos OpenAPI. Usa 251 solicitudes y 551 compras para comprobar totales superiores a las antiguas ventanas de páginas, además de límites de mes en Argentina, permisos y desbordamiento. Son pruebas temporales propias. Estas operaciones pertenecen al portal administrativo del gimnasio.
+
 ## Suspensiones y evento interno
 
-[OpenAPI Membresías 1.1.0](openapi-membresias-v1.yaml) agrega historial por propietario y suspensión idempotente por ADMIN. [Guía](membresias-eventos.md), [JSON Schema del evento 1.0.0](membresia-actualizada-v1.schema.json) y [evidencia](../EVIDENCIA-EVENTOS-MEMBRESIA.md) describen Outbox/RabbitMQ/Inbox, cancelaciones y recuperación. Conserva las operaciones de pagos 1.0.0 y los contratos entre grupos.
+El historial por propietario y la suspensión idempotente por ADMIN se incorporaron en la versión 1.1.0 y se conservan en [OpenAPI Membresías 1.3.0](openapi-membresias-v1.yaml). [Guía](membresias-eventos.md), [JSON Schema del evento 1.0.0](membresia-actualizada-v1.schema.json) y [evidencia](../EVIDENCIA-EVENTOS-MEMBRESIA.md) describen Outbox/RabbitMQ/Inbox, cancelaciones y recuperación. Conserva las operaciones de pagos 1.0.0 y los contratos entre grupos.
 
 ## Búsqueda interna de clases
 
@@ -221,13 +234,13 @@ Corregir o quitar un vínculo conserva las fotografías anteriores y sus recibos
 
 ### Implementación y aceptación pendientes
 
-Lecturas, vinculación, vista previa guardada y envío tienen cliente, pantalla ADMIN, persistencia y pruebas controladas. URL alcanzable, token por canal privado y disponibilidad del entorno compartido se coordinarán con Car Cruds. No se crean valores de conexión ficticios ni se presenta localhost del proveedor como acceso remoto.
+Lecturas, vinculación, vista previa guardada y envío tienen cliente, pantalla ADMIN, persistencia y pruebas controladas. URL y token están configurados en Azure y el equipo confirmó la conexión con Car Cruds. Los ensayos conjuntos adicionales se coordinan con el proveedor. [Estado de verificación](#estado-de-la-conexión-en-azure).
 
 Los tests usan el OpenAPI fijado y comprueban rechazo de respuestas incompatibles, pérdida de respuesta después de recibir, repetición exacta y recuperación. PostgreSQL verifica concurrencia entre pools, rollback, cuerpo inmutable y descarte de respuestas tardías. La prueba conjunta pendiente cubrirá listado/estado, vínculo manual, desconocidos, replay exacto, corrección, versión atrasada, conflicto y caída/recuperación. El informe receptor lo verificará su administrador; el rol `gym` no tiene acceso a ese reporte. Las pruebas locales no sustituyen esa validación entre sistemas.
 
 ## Integracion de Tienda con FAV
 
-Tienda consume `GET /v1/productos` del contrato de FAV [catalogo-pedidos 1.1.0](fav-catalogo-pedidos-1.1.0.openapi.yaml), una copia fijada de `development` `b9cb3e4`.
+Tienda consume `GET /v1/productos` del contrato de FAV [catalogo-pedidos 1.2.0](fav-catalogo-pedidos-1.2.0.openapi.yaml), validado con el cliente y verificado contra el servicio público. La copia 1.1.0 conserva el contrato utilizado al iniciar la implementación. [Prueba conjunta en Azure](../EVIDENCIA-TIENDA.md#prueba-conjunta-en-azure-del-10112026).
 - El catálogo se cruza con el stock consignado y los socios compran desde el portal. Contrato propio: [openapi-tienda-socios-v1.yaml](openapi-tienda-socios-v1.yaml).
 - La guía de consumo, la configuración y el comportamiento ante fallas están en [fav-tienda.md](fav-tienda.md#consumo-del-catálogo-de-fav-gimnasio--fav).
 - Decisiones: [ADR-023](../adr/ADR-023-compra-de-socios-en-tienda.md) y [ADR-024](../adr/ADR-024-circuit-breaker-fav.md).
@@ -393,5 +406,7 @@ La suite incluye 7 casos adicionales del endpoint operativo con el adaptador en 
 ## Planes y pagos manuales (contrato propio adicional)
 
 **1.2.0 (09/11/2026):** agrega `duracionMeses` a los planes (opcional al crear) y cuatro planes predeterminados. Ver ADR-021. La caja de la tienda para ADMIN (`GET /api/v1/tienda/admin/compras`) está en [openapi-tienda-socios-v1.yaml](openapi-tienda-socios-v1.yaml) 1.1.0.
+
+**Versiones vigentes del 11/11/2026.** Membresías 1.3.0 y Tienda 1.2.0 agregan los resúmenes administrativos sin cambiar las operaciones anteriores. Rutas, permisos, ventanas temporales y verificación están en [Resúmenes administrativos](#resúmenes-administrativos). Su aplicación en Azure queda pendiente del despliegue de esta revisión.
 
 [openapi-membresias-v1.yaml](openapi-membresias-v1.yaml) define gestión ADMIN de planes/solicitudes/pagos y consultas del socio propietario. PostgreSQL, JWT e Idempotency-Key obligatorios para comandos. No es una pasarela ni modifica las APIs de Car Cruds/empleados. [Garantías](../adr/ADR-021-planes-pagos-membresias.md).

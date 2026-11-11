@@ -3,6 +3,8 @@
 **Estado:** implementado en rama de trabajo; verificaciones en [evidencia de etapa 1](../EVIDENCIA-ACCESOS.md).
 **Fecha:** 30/10/2026. Complementa D1/D3/D4/D5/D10/D11; revisa únicamente la propuesta interna de Accesos de D2. No reemplaza las decisiones de Socios, Clases ni Car Cruds.
 
+**Revisión del 11/11/2026.** El equipo definió Córdoba, San Francisco y Hernando. El catálogo configura sus nombres por identificador estable y admite actualizar esos nombres al iniciar. La prueba con MongoDB comprueba que un cambio de nombre conserva ocupación e historial. El ensayo de proceso usa una espera de arranque de 30 s y el timeout operativo de Socios de 3000 ms.
+
 ## Fuentes y alcance
 
 - Enunciado: §2.1 y §2.5, p.2; §2.8–2.11, p.3; §2.12 y documentación, p.4; presentación, pp.8–9. El PDF temporal de la auditoría anterior ya no está disponible para abrirlo en esta etapa; se conserva esa lectura previa y no se afirma una nueva comprobación del original.
@@ -25,7 +27,7 @@ MongoDB usa la base privada `accesos` y replica set `rs0` ya previsto en Compose
 
 | Colección | Propósito / índices |
 |---|---|
-| `sedes` | Catálogo propio; `_id=sedeId`. Configuración inicial `ACCESOS_SEDES_JSON`, inserción `$setOnInsert`; nunca sobrescribe ni elimina registros existentes. Compose declara dos sedes ficticias alineadas con los IDs del catálogo de clases. No se implementa CRUD de sedes en esta etapa. |
+| `sedes` | Catálogo propio identificado por `_id=sedeId`. `ACCESOS_SEDES_JSON` configura los identificadores y nombres. Desde el acuerdo del 11/11/2026, Accesos utiliza Córdoba, San Francisco y Hernando como lista predeterminada. La inicialización usa `$set` con upsert para actualizar los nombres configurados e incorporar identificadores nuevos. Córdoba y San Francisco conservan sus identificadores anteriores. Las clases y movimientos usan ese identificador estable. |
 | `presencias` | Un documento estable por socio/sede, abierta o cerrada, y revisión de serialización. `_id` canónico y único compuesto `(sedeId,socioId)`; índice `(sedeId,abierta)` para ocupación. |
 | `movimientos` | Intentos de negocio aceptados/rechazados, actor, instante, tipo y código. Índices sede/fecha/ID y sede/socio/fecha/ID para historial. No se borran al cerrar un ingreso. |
 | `operaciones` | Resultado original y contenido canónico por actor/clave. `_id` único; sin TTL que permita reaplicar silenciosamente un reintento antiguo. |

@@ -723,7 +723,50 @@ export async function apiComprasCaja(pagina = 1): Promise<{ pagina: number; tama
   return { pagina: value.pagina as number, tamanio: value.tamanio as number, total: value.total, totalMinor: value.totalMinor, items };
 }
 
-// Estado de los servicios para Configuración: /health es público en el gateway y no expone datos.
+// Resúmenes ADMIN calculados por cada servicio propietario.
+export interface ResumenMembresias {
+  consultadoEn: string; mesActual: string;
+  pendientes: { cantidad: number; conPagoRegistrado: number; importes: { moneda: string; importeMinor: number }[] };
+  ingresosMensuales: { mes: string; moneda: string; importeMinor: number }[];
+  ingresosPeriodo: { moneda: string; importeMinor: number }[];
+  confirmadasPorPlan: { nombrePlan: string; cantidad: number }[];
+}
+export interface ResumenComprasAdmin {
+  consultadoEn: string; mesActual: string;
+  hoy: { cantidad: number; importeMinor: number };
+  historico: { cantidad: number; importeMinor: number };
+  mensuales: { mes: string; importeMinor: number }[];
+  productos: { nombre: string; unidades: number }[];
+}
+const esMes = (value: unknown): value is string => typeof value === 'string' && /^\d{4}-(0[1-9]|1[0-2])$/.test(value);
+const esImporteResumen = (value: unknown) => isRecord(value) && isNatural(value.importeMinor);
+const esImporteConMoneda = (value: unknown) => esImporteResumen(value) && isRecord(value)
+  && typeof value.moneda === 'string' && /^[A-Z]{3}$/.test(value.moneda);
+const resumenInvalido = (): never => { throw new ApiError('El servidor devolvió un resumen no válido. Volvé a consultar.', 502, 'RESPUESTA_INVALIDA'); };
+
+export async function apiResumenMembresias(): Promise<ResumenMembresias> {
+  const v = await request<unknown>('/api/v1/solicitudes/resumen', {}, true, 200);
+  if (!isRecord(v) || !isDate(v.consultadoEn) || !esMes(v.mesActual) || !isRecord(v.pendientes)
+    || !isNatural(v.pendientes.cantidad) || !isNatural(v.pendientes.conPagoRegistrado)
+    || v.pendientes.conPagoRegistrado > v.pendientes.cantidad
+    || !Array.isArray(v.pendientes.importes) || !v.pendientes.importes.every(esImporteConMoneda)
+    || !Array.isArray(v.ingresosPeriodo) || !v.ingresosPeriodo.every(esImporteConMoneda)
+    || !Array.isArray(v.ingresosMensuales) || v.ingresosMensuales.some(i => !isRecord(i) || !esMes(i.mes) || !esImporteConMoneda(i))
+    || !Array.isArray(v.confirmadasPorPlan) || v.confirmadasPorPlan.some(p => !isRecord(p) || !isText(p.nombrePlan) || !isNatural(p.cantidad))) return resumenInvalido();
+  return v as unknown as ResumenMembresias;
+}
+export async function apiResumenCompras(): Promise<ResumenComprasAdmin> {
+  const v = await request<unknown>('/api/v1/tienda/admin/resumen', {}, true, 200);
+  if (!isRecord(v) || !isDate(v.consultadoEn) || !esMes(v.mesActual)
+    || !isRecord(v.hoy) || !isNatural(v.hoy.cantidad) || !esImporteResumen(v.hoy)
+    || !isRecord(v.historico) || !isNatural(v.historico.cantidad) || !esImporteResumen(v.historico)
+    || v.hoy.cantidad > v.historico.cantidad || Number(v.hoy.importeMinor) > Number(v.historico.importeMinor)
+    || !Array.isArray(v.mensuales) || v.mensuales.some(m => !isRecord(m) || !esMes(m.mes) || !esImporteResumen(m))
+    || !Array.isArray(v.productos) || v.productos.some(p => !isRecord(p) || !isText(p.nombre) || !isNatural(p.unidades))) return resumenInvalido();
+  return v as unknown as ResumenComprasAdmin;
+}
+
+// Estado de los servicios para Configuración.
 export type ServicioSalud = 'gateway' | 'socios' | 'clases' | 'accesos' | 'tienda';
 export async function apiSaludServicio(servicio: ServicioSalud): Promise<{ ok: boolean; detalle: Record<string, unknown> }> {
   try {

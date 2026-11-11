@@ -22,7 +22,7 @@ export interface ISociosRepository extends EmpleadosRepository, CarCrudsVinculos
   crearSocio(socio: Socio): Promise<Socio>;
   crearMembresia(membresia: Membresia): Promise<Membresia>;
   actualizarEstadoMembresia(membresiaId: string, nuevoEstado: Membresia['estado']): Promise<void>;
-  inicializarEsquema(): Promise<void>;
+  inicializarEsquema(opciones?: { cargarDatosDemo?: boolean }): Promise<void>;
   verificarSalud(): Promise<{ ok: boolean; detalle?: string }>;
   conexionesActivas(): number;
 }
@@ -335,7 +335,7 @@ export class PostgresSociosRepository implements ISociosRepository {
     }
   }
 
-  async inicializarEsquema(): Promise<void> {
+  async inicializarEsquema({ cargarDatosDemo = false }: { cargarDatosDemo?: boolean } = {}): Promise<void> {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
@@ -418,25 +418,26 @@ export class PostgresSociosRepository implements ISociosRepository {
       await client.query(GESTION_MEMBRESIAS_DDL);
       await client.query(MEMBRESIAS_EVENTOS_DDL);
 
-      // Seed if empty or upsert seeded users
-      for (const s of SEED_SOCIOS) {
-        await client.query(
-          `INSERT INTO socios (socio_id, dni, nombre, email, password_hash, rol, telefono, estado, created_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
-           ON CONFLICT (socio_id) DO UPDATE SET
-             password_hash = COALESCE(socios.password_hash, EXCLUDED.password_hash),
-             rol = COALESCE(socios.rol, EXCLUDED.rol),
-             telefono = COALESCE(socios.telefono, EXCLUDED.telefono)`,
-          [s.socioId, s.dni, s.nombre, s.email, s.passwordHash ?? null, s.rol ?? 'SOCIO', s.telefono ?? null, s.estado, s.createdAt]
-        );
-      }
-      for (const m of SEED_MEMBRESIAS) {
-        await client.query(
-          `INSERT INTO membresias (membresia_id, socio_id, tipo_plan, fecha_inicio, fecha_fin, estado, created_at, updated_at)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-           ON CONFLICT (membresia_id) DO NOTHING`,
-          [m.membresiaId, m.socioId, m.tipoPlan, m.fechaInicio, m.fechaFin, m.estado, m.createdAt, m.updatedAt]
-        );
+      if (cargarDatosDemo) {
+        for (const s of SEED_SOCIOS) {
+          await client.query(
+            `INSERT INTO socios (socio_id, dni, nombre, email, password_hash, rol, telefono, estado, created_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+             ON CONFLICT (socio_id) DO UPDATE SET
+               password_hash = COALESCE(socios.password_hash, EXCLUDED.password_hash),
+               rol = COALESCE(socios.rol, EXCLUDED.rol),
+               telefono = COALESCE(socios.telefono, EXCLUDED.telefono)`,
+            [s.socioId, s.dni, s.nombre, s.email, s.passwordHash ?? null, s.rol ?? 'SOCIO', s.telefono ?? null, s.estado, s.createdAt]
+          );
+        }
+        for (const m of SEED_MEMBRESIAS) {
+          await client.query(
+            `INSERT INTO membresias (membresia_id, socio_id, tipo_plan, fecha_inicio, fecha_fin, estado, created_at, updated_at)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+             ON CONFLICT (membresia_id) DO NOTHING`,
+            [m.membresiaId, m.socioId, m.tipoPlan, m.fechaInicio, m.fechaFin, m.estado, m.createdAt, m.updatedAt]
+          );
+        }
       }
       await client.query('COMMIT');
     } catch (err) {

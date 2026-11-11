@@ -12,7 +12,7 @@ Las consultas y escrituras de gestión tienen un plazo técnico de 15 segundos, 
 
 ## API propia
 
-[OpenAPI de membresías 1.1.0](openapi-membresias-v1.yaml) añade dos operaciones compatibles con 1.0.0.
+Las dos operaciones se incorporaron en la versión 1.1.0 y se conservan en [OpenAPI de membresías 1.3.0](openapi-membresias-v1.yaml), junto con pagos, duración de planes y resúmenes administrativos.
 
 | Operación | Autorización y resultado |
 |---|---|

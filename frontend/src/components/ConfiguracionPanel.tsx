@@ -12,7 +12,7 @@ const SERVICIOS: { id: ServicioSalud; nombre: string }[] = [
   { id: 'tienda', nombre: 'Tienda' },
 ];
 const ETIQUETAS: Record<string, string> = {
-  CATALOGO_FAV_CONFIGURADO: 'Catálogo de FAV conectado',
+  CATALOGO_FAV_CONFIGURADO: 'URL y credencial del catálogo de FAV configuradas',
   CATALOGO_FAV_PENDIENTE_CREDENCIAL: 'Catálogo de FAV sin configurar (falta URL/clave)',
   CONFIGURADA: 'Clave para FAV configurada',
   PENDIENTE_CREDENCIAL: 'Falta la clave para FAV',

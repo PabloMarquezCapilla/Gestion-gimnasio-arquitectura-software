@@ -1,7 +1,7 @@
 # D3 - Persistencia
 
 **Estado:** PostgreSQL y MongoDB integrados; Redis implementado en ocupación. Tienda utiliza PostgreSQL 17, con base y usuario propios, para stock local y movimientos durables según [ADR-022](ADR-022-tienda-y-consignaciones-fav.md).
-**Fecha inicial:** 07/10/2026. **Revisión:** 10/11/2026.
+**Fecha inicial:** 07/10/2026. **Revisión:** 11/11/2026.
 **Enunciado:** §5 D3, página 6; §2.8, página 3; §6.2–6.3, página 8.
 
 ## Contexto
@@ -9,6 +9,12 @@
 Membresías, pagos y reservas requieren asociaciones, unicidad y operaciones atómicas. Accesos necesita historial por socio, sede y tiempo. Cada servicio administra sus datos; consultar stock externo no requiere copiarlo. El nuevo stock físico del gimnasio es un inventario distinto y sí exige persistencia durable propia de Tienda.
 
 ## Decisión y patrones de acceso
+
+El esquema y los datos de demostración se inicializan por separado. Socios y Clases crean sus esquemas sin cuentas, membresías, clases ni reservas de prueba por defecto. `CARGAR_DATOS_DEMO=true` habilita esa carga explícitamente para demostraciones. Los repositorios PostgreSQL reciben la opción de inicialización y conservan los bloqueos transaccionales del arranque concurrente. Los cuatro planes comerciales acordados son configuración inicial del negocio. Los registros preexistentes tienen su propio historial y la limpieza se evalúa por sus relaciones.
+
+`npm run test:postgres` verifica cuatro tablas vacías con el inicio predeterminado y la carga explícita de cinco socios, cinco membresías, cuatro clases y 44 reservas sintéticas sin duplicación entre dos instancias. Los ensayos utilizan bases efímeras propias. El equipo confirmó conservar el historial usado en las pruebas compartidas con FAV y Car Cruds durante la limpieza del entorno existente.
+
+**Verificación del 11/11/2026.** Aprobaron la compilación de los cuatro servicios, PostgreSQL con dos instancias, 286 pruebas de regresión secuenciales con cobertura, 15 de Accesos, 21 de membresías, 13 de búsqueda, 17 de administración de clases y 12 de eventos. El Compose temporal verificó el inicio vacío, las tres sedes acordadas, la activación explícita de demostración, el balanceo y la recuperación. La cobertura global fue 73,47 % de líneas, 88,14 % de ramas y 86,82 % de funciones.
 
 | Servicio | Almacenamiento y patrones | Estado |
 |---|---|---|

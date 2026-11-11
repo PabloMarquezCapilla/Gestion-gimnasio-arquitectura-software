@@ -10,12 +10,21 @@ export interface SolicitudGestion {
   pago?: { pagoId: string; referencia: string; estado: 'PENDIENTE' | 'CONFIRMADO' | 'RECHAZADO' };
   comprobante?: { comprobanteId: string; pagoId: string; membresiaId: string; confirmadoPor: string; confirmadoEn: string };
 }
+export interface ResumenMembresias {
+  consultadoEn: string;
+  mesActual: string;
+  pendientes: { cantidad: number; conPagoRegistrado: number; importes: { moneda: string; importeMinor: number }[] };
+  ingresosMensuales: { mes: string; moneda: string; importeMinor: number }[];
+  ingresosPeriodo: { moneda: string; importeMinor: number }[];
+  confirmadasPorPlan: { nombrePlan: string; cantidad: number }[];
+}
 export interface GestionRepository {
   ejecutar(actor: string, clave: string, comando: ComandoGestion, datos: Record<string, unknown>, alRepetir?: () => void): Promise<unknown>;
   planes(): Promise<PlanGestion[]>;
   socios(pagina: number, tamanio: number): Promise<unknown[]>;
   solicitudes(socioId: string | undefined, pagina: number, tamanio: number): Promise<SolicitudGestion[]>;
   solicitud(id: string): Promise<SolicitudGestion>;
+  resumen(): Promise<ResumenMembresias>;
 }
 export const falloGestion = (codigo: string, mensaje: string, status = 409) => new SociosError(status, codigo, mensaje);
 const monedas = new Set<string>(Intl.supportedValuesOf('currency'));
