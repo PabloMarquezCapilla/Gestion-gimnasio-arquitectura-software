@@ -1,6 +1,6 @@
 # Compra de socios en Tienda con catálogo de FAV
 
-**Estado:** aceptada e implementada; verificada localmente con PostgreSQL real, dos instancias y mock del contrato de FAV. Prueba conjunta con FAV pendiente.
+**Estado:** aceptada e implementada; verificada localmente con PostgreSQL real, dos instancias y mock del contrato de FAV. El catálogo real y una compra exitosa por el gateway se verificaron en Azure. [Evidencia conjunta](../EVIDENCIA-TIENDA.md#prueba-conjunta-en-azure-del-10112026).
 **Fecha:** 09/11/2026.
 **Reemplaza parcialmente:** [ADR-022](ADR-022-tienda-y-consignaciones-fav.md) y [ADR-009](ADR-009-consumo-del-proveedor.md) en la regla "no hay compras del socio en esta versión". El resto de ambos sigue vigente.
 **Enunciado:** §4.1 (capacidad del proveedor incorporada a un flujo importante del consumidor), §4.2 (timeouts, errores y qué ve el usuario), §6.4.
